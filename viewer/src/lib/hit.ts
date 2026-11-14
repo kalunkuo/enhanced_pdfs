@@ -1,4 +1,5 @@
 import type { Annotation, Point, Shape } from './types';
+import type { ElementPicker } from './presentation';
 
 export function pointInPolygon(x: number, y: number, polygon: readonly Point[]): boolean {
     let inside = false;
@@ -19,14 +20,23 @@ function bboxArea(s: Shape): number {
  * When shapes overlap (a column inside a wall's bounds) the smallest wins.
  */
 export function hitTest(shapes: readonly Shape[], x: number, y: number, tolerance = 0): Shape | undefined {
-    let best: Shape | undefined;
+    return hitTestAll(shapes, x, y, tolerance)[0];
+}
+
+/** Legacy polygon adapter. Native path picking can implement ElementPicker directly. */
+export function hitTestAll(shapes: readonly Shape[], x: number, y: number, tolerance = 0): Shape[] {
+    const hits: Shape[] = [];
     for (const s of shapes) {
         const [x0, y0, x1, y1] = s.bbox;
         if (x < x0 - tolerance || x > x1 + tolerance || y < y0 - tolerance || y > y1 + tolerance) continue;
         if (s.outline && !pointInPolygon(x, y, s.outline) && !nearPolygon(x, y, s.outline, tolerance)) continue;
-        if (!best || bboxArea(s) < bboxArea(best)) best = s;
+        hits.push(s);
     }
-    return best;
+    return hits.sort((a, b) => bboxArea(a) - bboxArea(b));
+}
+
+export function createShapePicker(shapes: readonly Shape[]): ElementPicker {
+    return (point, tolerance) => hitTestAll(shapes, point[0], point[1], tolerance).map((shape) => ({ elementKey: shape.elementKey, shape }));
 }
 
 function nearPolygon(x: number, y: number, polygon: readonly Point[], tolerance: number): boolean {
@@ -58,8 +68,12 @@ export function anchorOf(a: Pick<Annotation, 'kind' | 'from' | 'to' | 'points'>)
 
 /** Tie an annotation to the element under its anchor, or leave it untied. */
 export function tie<T extends Annotation>(a: T, shapes: readonly Shape[], tolerance = 0): T {
-    const [x, y] = anchorOf(a);
-    const hit = hitTest(shapes, x, y, tolerance);
+    return tieWithPicker(a, createShapePicker(shapes), tolerance);
+}
+
+/** Annotation ties and drawing selection use the same picker and page coordinates. */
+export function tieWithPicker<T extends Annotation>(a: T, picker: ElementPicker, tolerance = 0): T {
+    const hit = picker(anchorOf(a), tolerance)[0];
     const { elementKey: _previous, ...rest } = a;
     return (hit ? { ...rest, elementKey: hit.elementKey } : rest) as T;
 }

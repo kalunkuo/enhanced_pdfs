@@ -8,6 +8,16 @@ Follows shadcn/ui's zinc theme for now. `src/styles/tokens.css` uses shadcn's ow
 | Patterns | `src/components/patterns/` | Toolbar, PdfStage, PropertiesPanel, ElementList, NotesList, HoverCard. Props in, events out. |
 | Logic | `src/lib/` | Pure functions (hit-testing, table parsing, grouping) with tests in `tests/`. |
 
+## Page composition and interaction
+
+`PdfStage` composes `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Keep base rendering, BIM emphasis, and editable review marks separate so filters can update highlights without rerendering the PDF. The shared renderer and coordinate contracts live in `src/lib/presentation.ts`.
+
+`MarkupLayer` hosts the SVG interaction surface and annotation editor. Annotation targets handle annotation selection; select-mode page gestures are forwarded for semantic element picking. Pan belongs to `PdfStage`. A pointer gesture must have one owner, so drawing a markup does not also select or pan the model.
+
+Existing review coordinates use the scale-1 PDF.js viewport, with a top-left origin. Native PDF paths retain PDF user coordinates and pass through the shared transform. The same presentation generation must align the base raster, highlights, pointer conversions, and markups. Device pixel ratio affects raster backing size rather than stored markup positions.
+
+Codex owns shared stage integration and BIM interaction; Yam owns markup/review tools after the baseline refactor. See [`../../TASKS.md`](../../TASKS.md) before changing a shared component or global style.
+
 ## Meaning of color
 
 - `--element`: an element of the Revit model (hover and selection highlight). Not shadcn's `--accent`, which is a neutral gray.

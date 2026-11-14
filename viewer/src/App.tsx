@@ -8,7 +8,7 @@ import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
 import { Button } from './components/ui/Button';
 import { UploadIcon } from './components/ui/icons';
-import { tie } from './lib/hit';
+import { createShapePicker, tieWithPicker } from './lib/hit';
 import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
@@ -35,6 +35,8 @@ export function App() {
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+    const pickElement = useMemo(() => createShapePicker(pageData?.shapes ?? []), [pageData]);
+    const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
     const nextId = useRef(1);
 
@@ -117,7 +119,7 @@ export function App() {
     const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => {
         if (!pageData) return;
         const draft: Annotation = { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) };
-        const tied = tie(draft, pageData.shapes, 4 / zoom);
+        const tied = tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
         setSelectedKey(tied.elementKey ?? null);
@@ -250,6 +252,8 @@ export function App() {
                             onSelectElement={selectElement}
                             onSelectAnnotation={setSelectedAnnotationId}
                             onAddAnnotation={addAnnotation}
+                            pickElement={pickElement}
+                            onRenderError={onRenderError}
                         />
                     ) : (
                         <div className="stage">
