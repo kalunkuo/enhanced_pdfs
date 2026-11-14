@@ -30,7 +30,8 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
         if (!context || !geometry || geometry.presentation.pageNumber !== pageNumber) return;
         const xScale = canvas.width / width, yScale = canvas.height / height;
         const computedStyle = getComputedStyle(canvas);
-        const color = computedStyle.getPropertyValue('--element').trim() || computedStyle.color;
+        const color = computedStyle.getPropertyValue('--color-geometry-highlight').trim() || computedStyle.color;
+        const selectedColor = computedStyle.getPropertyValue('--color-selection').trim() || color;
         const setTransform = (transform: NativePaintPart['toPage']) => context.setTransform(
             xScale * transform[0], yScale * transform[1], xScale * transform[2], yScale * transform[3], xScale * transform[4], yScale * transform[5],
         );
@@ -42,8 +43,8 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             context.save();
             for (const clip of part.clips) { setTransform(clip.toPage); context.clip(clip.path, clip.rule); }
             setTransform(part.toPage);
-            context.strokeStyle = color;
-            context.fillStyle = color;
+            context.strokeStyle = selected ? selectedColor : color;
+            context.fillStyle = selected ? selectedColor : color;
             context.globalAlpha = part.mode === 'fill' ? selected ? 0.28 : hovered ? 0.2 : 0.12 : selected ? 0.95 : hovered ? 0.8 : 0.55;
             const pageToLocalScale = Math.max(Math.hypot(part.fromPage[0], part.fromPage[1]), Math.hypot(part.fromPage[2], part.fromPage[3]));
             const halo = (selected ? 4 : hovered ? 3 : 2) / zoom * pageToLocalScale;

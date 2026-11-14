@@ -1,31 +1,64 @@
-# Viewer design system
+# Enhanced PDF viewer design system
 
-Follows shadcn/ui's zinc theme for now. `src/styles/tokens.css` uses shadcn's own variable names (`--background`, `--primary`, `--muted`, `--accent`, `--border`, `--ring`, `--radius`, ...) in light and dark, so real shadcn components can replace ours later. Real shadcn needs Tailwind, which the viewer doesn't use yet, so `src/styles/app.css` recreates the button, tabs, input, badge, checkbox, popover and dropdown-item styles by hand. Components never hard-code a color.
+## Purpose
 
-| Layer | Folder | Rule |
+The functional React/TypeScript viewer displays a PDF and connects its element geometry to attached Parquet specifications. Application chrome uses an off-black canvas, white Manrope text, bright blue primary actions, bright red secondary emphasis, and pink, green, and yellow for contextual features. The PDF raster keeps its original colors and typography. Geometry outlines and annotations occupy separate layers aligned to document coordinates.
+
+## Three token tiers
+
+Import `src/styles/tokens.css` once before component styles. Tokens flow from primitives to semantics to components.
+
+| Tier | Location | Purpose |
 | --- | --- | --- |
-| Primitives | `src/components/ui/` | `Button`, `IconButton`, icons. No app state. |
-| Patterns | `src/components/patterns/` | Toolbar, PdfStage, PropertiesPanel, ElementList, NotesList, HoverCard. Props in, events out. |
-| Logic | `src/lib/` | Pure functions (hit-testing, table parsing, grouping) with tests in `tests/`. |
+| Primitive | `src/styles/tokens/primitives.css` | Literal palette, type scale, spacing, sizes, radius, and motion |
+| Semantic | `src/styles/tokens/semantic.css` | Canvas, surface, text, focus, status, geometry, and accent roles |
+| Component | `src/styles/tokens/components.css` | Button, menu, field, comment, toolbar, panel, and viewer chrome values |
 
-## Page composition and interaction
+Use semantic roles in screens and patterns. Add a component token when variants or states must stay coordinated. Add a primitive when a literal becomes a reusable foundation. The literal PDF annotation ink colors in `Toolbar.tsx` are saved document data and should not be changed by a theme update.
 
-`PdfStage` composes `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Keep base rendering, BIM emphasis, and editable review marks separate so filters can update highlights without rerendering the PDF. The shared renderer and coordinate contracts live in `src/lib/presentation.ts`.
+## Color and typography
 
-`MarkupLayer` hosts the SVG interaction surface and annotation editor. Annotation targets handle annotation selection; select-mode page gestures are forwarded for semantic element picking. Pan belongs to `PdfStage`. A pointer gesture must have one owner, so drawing a markup does not also select or pan the model.
+| Role | Token | Value |
+| --- | --- | --- |
+| Canvas | `--color-canvas` | `#111315` |
+| Surface | `--color-surface` | `#1b1e20` |
+| Raised surface | `--color-surface-raised` | `#292d30` |
+| Primary text | `--color-text` | `#ffffff` |
+| Muted text | `--color-text-muted` | `#cccccc` |
+| Primary blue | `--color-primary` | `#31c6e8` |
+| Secondary red | `--color-secondary` | `#ff4b5c` |
+| Tertiary pink | `--color-tertiary-pink` | `#f4a7e9` |
+| Tertiary green | `--color-tertiary-green` | `#1bb574` |
+| Tertiary yellow | `--color-tertiary-yellow` | `#efb12f` |
 
-Existing review coordinates use the scale-1 PDF.js viewport, with a top-left origin. Native PDF paths retain PDF user coordinates and pass through the shared transform. The same presentation generation must align the base raster, highlights, pointer conversions, and markups. Device pixel ratio affects raster backing size rather than stored markup positions.
+The bundled variable Manrope font is in `src/assets/fonts/`. UI body text is 14px with 1.5 line height; labels are 13px. Use 11px only for compact metadata. Spacing uses 4px steps, common gaps are 8px, panel padding is 16px, and the shared control radius is 6px. Type styles live in `src/styles/typography.css` and leave margins to layout.
 
-Codex owns shared stage integration and BIM interaction; Yam owns markup/review tools after the baseline refactor. See [`../../TASKS.md`](../../TASKS.md) before changing a shared component or global style.
+| Style | Size / line height | Weight | Use |
+| --- | --- | --- | --- |
+| Title `.type-title` | 36px / 43.2px | 700 | Workspace title |
+| Heading 1 `.type-h1` | 28px / 33.6px | 700 | Main screen or dialog |
+| Heading 2 `.type-h2` | 24px / 28.8px | 700 | Major section |
+| Heading 3 `.type-h3` | 18px / 21.6px | 600 | Panel heading |
+| Paragraph `.type-paragraph` | 14px / 21px | 400 | Standard body copy |
 
-## Meaning of color
+Use semantic heading levels in the DOM even when a different visual type class fits the layout. Do not retype PDF page content.
 
-- `--element`: an element of the Revit model (hover and selection highlight). Not shadcn's `--accent`, which is a neutral gray.
-- `--tied`: an annotation anchored to an element. Solid line, chip reads `↳ <mark>`.
-- `--untied`: an annotation on empty paper. Dashed line, chip reads `untied`.
+## Controls and motion
 
-The PDF page is always white, so annotation ink is a fixed dark color in both themes. Tied versus untied is the main thing the annotation tools communicate, so it never relies on color alone (dash and label also differ).
+Compact icon buttons have a 24 by 24px visual box, 16px SVG glyph, and 6px radius. At rest they have a transparent background and white glyph; on hover and while pressed they use a white background and off-black glyph. Use clear vector strokes and `currentColor`; provide an accessible name for each icon-only action. Keyboard focus has a 2px blue outline with 2px offset. A touch-first surface needs a separate 44px hit target around the visual button.
 
-## Properties panel
+Button on/off transitions take 500ms. Action buttons scale to 0.97 on press; toolbar buttons and menu closes do not. Menus use an ease-out scale/fade from the trigger focal point for 500ms on open and 400ms on close. Menu rows reveal over 150ms, staggered by 30ms. Options become inactive as closing starts. Respect `prefers-reduced-motion`. Shared menu tokens are in `components.css`; the reusable flyout implements the full enter/exit sequence. The specialized viewer zoom and annotation menus currently mount and unmount with their existing application state and use the shared entrance styling.
 
-Mirrors Revit's Properties palette: family and type header, `<Category> (1)`, then groups of label/value rows. Yes/No parameters render as checkboxes. Groups are guessed from parameter names in `src/lib/groups.ts` until the add-in exports Revit's parameter groups.
+## Component catalog and viewer composition
+
+Reusable React components and SVG icons live in `src/components/ui/`, with shared styles in `kit.css` and exports in `index.ts`. [Component standards](component-standards/README.md) describe anatomy, states, behavior, accessibility, and token ownership for panels, dialogs, tooltips, fields, tables, page navigation, zoom controls, status messages, comments, metadata rows, vertical menus, and flyouts. The `Comment` component supports user-chosen Info, Warning, and Error tones; a review tone never changes the verified, possible, or missing geometry-to-record link state.
+
+The functional viewer is `src/App.tsx`. Specialized compositions in `src/components/patterns/` connect design controls to document state. `DocBar` keeps page entry, navigation, fit modes, and zoom presets. `Toolbar` keeps drawing, annotation colors, and delete actions. `PdfStage`, `PdfCanvas`, overlays, and `MarkupLayer` keep rendering, geometry picking, and annotation behavior. Inspector panels retain real Parquet data, filters, and object IDs. Do not replace those with sample records or generic controls that omit existing actions.
+
+- Center the PDF on the off-black stage; use a neutral shadow to separate paper and chrome.
+- Outline matched geometry in blue and selected geometry in red without obscuring fine drawing lines. Also show the element ID or label.
+- Use green only for a verified metadata link, yellow for ambiguous or missing information, and explicit words for every status.
+- Let the inspector move below the page at narrow widths before reducing the PDF's readable size.
+- Keep annotation and metadata write operations distinct and label the target of each save.
+
+See the [geometry inspector example](screen-examples/geometry-inspector.md), [vertical menu standard](component-standards/menubar.md), [flyout standard](component-standards/flyout-menu.md), and [comment standard](component-standards/comment.md). The former token-gallery test frontend was removed during integration; the viewer itself is the live composition of the library.

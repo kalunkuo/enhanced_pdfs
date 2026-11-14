@@ -183,7 +183,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
 
 function AnnotationShape({ annotation: a, selected, interactive, label, onClick }: { annotation: Annotation; selected: boolean; interactive: boolean; label?: string; onClick?: () => void }) {
     const tied = a.elementKey !== undefined;
-    const color = a.id === 'draft' || tied ? 'var(--tied)' : 'var(--untied)';
+    const color = a.id === 'draft' || tied ? 'var(--color-annotation-tied)' : 'var(--color-annotation-untied)';
     const common = {
         stroke: color,
         strokeWidth: selected ? 3 : 2,
@@ -208,7 +208,7 @@ function AnnotationShape({ annotation: a, selected, interactive, label, onClick 
     } else if (a.kind === 'highlight') {
         body = (
             <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)}
-                fill={a.color ?? '#ffd43b'} fillOpacity={0.4} stroke={tied || a.id === 'draft' ? 'none' : 'var(--untied)'} strokeDasharray="6 4" strokeWidth={selected ? 3 : 1.5} vectorEffect="non-scaling-stroke" />
+                fill={a.color ?? '#ffd43b'} fillOpacity={0.4} stroke={tied || a.id === 'draft' ? 'none' : 'var(--color-annotation-untied)'} strokeDasharray="6 4" strokeWidth={selected ? 3 : 1.5} vectorEffect="non-scaling-stroke" />
         );
     } else if (a.kind === 'signature') {
         body = <text x={x0} y={y0} fontSize={24} fill={INK} fontFamily="'Snell Roundhand','Segoe Script','Brush Script MT',cursive" fontStyle="italic">{a.text}</text>;

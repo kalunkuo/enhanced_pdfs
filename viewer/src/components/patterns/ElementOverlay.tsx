@@ -24,9 +24,9 @@ export function ElementOverlay({ shapes, hoverKey, selectedKey, matchedKeys, dra
     const selected = scoped.filter((shape) => shape.elementKey === selectedKey);
     return (
         <g aria-hidden="true" pointerEvents="none">
-            {scoped.filter((shape) => matchedKeys?.has(shape.elementKey) && shape.elementKey !== hoverKey && shape.elementKey !== selectedKey).map((shape, index) => <polygon key={`match-${index}`} points={polygonPoints(shape)} fill="var(--element-soft)" stroke="var(--element)" strokeWidth={1} vectorEffect="non-scaling-stroke" />)}
-            {hovered.map((shape, index) => <polygon key={`hover-${index}`} points={polygonPoints(shape)} fill="var(--element-soft)" stroke="var(--element)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />)}
-            {selected.map((shape, index) => <polygon key={`selected-${index}`} points={polygonPoints(shape)} fill="var(--element-strong)" stroke="var(--element)" strokeWidth={2} vectorEffect="non-scaling-stroke" />)}
+            {scoped.filter((shape) => matchedKeys?.has(shape.elementKey) && shape.elementKey !== hoverKey && shape.elementKey !== selectedKey).map((shape, index) => <polygon key={`match-${index}`} points={polygonPoints(shape)} fill="var(--color-geometry-highlight-soft)" stroke="var(--color-geometry-highlight)" strokeWidth={1} vectorEffect="non-scaling-stroke" />)}
+            {hovered.map((shape, index) => <polygon key={`hover-${index}`} points={polygonPoints(shape)} fill="var(--color-geometry-highlight-soft)" stroke="var(--color-geometry-highlight)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />)}
+            {selected.map((shape, index) => <polygon key={`selected-${index}`} points={polygonPoints(shape)} fill="var(--color-selection-strong)" stroke="var(--color-selection)" strokeWidth={2} vectorEffect="non-scaling-stroke" />)}
         </g>
     );
 }

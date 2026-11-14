@@ -8,6 +8,7 @@ import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patt
 import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
 import { Button } from './components/ui/Button';
+import { StatusMessage } from './components/ui/StatusMessage';
 import { UploadIcon } from './components/ui/icons';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
@@ -271,7 +272,7 @@ export function App() {
     return (
         <div className="app">
             <header className="header">
-                <h1>Enhanced PDF Viewer</h1>
+                <h1 className="type-h3">Enhanced PDF Viewer</h1>
                 <Button variant="primary" onClick={() => fileInput.current?.click()}>
                     <UploadIcon /> Upload enhanced PDF
                 </Button>
@@ -296,9 +297,9 @@ export function App() {
                 onZoomIn={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
             />
-            <div>
-                {error && <div className="banner" role="alert">{error}</div>}
-                {doc?.warnings.map((w) => <div className="banner" key={w}>{w}</div>)}
+            <div className="viewer-notices">
+                {error && <StatusMessage tone="error" variant="banner" title={error} />}
+                {doc?.warnings.map((w) => <StatusMessage tone="warning" variant="banner" title={w} key={w} />)}
             </div>
             <main className="main">
                 <div className="stage-wrap">

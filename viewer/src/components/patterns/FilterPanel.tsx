@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { buildFilterFields, EMPTY_FILTERS, filterValueLabel, hasActiveFilters, type FilterContext, type FilterState } from '../../lib/filters';
 import type { ElementInfo, ParameterInfo } from '../../lib/types';
+import { Button } from '../ui/Button';
 
 export interface FilterPanelProps {
     elements: readonly ElementInfo[];
@@ -45,7 +46,7 @@ export function FilterPanel({ elements, parameters, value, onChange, matchedCoun
             <input className="search" type="search" aria-label="Search BIM elements and properties" placeholder="Search elements and properties"
                 value={value.search} onChange={(event) => onChange({ ...value, search: event.target.value })} />
             <p className="filter-counts" role="status">{matchedCount} matching elements in document · {locatableCount} locatable {pageNumber ? `on page ${pageNumber}` : 'on current page'} · {appearanceCount} appearances {pageNumber ? `on page ${pageNumber}` : 'on current page'}</p>
-            {onFitMatches && <button type="button" className="btn ghost filter-fit" onClick={onFitMatches} disabled={locatableCount === 0}>Fit filtered results</button>}
+            {onFitMatches && <Button variant="ghost" className="filter-fit" onClick={onFitMatches} disabled={locatableCount === 0}>Fit filtered results</Button>}
             <div className="filter-chips">
                 {active.map(({ id, selected, label, selectedLabel }) => (
                     <button className="filter-chip" key={`${id}/${selected}`} aria-label={`Remove ${label}: ${selectedLabel}`}

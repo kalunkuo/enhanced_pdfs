@@ -11,6 +11,20 @@ bun run test
 
 Use `bun`, not npm.
 
+## Design system implementation
+
+The default screen is the functional viewer in `src/App.tsx`. Keep PDF loading, rendering, native geometry capture, Parquet lookup, annotation coordinates, filtering, and save/print behavior intact when changing the visual system. Do not restore the former test frontend or sample data as the application entry point.
+
+- `src/styles/tokens/primitives.css`: raw palette, Manrope scale, spacing, 6px radius, and motion values. Add literals here when a reusable foundation is needed.
+- `src/styles/tokens/semantic.css`: app roles such as canvas, text, blue primary, red secondary, review status, and geometry accents. View and pattern styles should use these roles.
+- `src/styles/tokens/components.css`: values shared by controls, menus, comments, toolbars, and viewer chrome. Add a component token when a value coordinates variants or states.
+- `src/styles/tokens.css`: import entry point and local Manrope font face. Import once in `src/main.tsx`, followed by `src/styles/typography.css`, `src/components/ui/icon-button.css`, `src/components/ui/kit.css`, and `src/styles/app.css`.
+- `src/components/ui/`: reusable React/TypeScript controls and SVG icons; `src/components/ui/index.ts` exports the design kit. `src/components/ui/Button.tsx` adapts the viewer's existing button API to the kit. Keep accessible names on icon-only actions.
+- `src/components/patterns/`: viewer compositions and interaction state. Use the shared tokens and controls here without replacing specialized PDF behavior with a generic demo control.
+- `docs/component-standards/`: anatomy, variants, states, accessibility, and interaction rules for each reusable control. `docs/screen-examples/` describes composition.
+
+Chrome is off-black with white Manrope text. Blue is primary, red secondary, and pink/green/yellow are contextual accents. The PDF raster retains its document colors. Compact icon buttons are 24px with a 6px radius, transparent/white at rest and white/off-black on hover. Button state transitions are 500ms; action buttons scale to 0.97 on press. Menus enter with ease-out scale/fade from the trigger focal point, rows reveal over 150ms with 30ms stagger, and exit is 400ms. Respect reduced motion. Treat the annotation ink palette as document data; changing it would alter saved PDF output.
+
 ## Data contract
 
 The viewer reads the Parquet attachments the add-in already writes (`elements`, `parameters`, `drawings`, `appearances`). **Do not require `geometry.parquet` or an exporter change for element interaction.** The primary route indexes native PDF marked-content groups (`/ViewRegion...`, `/Element...`), resolves them through drawing membership, and captures actual painted paths. Track work and branch ownership in [`../TASKS.md`](../TASKS.md).

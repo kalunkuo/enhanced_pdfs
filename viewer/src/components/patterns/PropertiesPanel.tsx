@@ -1,6 +1,7 @@
 import { groupParameters } from '../../lib/groups';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
 import type { ElementInfo, EnhancedPdf, ParameterInfo } from '../../lib/types';
+import { Button } from '../ui/Button';
 
 const isBool = (v: string) => v === 'Yes' || v === 'No';
 
@@ -8,8 +9,8 @@ function Wall() {
     // Generic section swatch, like the thumbnail at the top of Revit's Properties palette.
     return (
         <svg className="prop-swatch" viewBox="0 0 56 56" aria-hidden="true">
-            <rect x="4" y="24" width="48" height="8" fill="var(--card)" stroke="var(--muted-foreground)" />
-            <path d="M4 28h48" stroke="var(--muted-foreground)" strokeDasharray="3 2" />
+            <rect x="4" y="24" width="48" height="8" fill="var(--color-surface)" stroke="var(--color-text-muted)" />
+            <path d="M4 28h48" stroke="var(--color-text-muted)" strokeDasharray="3 2" />
         </svg>
     );
 }
@@ -40,7 +41,7 @@ export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }:
     return (
         <>
             {location && <div className={`location-status property-location location-${location}`}>{LOCATION_LABELS[location]}</div>}
-            {onLocate && <div className="property-actions"><button className="btn" disabled={!location || !['ready', 'partial', 'legacy'].includes(location)} onClick={() => onLocate(element.key)}>Locate on drawing</button></div>}
+            {onLocate && <div className="property-actions"><Button disabled={!location || !['ready', 'partial', 'legacy'].includes(location)} onClick={() => onLocate(element.key)}>Locate on drawing</Button></div>}
             {element.placeholder && <div className="notice">Placeholder data. Revit values will replace this.</div>}
             <div className="prop-head">
                 <Wall />
