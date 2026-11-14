@@ -41,6 +41,8 @@ Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
 - `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
 - `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
+- Drawing/view filters use stable `DrawingId` membership. Apply the same scope to picking, highlights, coverage, appearance counts, and focus bounds; never borrow an element's plan ink to locate its schedule membership.
+- `navigation.ts` fits existing page-space bounds. `PdfStage` applies a focus request after zoom layout, at most once per request. Preserve padding/centering, exclude DPR from scroll math, and cancel stale requests when the user changes context or navigates manually.
 - `MarkupLayer` owns annotation rendering, draft/editor state, and creation gestures. It forwards select-mode page gestures to the shared picker.
 - Shared contracts live in `src/lib/presentation.ts`. Existing markup coordinates remain the scale-1 PDF.js viewport (top-left); native PDF geometry uses explicit forward/inverse transforms. Do not silently migrate saved annotation coordinates.
 - Observe PDF operations without skipping graphics-state, path, or clipping operations. Keep canvas backing scale separate from page/CSS coordinates.

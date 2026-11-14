@@ -11,11 +11,12 @@ import { Button } from './components/ui/Button';
 import { UploadIcon } from './components/ui/icons';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
-import { EMPTY_FILTERS, filterElements, hasActiveFilters, type FilterState } from './lib/filters';
+import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
 import { createNativeGeometryCapture, type NativeGeometry } from './lib/nativeGeometry';
 import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
+import type { FocusRequest } from './lib/navigation';
 import type { Annotation, EnhancedPdf, PageData } from './lib/types';
 
 type Tab = 'properties' | 'elements' | 'notes';
@@ -41,10 +42,18 @@ export function App() {
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
     const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
     const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+    const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+    const nextFocusId = useRef(0);
+    const drawingScope = useMemo(() => getDrawingScope(filters), [filters]);
     const nativeSource = pageData?.nativeTags;
     const geometry = nativeGeometry?.source === nativeSource ? nativeGeometry : null;
     const createCapture = useMemo(() => nativeSource?.resolvedElementKeys.size ? createNativeGeometryCapture(nativeSource, setNativeGeometry) : undefined, [nativeSource]);
-    const pickElement = useMemo(() => geometry?.pick ?? createShapePicker(pageData?.shapes ?? []), [geometry, pageData]);
+    const pickElement = useMemo(() => {
+        if (!geometry) return createShapePicker((pageData?.shapes ?? []).filter((shape) => matchesDrawingScope(shape.drawingId, drawingScope)));
+        if (!drawingScope) return geometry.pick;
+        const appearances = new Set(geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId));
+        return (point: Parameters<typeof geometry.pick>[0], tolerance: number) => geometry.pick(point, tolerance).filter((hit) => appearances.has(hit.occurrenceId ?? ''));
+    }, [geometry, pageData, drawingScope]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
     const nextId = useRef(1);
@@ -65,6 +74,7 @@ export function App() {
             setPageData(null);
             setNativeGeometry(null);
             setFilters(EMPTY_FILTERS);
+            setFocusRequest(null);
             setAnnotations(next.savedAnnotations);
             setSelectedKey(null);
             setSelectedAnnotationId(null);
@@ -101,6 +111,7 @@ export function App() {
             const target = Math.min(doc.pageCount, Math.max(1, n));
             if (target === page) return;
             setPage(target);
+            setFocusRequest(null);
             setPageData(null);
             setNativeGeometry(null);
             setHover(null);
@@ -127,15 +138,16 @@ export function App() {
     );
 
     const selectElement = useCallback((key: string | null) => {
+        setFocusRequest(null);
         setSelectedKey(key);
         if (key) {
             setTab('properties');
             const drawingIds = new Set(doc?.appearances?.filter((appearance) => appearance.elementKey === key).map((appearance) => appearance.drawingId));
-            const drawings = doc?.drawings?.filter((drawing) => drawingIds.has(drawing.id)) ?? [];
+            const drawings = doc?.drawings?.filter((drawing) => drawingIds.has(drawing.id) && matchesDrawingScope(drawing.id, drawingScope)) ?? [];
             const target = drawings.find((drawing) => drawing.page === page) ?? drawings[0];
-            if (target && target.page !== page) { setPage(target.page); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
+            if (target && target.page !== page) { setPage(target.page); setFocusRequest(null); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
         }
-    }, [doc, page]);
+    }, [doc, page, drawingScope]);
 
     const onHover = useCallback((key: string | null, at: { x: number; y: number }) => {
         setHover((h) => (key ? { key, ...at } : h === null ? h : null));
@@ -208,12 +220,13 @@ export function App() {
                 return;
             }
             if (typing) return;
-            if (e.key === 'Escape') setTool('select');
+            if (e.key === 'Escape') { setTool('select'); setFocusRequest(null); }
             else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
             else if (e.key === 'PageDown') goToPage(page + 1);
             else if (e.key === 'PageUp') goToPage(page - 1);
             else if (doc && KEYS[e.key.toLowerCase()]) {
                 const t = KEYS[e.key.toLowerCase()]!;
+                setFocusRequest(null);
                 setTool(t === 'draw' ? drawKind : t);
             }
         };
@@ -222,16 +235,38 @@ export function App() {
     }, [doc, page, drawKind, deleteSelected, goToPage, save, print]);
 
     const elementList = useMemo(() => (doc ? [...doc.elements.values()] : []), [doc, pageData]);
-    const matchedElements = useMemo(() => filterElements(elementList, doc?.parameters ?? new Map(), filters), [elementList, doc, filters]);
+    const filterContext = useMemo(() => ({ drawings: doc?.drawings ?? [], appearances: doc?.appearances ?? [] }), [doc]);
+    const matchedElements = useMemo(() => filterElements(elementList, doc?.parameters ?? new Map(), filters, filterContext), [elementList, doc, filters, filterContext]);
     const matchedKeys = useMemo(() => new Set(matchedElements.map((element) => element.key)), [matchedElements]);
-    const locations = useMemo(() => elementLocations(elementList, nativeSource, geometry, pageData?.shapes ?? []), [elementList, nativeSource, geometry, pageData]);
+    const locations = useMemo(() => elementLocations(elementList, nativeSource, geometry, pageData?.shapes ?? [], drawingScope), [elementList, nativeSource, geometry, pageData, drawingScope]);
     const locatableCount = useMemo(() => matchedElements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).length, [matchedElements, locations]);
     const appearanceCount = useMemo(() => geometry
-        ? new Set(geometry.parts.filter((part) => matchedKeys.has(part.elementKey)).map((part) => part.appearanceId)).size
-        : new Set((pageData?.shapes ?? []).filter((shape) => matchedKeys.has(shape.elementKey)).map((shape) => shape.elementKey)).size,
-    [geometry, pageData, matchedKeys]);
+        ? new Set(geometry.parts.filter((part) => matchedKeys.has(part.elementKey) && matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId)).size
+        : new Set((pageData?.shapes ?? []).filter((shape) => matchedKeys.has(shape.elementKey) && matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => JSON.stringify([shape.drawingId, shape.elementKey]))).size,
+    [geometry, pageData, matchedKeys, drawingScope]);
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
+
+    const cancelFocus = useCallback(() => setFocusRequest(null), []);
+    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setFocusRequest(null); }, []);
+    const changeZoomMode = useCallback((next: ZoomMode) => { setFocusRequest(null); setZoomMode(next); }, []);
+    const changeTool = useCallback((next: Tool) => { setFocusRequest(null); setTool(next); }, []);
+    const focusComplete = useCallback((request: FocusRequest, located: boolean) => {
+        setStatus(located ? request.elementKeys.size === 1 ? 'Located element on drawing.' : 'Fitted filtered results on this page.' : 'No mapped geometry to locate in this drawing/view.');
+    }, []);
+    const locateElement = (key: string) => {
+        if (!pageData || !['ready', 'partial', 'legacy'].includes(locations.get(key) ?? '')) return;
+        setSelectedKey(key);
+        setSelectedAnnotationId(null);
+        setHover(null);
+        setTool('select');
+        setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: new Set([key]), drawingIds: drawingScope });
+    };
+    const fitMatches = () => {
+        if (!pageData || !locatableCount) return;
+        setTool('select');
+        setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: matchedKeys, drawingIds: drawingScope });
+    };
 
     return (
         <div className="app">
@@ -254,12 +289,12 @@ export function App() {
                 pageCount={doc?.pageCount ?? 0}
                 onPage={goToPage}
                 tool={tool}
-                onTool={setTool}
+                onTool={changeTool}
                 zoom={zoom}
                 zoomMode={zoomMode}
-                onZoomMode={setZoomMode}
-                onZoomIn={() => setZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
-                onZoomOut={() => setZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
+                onZoomMode={changeZoomMode}
+                onZoomIn={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
+                onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
             />
             <div>
                 {error && <div className="banner" role="alert">{error}</div>}
@@ -290,6 +325,11 @@ export function App() {
                             createCapture={createCapture}
                             geometry={geometry}
                             matchedKeys={hasActiveFilters(filters) ? matchedKeys : null}
+                            drawingIds={drawingScope}
+                            focusRequest={focusRequest}
+                            onZoomMode={setZoomMode}
+                            onFocusComplete={focusComplete}
+                            onCancelFocus={cancelFocus}
                         />
                     ) : (
                         <div className="stage">
@@ -303,7 +343,7 @@ export function App() {
                     )}
                     <Toolbar
                         tool={tool}
-                        onTool={setTool}
+                        onTool={changeTool}
                         drawKind={drawKind}
                         onDrawKind={setDrawKind}
                         highlightColor={highlightColor}
@@ -334,11 +374,11 @@ export function App() {
                         {!doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
-                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} />
+                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
                         ) : tab === 'elements' ? (
                             <>
-                                <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={setFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} />
-                                <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} />
+                                <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={changeFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} context={filterContext} pageNumber={page} onFitMatches={fitMatches} />
+                                <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} onLocate={locateElement} />
                             </>
                         ) : (
                             <NotesList

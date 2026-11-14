@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { buildFilterFields, EMPTY_FILTERS, filterValueLabel, hasActiveFilters, type FilterState } from '../../lib/filters';
+import { buildFilterFields, EMPTY_FILTERS, filterValueLabel, hasActiveFilters, type FilterContext, type FilterState } from '../../lib/filters';
 import type { ElementInfo, ParameterInfo } from '../../lib/types';
 
 export interface FilterPanelProps {
@@ -10,11 +10,14 @@ export interface FilterPanelProps {
     matchedCount: number;
     locatableCount: number;
     appearanceCount: number;
+    context?: FilterContext;
+    pageNumber?: number;
+    onFitMatches?: () => void;
 }
 
 /** The property/value lists are bounded; no control is created for each Parquet row. */
-export function FilterPanel({ elements, parameters, value, onChange, matchedCount, locatableCount, appearanceCount }: FilterPanelProps) {
-    const fields = useMemo(() => buildFilterFields(elements, parameters), [elements, parameters]);
+export function FilterPanel({ elements, parameters, value, onChange, matchedCount, locatableCount, appearanceCount, context, pageNumber, onFitMatches }: FilterPanelProps) {
+    const fields = useMemo(() => buildFilterFields(elements, parameters, context), [elements, parameters, context]);
     const [fieldId, setFieldId] = useState('category');
     const [propertyQuery, setPropertyQuery] = useState('');
     const [valueQuery, setValueQuery] = useState('');
@@ -23,7 +26,10 @@ export function FilterPanel({ elements, parameters, value, onChange, matchedCoun
     const field = shownFields.find((candidate) => candidate.id === fieldId) ?? shownFields[0];
     const matchingValues = field?.values.filter((option) => option.label.toLocaleLowerCase().includes(valueQuery.trim().toLocaleLowerCase())) ?? [];
     const shownValues = matchingValues.slice(0, 100);
-    const active = Object.entries(value.facets).flatMap(([id, values]) => values.map((selected) => ({ id, selected, label: fields.find((candidate) => candidate.id === id)?.label ?? 'Property' })));
+    const active = Object.entries(value.facets).flatMap(([id, values]) => values.map((selected) => {
+        const field = fields.find((candidate) => candidate.id === id);
+        return { id, selected, label: field?.label ?? 'Property', selectedLabel: field?.values.find((option) => option.value === selected)?.label ?? filterValueLabel(selected) };
+    }));
 
     const toggle = (id: string, selected: string) => {
         const current = value.facets[id] ?? [];
@@ -38,11 +44,12 @@ export function FilterPanel({ elements, parameters, value, onChange, matchedCoun
         <section className="filter-panel" aria-label="BIM filters">
             <input className="search" type="search" aria-label="Search BIM elements and properties" placeholder="Search elements and properties"
                 value={value.search} onChange={(event) => onChange({ ...value, search: event.target.value })} />
-            <p className="filter-counts" role="status">{matchedCount} matching elements · {locatableCount} locatable · {appearanceCount} appearances</p>
+            <p className="filter-counts" role="status">{matchedCount} matching elements in document · {locatableCount} locatable {pageNumber ? `on page ${pageNumber}` : 'on current page'} · {appearanceCount} appearances {pageNumber ? `on page ${pageNumber}` : 'on current page'}</p>
+            {onFitMatches && <button type="button" className="btn ghost filter-fit" onClick={onFitMatches} disabled={locatableCount === 0}>Fit filtered results</button>}
             <div className="filter-chips">
-                {active.map(({ id, selected, label }) => (
-                    <button className="filter-chip" key={`${id}/${selected}`} aria-label={`Remove ${label}: ${filterValueLabel(selected)}`}
-                        onClick={() => toggle(id, selected)}>{label}: {filterValueLabel(selected)} ×</button>
+                {active.map(({ id, selected, label, selectedLabel }) => (
+                    <button className="filter-chip" key={`${id}/${selected}`} aria-label={`Remove ${label}: ${selectedLabel}`}
+                        onClick={() => toggle(id, selected)}>{label}: {selectedLabel} ×</button>
                 ))}
                 {hasActiveFilters(value) && <button className="filter-clear" onClick={() => { onChange(EMPTY_FILTERS); setValueQuery(''); }}>Clear all filters</button>}
             </div>

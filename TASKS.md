@@ -59,6 +59,8 @@ This track runs in parallel with Yam's work after R0. The existing metadata read
 | C3 | P0 | Implemented on Carlos's branch | Build **precise picking and selection**: spatial bounds for candidates, path/stroke tests for final hits, zoom-consistent pointer tolerance, hover, click, and overlap cycling. Reuse the same picker for annotation auto-ties. |
 | C4 | P0 | Implemented on Carlos's branch | Add **property filters and result highlights** for category, family, type, level, model, wall function, fire rating, and other exported parameters. OR within a field; AND across fields. Keep Unspecified separate from explicit values such as NR. Show matched element counts separately from locatable appearances. |
 | C5 | P0 | Implemented on Carlos's branch | Extend **results and properties** with drawing/model context, instance/type provenance, and selection synchronization. Metadata-only elements remain inspectable without an invented highlight location. |
+| C6 | P0 | Implemented on Carlos's branch | Add **Locate on drawing** and **Fit filtered results** using existing captured bounds. Center after the requested zoom is applied, retain drawing context, and disable Locate for metadata-only/unmapped records. Cancel pending focus on file, page, filter, or manual navigation changes. |
+| C7 | P0 | Implemented on Carlos's branch | Add **Drawing / view** filters keyed by stable DrawingId. Keep matching elements, located appearances, picking, highlights, and focus bounds in the same drawing scope, including repeated elements across views. |
 
 Codex owns:
 
@@ -92,8 +94,10 @@ Use browser checks for gestures and rendering, not only unit tests. Check the re
 
 ## BIM milestone validation
 
-Carlos's branch implements C1-C5 for supported native paths. The original Snowdon A101 enhanced PDF, without a geometry table, resolves 1,237 native groups into 1,099 elements and captures 18,123 painted path parts. Wall 676281 retains its eight disconnected strokes; its opening is not a wall hit.
+C1-C5 merged into `viewer-v1` in PR #3. Carlos's branch now adds C6-C7 on that merged baseline. The original Snowdon A101 enhanced PDF, without a geometry table, resolves 1,237 native groups into 1,099 elements and captures 18,123 painted path parts. Wall 676281 retains its eight disconnected strokes; its opening is not a wall hit.
 
 Browser checks on that actual file passed for picking, zoom/pan, overlap cycling, and Walls + Exterior + 2 HR filtering (16 matched, 16 locatable). Planting returns 117 metadata records with 13 locatable appearances; the remaining records stay inspectable without invented locations. A note tied to real wall 676281 survived PDF save/reopen, and all five original Parquet attachments remained byte-identical.
+
+Drawing/view checks on the same actual PDF passed: L1 has 1,090 matched and located elements; selecting Planting Schedule returns 117 metadata members and zero located appearances, without borrowing the 13 plan locations. Metadata-only Locate and zero-result Fit are disabled. Locate wall 676281 centers its real printed edges with a 200% zoom cap. Fit filtered results frames the 16 rated exterior walls; a subsequent manual zoom remains unchanged after recapture. These actions use current-page captured geometry; selecting a result can first navigate to its declared page.
 
 Capture reports unsupported text/image or complex compositing paints instead of assigning guessed hit areas. This is native printed-path selection, not reconstructed solid wall footprints or a full composited-pixel mask. Rotation/crop transforms are unit-tested; broader PDF types and Yam's rotated-page export work remain integration checks. Yam's new markup features and R2 remain separate tasks.

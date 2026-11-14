@@ -181,3 +181,7 @@ button, input { font: inherit; color: inherit; }
 .parameter-scope { display: inline-block; margin-left: 4px; color: var(--muted-foreground); font-size: 9px; opacity: .8; }
 .load-more { margin: 10px 14px; }
 .pick-status { position: absolute; left: 12px; bottom: 12px; pointer-events: none; padding: 7px 10px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 12px; box-shadow: var(--shadow-md); }
+.property-actions { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.list .locate-result { width: auto; margin: 0 14px 10px; padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--element); font-size: 12px; }
+.list .locate-result:disabled, .property-actions button:disabled, .filter-fit:disabled { opacity: .45; cursor: default; }
+.filter-fit { justify-self: start; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--secondary); color: var(--foreground); cursor: pointer; font: inherit; font-size: 12px; }

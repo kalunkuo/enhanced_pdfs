@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
 import type { ElementInfo } from '../../lib/types';
 
-export function ElementList({ elements, selectedKey, onSelect, locations }: { elements: ElementInfo[]; selectedKey: string | null; onSelect: (key: string) => void; locations?: ReadonlyMap<string, LocationStatus> }) {
+export function ElementList({ elements, selectedKey, onSelect, locations, onLocate }: { elements: ElementInfo[]; selectedKey: string | null; onSelect: (key: string) => void; locations?: ReadonlyMap<string, LocationStatus>; onLocate?: (key: string) => void }) {
     const [limit, setLimit] = useState(100);
     const shown = elements.slice(0, limit);
     return (
@@ -16,6 +16,7 @@ export function ElementList({ elements, selectedKey, onSelect, locations }: { el
                             {e.model && <span className="element-context">{e.model}</span>}
                             {locations?.get(e.key) && <span className={`location-status location-${locations.get(e.key)}`}>{LOCATION_LABELS[locations.get(e.key)!]}</span>}
                         </button>
+                        {onLocate && <button className="locate-result" aria-label={`Locate element ${e.elementIdText ?? e.elementId}`} disabled={!['ready', 'partial', 'legacy'].includes(locations?.get(e.key) ?? '')} onClick={() => onLocate(e.key)}>Locate on drawing</button>}
                     </li>
                 ))}
             </ul>

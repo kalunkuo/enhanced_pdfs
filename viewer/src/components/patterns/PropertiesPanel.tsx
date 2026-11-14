@@ -14,7 +14,7 @@ function Wall() {
     );
 }
 
-export function PropertiesPanel({ doc, element, hasShapes, location }: { doc: EnhancedPdf; element: ElementInfo | undefined; hasShapes: boolean; location?: LocationStatus }) {
+export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }: { doc: EnhancedPdf; element: ElementInfo | undefined; hasShapes: boolean; location?: LocationStatus; onLocate?: (key: string) => void }) {
     if (!element) {
         return (
             <div className="panel-empty">
@@ -40,6 +40,7 @@ export function PropertiesPanel({ doc, element, hasShapes, location }: { doc: En
     return (
         <>
             {location && <div className={`location-status property-location location-${location}`}>{LOCATION_LABELS[location]}</div>}
+            {onLocate && <div className="property-actions"><button className="btn" disabled={!location || !['ready', 'partial', 'legacy'].includes(location)} onClick={() => onLocate(element.key)}>Locate on drawing</button></div>}
             {element.placeholder && <div className="notice">Placeholder data. Revit values will replace this.</div>}
             <div className="prop-head">
                 <Wall />

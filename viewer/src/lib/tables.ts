@@ -25,7 +25,7 @@ export function buildShapes(rows: readonly Row[], pageHeight: number): Shape[] {
                 outline = undefined;
             }
         }
-        shapes.push({ elementKey: key, bbox: [num(r.MinX), y0, num(r.MaxX), y1], ...(outline ? { outline } : {}) });
+        shapes.push({ elementKey: key, ...(str(r.DrawingId) ? { drawingId: str(r.DrawingId) } : {}), bbox: [num(r.MinX), y0, num(r.MaxX), y1], ...(outline ? { outline } : {}) });
     }
     return shapes;
 }

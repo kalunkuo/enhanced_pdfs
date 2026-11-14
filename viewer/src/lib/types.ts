@@ -6,6 +6,8 @@ export type Point = readonly [number, number];
 /** Page coordinates: PDF points, origin top-left, y down. */
 export interface Shape {
     elementKey: string;
+    /** Optional legacy attachment context; native paths retain their own drawing ID. */
+    drawingId?: string;
     bbox: readonly [minX: number, minY: number, maxX: number, maxY: number];
     outline?: readonly Point[];
 }
