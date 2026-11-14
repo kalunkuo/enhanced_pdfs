@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { formatTimeAgo } from '../../lib/comments';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { avatarColor, formatTimeAgo } from '../../lib/comments';
 import { imageToDataUrl, type Profile } from '../../lib/profile';
 import type { Annotation, PageData, Point } from '../../lib/types';
 import { Avatar } from '../ui/Avatar';
@@ -56,7 +56,7 @@ export function CommentLayer(props: CommentLayerProps) {
                     <div
                         key={comment.id}
                         className={`cpin ${open ? 'open' : ''}`}
-                        style={{ left: comment.from[0] * zoom, top: comment.from[1] * zoom }}
+                        style={{ left: comment.from[0] * zoom, top: comment.from[1] * zoom, '--pin': avatarColor(name) } as CSSProperties}
                         onPointerDown={stop}
                         onMouseEnter={() => setHoverId(comment.id)}
                         onMouseLeave={() => setHoverId(null)}

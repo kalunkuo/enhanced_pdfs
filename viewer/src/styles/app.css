@@ -166,14 +166,15 @@ button, input { font: inherit; color: inherit; }
 .comment-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .cpin { position: absolute; width: 0; height: 0; pointer-events: none; }
 .cpin.open { z-index: 2; }
-/* The pin's tip is the .cpin origin, i.e. the exact page point being commented on. */
-.cpin-btn { position: absolute; left: -18px; top: -50px; z-index: 0; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 50%;
-    border: 3px solid #fff; background: #fff; cursor: pointer; pointer-events: auto; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
-.cpin-btn::after { content: ''; position: absolute; z-index: -1; left: 50%; bottom: -9px; width: 16px; height: 16px; background: #fff; border-radius: 0 0 4px 0;
+/* One-color pin: the circle and its tail share the person's color. The tail's tip is the .cpin origin,
+   i.e. the exact page point being commented on. */
+.cpin-btn { position: absolute; left: -16px; top: -42px; z-index: 0; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: 50%;
+    border: 0; background: var(--pin); cursor: pointer; pointer-events: auto; transform-origin: 50% calc(100% + 10px);
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); transition: transform 0.12s; }
+.cpin-btn::after { content: ''; position: absolute; z-index: -1; left: 50%; bottom: -6px; width: 18px; height: 18px; background: var(--pin); border-radius: 0 0 4px 0;
     transform: translateX(-50%) rotate(45deg); }
-.cpin.open .cpin-btn { box-shadow: 0 0 0 2px var(--comment); }
-.cpin.open .cpin-btn::after { background: var(--comment); }
-.cbubble, .ccard { position: absolute; top: -52px; left: 32px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
+.cpin.open .cpin-btn { transform: scale(1.15); filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45)); }
+.cbubble, .ccard { position: absolute; top: -46px; left: 30px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
     border-radius: 20px; box-shadow: var(--shadow-md); }
 .cbubble.left, .ccard.left { left: auto; right: 28px; }
 .cbubble { padding: 14px 18px 14px 14px; }
