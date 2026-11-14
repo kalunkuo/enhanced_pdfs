@@ -10,7 +10,8 @@ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 export async function loadEnhancedPdf(file: File): Promise<EnhancedPdf> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     // pdf.js may take over the buffer it is given, so it gets its own copy.
-    const pdf = await pdfjs.getDocument({ data: bytes.slice() }).promise;
+    // Parsing stays in the PDF worker; painting is observable by our native-path adapter.
+    const pdf = await pdfjs.getDocument({ data: bytes.slice(), disableWorkerRendering: true }).promise;
     // pdf.js lists attachments by name; the bytes are fetched one at a time.
     const names = [...((await pdf.getAttachments())?.keys() ?? [])];
     const attachments: Attachments = new Map(
@@ -26,7 +27,7 @@ export async function loadEnhancedPdf(file: File): Promise<EnhancedPdf> {
 
     if (usePlaceholders) {
         const why = tables.has('elements')
-            ? 'No geometry table yet, so Revit elements cannot be located on the drawing.'
+            ? 'Native Revit element mapping is not connected yet.'
             : 'No Revit data in this PDF.';
         warnings.push(`${why} Hovering shows placeholder walls detected from the drawing; their data is made up.`);
     }
