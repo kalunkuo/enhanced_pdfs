@@ -11,6 +11,14 @@ public:
     ComPtr(const ComPtr&) = delete;
     ComPtr& operator=(const ComPtr&) = delete;
     ComPtr(ComPtr&& other) noexcept : p_(other.p_) { other.p_ = nullptr; }
+    ComPtr& operator=(ComPtr&& other) noexcept {
+        if (this != &other) {
+            Reset();
+            p_ = other.p_;
+            other.p_ = nullptr;
+        }
+        return *this;
+    }
 
     T* Get() const { return p_; }
     T* operator->() const { return p_; }

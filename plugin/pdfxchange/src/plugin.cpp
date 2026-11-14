@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "events.h"
+#include "lifecycle.h"
 #include "log.h"
 #include "pxv.h"
 #include "selftest.h"
@@ -67,11 +68,13 @@ public:
         LogLine("pxc: init");
         char probe[8] = {};
         if (GetEnvironmentVariableA("SMARTMARKUP_PROBE", probe, sizeof probe) > 0) SubscribeProbe(inst_);
+        RegisterLifecycle(inst_);
         InitSelfTest(inst_);
         return S_OK;
     }
     HRESULT __stdcall Unload() override {
         UnsubscribeAll();
+        UnregisterLifecycle();
         if (inst_) {
             inst_->Release();
             inst_ = nullptr;
@@ -91,8 +94,25 @@ private:
 
 }  // namespace
 
+// duckdb.dll is delay-loaded (CMakeLists.txt): load it from this plug-in's folder so the delay-load
+// helper finds it already in the process.
+void PreloadDuckDb() {
+    HMODULE self = nullptr;
+    wchar_t path[MAX_PATH] = {};
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&PreloadDuckDb), &self) ||
+        !GetModuleFileNameW(self, path, MAX_PATH))
+        return;
+    wchar_t* slash = wcsrchr(path, L'\\');
+    if (!slash) return;
+    wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"duckdb.dll");
+    if (!LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH))
+        LogLine("pxc: could not load duckdb.dll next to the plug-in (error %lu)", GetLastError());
+}
+
 extern "C" HRESULT __stdcall PXCE_GetPlugin(ULONG apiVersion, void*, IPXV_Plugin** plugin) {
     LogLine("pxc: PXCE_GetPlugin api=0x%08lx", apiVersion);
+    PreloadDuckDb();
     if (!plugin) return E_POINTER;
     *plugin = new SmartMarkupPlugin();
     return S_OK;
