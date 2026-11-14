@@ -4,9 +4,16 @@
 param(
     [string]$BuildDir = (Join-Path $PSScriptRoot "..\build\pdfxchange\Release"),
     [string]$PluginsDir = "C:\Program Files\Tracker Software\PDF Editor\Plugins.x64",
-    [string]$User = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    # The DESKTOP user (owner of explorer.exe), not the elevated identity: with a separate admin account
+    # (e.g. DOMAIN\user.b) the elevated identity is the wrong one to grant.
+    [string]$User = ""
 )
 $ErrorActionPreference = "Stop"
+if (-not $User) {
+    $shell = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
+    $owner = Invoke-CimMethod -InputObject $shell -MethodName GetOwner
+    $User = "$($owner.Domain)\$($owner.User)"
+}
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {

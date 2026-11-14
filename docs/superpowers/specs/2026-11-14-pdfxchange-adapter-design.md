@@ -53,6 +53,25 @@ stays in the tree, shelved until Acrobat Pro starts reliably.
   without admin. (My call; the alternative is an admin copy per rebuild.) Editor must be closed to
   replace them.
 
+## Confirmed at runtime (2026-11-14, Editor Plus 10.8.4)
+
+- **Events** (probe session, all fired from `IPXV_Document` unless noted): open =
+  `e.document.initialized` → `e.document.viewingStarted` → `e.document.activated`; markups =
+  `e.annots.inserted` / `e.annots.changed` / `e.annots.deleted`; save = `e.document.beforeSave` →
+  `e.document.savePerformed` → `e.document.afterSave` (Param1 = HRESULT); clicks =
+  `e.pagesView.mouse` from `IPXV_PagesView`, Param1 = `WM_LBUTTONDOWN` (0x201), Param2 = `IUIX_Event`.
+  Close events not yet observed.
+- **Content walk:** read-only content is **flat** — `BMC/BDC … EMC` arrive as
+  `CIT_BeginContainer` / `CIT_EndContainer` items (1241 pairs on Snowdon A101), not nested
+  `CIT_Container`s. The walk keeps a stack of open containers.
+- **Element map vs fixture:** 1099/1099 ids, built in ~60 ms; median box difference 0.12 pt,
+  90th percentile 0.9 pt. 78 text-based annotation elements (wall/room tags, generic annotations,
+  dimensions) differ by up to 6.6 pt because PDF-XChange measures glyph boxes (and stroke width)
+  where the pdfplumber fixture measures character boxes and bare paths. Accepted: linking uses a
+  50 % overlap rule, so a few points do not change results.
+- **Dev install:** the one-time admin script must grant the *desktop* user (owner of
+  `explorer.exe`), not the elevated identity — with a separate admin account they differ.
+
 ## Risks
 
 - The SDK wiki is old and thin; event names, content-item bbox semantics and name-tree write calls

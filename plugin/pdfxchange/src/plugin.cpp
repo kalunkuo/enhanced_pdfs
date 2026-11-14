@@ -5,6 +5,7 @@
 #include "events.h"
 #include "log.h"
 #include "pxv.h"
+#include "selftest.h"
 
 namespace {
 
@@ -64,7 +65,9 @@ public:
     HRESULT __stdcall FinalizeRegistering() override { return S_OK; }
     HRESULT __stdcall Init() override {
         LogLine("pxc: init");
-        SubscribeProbe(inst_);  // X0: learn which events fire, in which order
+        char probe[8] = {};
+        if (GetEnvironmentVariableA("SMARTMARKUP_PROBE", probe, sizeof probe) > 0) SubscribeProbe(inst_);
+        InitSelfTest(inst_);
         return S_OK;
     }
     HRESULT __stdcall Unload() override {
