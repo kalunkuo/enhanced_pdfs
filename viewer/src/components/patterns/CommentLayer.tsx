@@ -50,6 +50,12 @@ export function CommentLayer(props: CommentLayerProps) {
     const { page, zoom } = props;
     const [drag, setDrag] = useState<Drag | null>(null);
     const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean } | null>(null);
+    // The drop reads this ref, not `drag`: a quick flick can release before React re-renders the last move.
+    const dragRef = useRef<Drag | null>(null);
+    const updateDrag = (next: Drag | null) => {
+        dragRef.current = next;
+        setDrag(next);
+    };
 
     // Escape puts a dragged pin back where it was.
     useEffect(() => {
@@ -57,7 +63,7 @@ export function CommentLayer(props: CommentLayerProps) {
         const esc = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
             press.current = null;
-            setDrag(null);
+            updateDrag(null);
             props.onDragTarget(null, { x: 0, y: 0 });
         };
         window.addEventListener('keydown', esc);
@@ -67,7 +73,7 @@ export function CommentLayer(props: CommentLayerProps) {
     const begin = (event: ReactPointerEvent<HTMLDivElement>, comment: Annotation) => {
         if (event.button !== 0) return;
         event.stopPropagation();
-        event.currentTarget.setPointerCapture(event.pointerId);
+        try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false };
     };
     const move = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -79,7 +85,7 @@ export function CommentLayer(props: CommentLayerProps) {
         p.moved = true;
         const at: Point = [clamp(p.start[0] + dx / zoom, page.width), clamp(p.start[1] + dy / zoom, page.height)];
         const key = props.pick(at);
-        setDrag({ id: p.id, at, key });
+        updateDrag({ id: p.id, at, key });
         props.onDragTarget(key, { x: event.clientX, y: event.clientY });
     };
     const end = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -87,15 +93,16 @@ export function CommentLayer(props: CommentLayerProps) {
         press.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         if (!p) return;
-        if (p.moved && drag) props.onMove(p.id, drag.at);
+        const last = dragRef.current;
+        if (p.moved && last) props.onMove(p.id, last.at);
         else props.onSelect(p.id);
-        setDrag(null);
+        updateDrag(null);
         props.onDragTarget(null, { x: 0, y: 0 });
     };
     const cancel = (event: ReactPointerEvent<HTMLDivElement>) => {
         press.current = null;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-        setDrag(null);
+        updateDrag(null);
         props.onDragTarget(null, { x: 0, y: 0 });
     };
 

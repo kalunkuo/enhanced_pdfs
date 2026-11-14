@@ -69,6 +69,12 @@ export function MarkupLayer(props: MarkupLayerProps) {
     const [leaderPreview, setLeaderPreview] = useState<{ from: Point; to: Point } | null>(null);
     const movePress = useRef<{ id: string; part: MovePart; x: number; y: number; from: Point; to: Point; moved: boolean } | null>(null);
     const [moving, setMoving] = useState<Moving | null>(null);
+    // The drop reads this ref, not `moving`: a quick flick can release before React re-renders the last move.
+    const movingRef = useRef<Moving | null>(null);
+    const updateMoving = (next: Moving | null) => {
+        movingRef.current = next;
+        setMoving(next);
+    };
 
     const updateDraft = (next: Draft | null) => {
         draftRef.current = next;
@@ -88,7 +94,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
         textPress.current = null;
         setLeaderPreview(null);
         movePress.current = null;
-        setMoving(null);
+        updateMoving(null);
     }, [page, tool]);
 
     // Escape puts a dragged text box back where it was.
@@ -97,7 +103,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
         const esc = (e: KeyboardEvent) => {
             if (e.key !== 'Escape') return;
             movePress.current = null;
-            setMoving(null);
+            updateMoving(null);
             props.onDragTarget(null, { x: 0, y: 0 });
         };
         window.addEventListener('keydown', esc);
@@ -126,7 +132,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
             const from = drag.part === 'tip' ? drag.from : shift(drag.from);
             const to = drag.part === 'box' ? drag.to : shift(drag.to);
             const key = props.pick(to);
-            setMoving({ id: drag.id, from, to, key });
+            updateMoving({ id: drag.id, from, to, key });
             props.onDragTarget(key, { x: event.clientX, y: event.clientY });
             return;
         }
@@ -164,7 +170,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
     const beginMove = (event: ReactPointerEvent<SVGElement>, a: Annotation, part: 'box' | 'tip') => {
         if (event.button !== 0) return;
         event.stopPropagation();
-        event.currentTarget.setPointerCapture?.(event.pointerId);
+        try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         const leaderless = !hasLeader(a);
         movePress.current = { id: a.id, part: leaderless ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
     };
@@ -186,8 +192,9 @@ export function MarkupLayer(props: MarkupLayerProps) {
         const drag = movePress.current;
         if (drag) {
             movePress.current = null;
-            if (drag.moved && moving) props.onMoveAnnotation(drag.id, { from: moving.from, to: moving.to });
-            setMoving(null);
+            const last = movingRef.current;
+            if (drag.moved && last) props.onMoveAnnotation(drag.id, { from: last.from, to: last.to });
+            updateMoving(null);
             props.onDragTarget(null, { x: 0, y: 0 });
             return;
         }
@@ -222,7 +229,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 onPointerMove={onMove}
                 onPointerDown={onDown}
                 onPointerUp={onUp}
-                onPointerCancel={() => { updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; setMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
+                onPointerCancel={() => { updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; updateMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
                 onClick={onClick}
                 onPointerLeave={() => !draftRef.current && props.onElementLeave()}
             >
