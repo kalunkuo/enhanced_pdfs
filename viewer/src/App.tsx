@@ -11,7 +11,7 @@ import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/
 import { Button } from './components/ui/Button';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { UploadIcon } from './components/ui/icons';
-import { tieCloud, type BoundsSource } from './lib/cloud';
+import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -390,6 +390,7 @@ export function App() {
                             }}
                             onAddAnnotation={addAnnotation}
                             onMoveAnnotation={moveAnnotation}
+                            coverOf={(cloud) => elementsInCloud(cloud, regionSources)}
                             onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
                             commentLayer={{
                                 selectedId: selectedAnnotationId,

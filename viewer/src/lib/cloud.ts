@@ -122,3 +122,15 @@ export function tieCloud<T extends Annotation>(a: T, sources: readonly BoundsSou
     const { elementKey: _previous, contained: _old, ...rest } = a;
     return { ...rest, ...(contained.length ? { elementKey: contained[0]!.key, contained } : {}) } as T;
 }
+
+/**
+ * Limit a drag so every corner stays on the page. The same shift applies to all of them, so a cloud keeps its
+ * size and shape against a page edge instead of being squashed.
+ */
+export function clampShift(corners: readonly Point[], dx: number, dy: number, width: number, height: number): [number, number] {
+    const minX = Math.min(...corners.map((p) => p[0]));
+    const maxX = Math.max(...corners.map((p) => p[0]));
+    const minY = Math.min(...corners.map((p) => p[1]));
+    const maxY = Math.max(...corners.map((p) => p[1]));
+    return [Math.min(width - maxX, Math.max(-minX, dx)), Math.min(height - maxY, Math.max(-minY, dy))];
+}

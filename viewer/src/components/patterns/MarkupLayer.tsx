@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { cloudRect, cloudSvgPath } from '../../lib/cloud';
+import { clampShift, cloudRect, cloudSvgPath } from '../../lib/cloud';
 import { anchorHandle, defaultBoxOrigin, hasLeader, leaderSegment, textBox } from '../../lib/callout';
 import type { Tool } from '../../lib/presentation';
-import type { Annotation, PageData, Point } from '../../lib/types';
+import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
 
 type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen' | 'cloud';
 type NoteTool = 'text' | 'signature';
@@ -11,7 +11,7 @@ type Draft = { kind: DrawingTool; from: Point; to: Point; points?: Point[] };
 type Editor = { kind: NoteTool; at: Point; tip?: Point; value: string };
 /** A text box being dragged: `box` moves its text, `tip` moves its leader, `both` moves a box that has no leader. */
 type MovePart = 'box' | 'tip' | 'both';
-type Moving = { id: string; from: Point; to: Point; key: string | null };
+type Moving = { id: string; from: Point; to: Point; key: string | null; /** For a cloud: what it would cover if dropped here. */ contained?: ContainedElement[] };
 
 export interface MarkupLayerProps {
     page: Pick<PageData, 'number' | 'width' | 'height'>;
@@ -35,6 +35,8 @@ export interface MarkupLayerProps {
     onDragTarget: (key: string | null, client: { x: number; y: number }) => void;
     /** A text box was dropped; the caller re-ties it to whatever its tip is over. */
     onMoveAnnotation: (id: string, patch: { from: Point; to: Point }) => void;
+    /** The elements a cloud with these corners would cover, so a moving cloud can show its count live. */
+    coverOf: (a: Pick<Annotation, 'from' | 'to'>) => ContainedElement[];
     /** Element highlights render below the markup content in the shared SVG. */
     children?: ReactNode;
 }
@@ -129,9 +131,18 @@ export function MarkupLayer(props: MarkupLayerProps) {
             const origin = toPage({ clientX: drag.x, clientY: drag.y });
             const dx = point[0] - origin[0];
             const dy = point[1] - origin[1];
-            const shift = (p: Point): Point => [clamp(p[0] + dx, page.width), clamp(p[1] + dy, page.height)];
+            // Moving a whole shape shifts every corner by the same clamped amount, so it keeps its size at the page edge.
+            const [sx, sy] = drag.part === 'both' ? clampShift([drag.from, drag.to], dx, dy, page.width, page.height) : [dx, dy];
+            const shift = (p: Point): Point => (drag.part === 'both' ? [p[0] + sx, p[1] + sy] : [clamp(p[0] + dx, page.width), clamp(p[1] + dy, page.height)]);
             const from = drag.part === 'tip' ? drag.from : shift(drag.from);
             const to = drag.part === 'box' ? drag.to : shift(drag.to);
+            if (annotations.find((a) => a.id === drag.id)?.kind === 'cloud') {
+                // A cloud ties to what it covers, so show that as it moves instead of the object under a point.
+                const contained = props.coverOf({ from, to });
+                updateMoving({ id: drag.id, from, to, key: contained[0]?.key ?? null, contained });
+                props.onDragTarget(null, { x: event.clientX, y: event.clientY });
+                return;
+            }
             const key = props.pick(to);
             updateMoving({ id: drag.id, from, to, key });
             props.onDragTarget(key, { x: event.clientX, y: event.clientY });
@@ -168,12 +179,12 @@ export function MarkupLayer(props: MarkupLayerProps) {
         }
     };
 
-    const beginMove = (event: ReactPointerEvent<SVGElement>, a: Annotation, part: 'box' | 'tip') => {
+    const beginMove = (event: ReactPointerEvent<SVGElement>, a: Annotation, part: 'box' | 'tip' | 'body') => {
         if (event.button !== 0) return;
         event.stopPropagation();
         try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         const leaderless = !hasLeader(a);
-        movePress.current = { id: a.id, part: leaderless && part === 'box' ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
+        movePress.current = { id: a.id, part: part === 'body' || (leaderless && part === 'box') ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
     };
 
     // Opening on click avoids the trailing pointer-down focus change closing
@@ -242,7 +253,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 {annotations.filter((annotation) => annotation.kind !== 'comment').map((stored) => {
                     // While a text box is dragged it follows the pointer and shows the tie it would get.
                     const live = moving?.id === stored.id;
-                    const annotation = live ? { ...stored, from: moving.from, to: moving.to } : stored;
+                    const annotation = live ? { ...stored, from: moving.from, to: moving.to, ...(moving.contained ? { contained: moving.contained } : {}) } : stored;
                     const key = live ? moving.key : (stored.elementKey ?? null);
                     return (
                     <AnnotationShape
@@ -303,7 +314,7 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
     label?: string;
     onClick?: () => void;
     /** A press on a draggable part of a text box. */
-    onPart?: (event: ReactPointerEvent<SVGElement>, part: 'box' | 'tip') => void;
+    onPart?: (event: ReactPointerEvent<SVGElement>, part: 'box' | 'tip' | 'body') => void;
 }) {
     const tied = tiedProp ?? a.elementKey !== undefined;
     const color = a.id === 'draft' || tied ? 'var(--color-annotation-tied)' : 'var(--color-annotation-untied)';
@@ -326,7 +337,14 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
         body = <ellipse cx={(x0 + x1) / 2} cy={(y0 + y1) / 2} rx={Math.abs(x1 - x0) / 2} ry={Math.abs(y1 - y0) / 2} {...common} />;
     } else if (a.kind === 'cloud') {
         const rect = cloudRect(a);
-        body = <path d={cloudSvgPath(rect)} {...common} strokeLinejoin="round" />;
+        const d = cloudSvgPath(rect);
+        body = (
+            <g>
+                <path d={d} {...common} strokeLinejoin="round" />
+                {/* A wide invisible outline to grab: the inside stays free for picking the objects under the cloud. */}
+                {interactive && <path d={d} fill="none" stroke="transparent" strokeWidth={14} strokeLinejoin="round" pointerEvents="stroke" style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, 'body')} />}
+            </g>
+        );
         chipAt = [rect[0], rect[1] - 10];
     } else if (a.kind === 'pen') {
         const points = a.points ?? [];
@@ -381,11 +399,11 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
             {a.id !== 'draft' && (
                 <>
                     {/* The label belongs to the text box, so pressing it drags the box too. */}
-                    {a.kind === 'text' && interactive && (
+                    {(a.kind === 'text' || a.kind === 'cloud') && interactive && (
                         <rect x={chipAt[0] - 3} y={chipAt[1] - 11} width={chip.length * 5.2 + 8} height={15} fill="transparent"
-                            style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, 'box')} />
+                            style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, a.kind === 'cloud' ? 'body' : 'box')} />
                     )}
-                    <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'} pointerEvents={a.kind === 'text' ? 'none' : undefined}>{chip}</text>
+                    <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'} pointerEvents={a.kind === 'text' || a.kind === 'cloud' ? 'none' : undefined}>{chip}</text>
                 </>
             )}
         </g>

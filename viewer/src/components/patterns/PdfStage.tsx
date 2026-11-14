@@ -2,7 +2,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createShapePicker } from '../../lib/hit';
 import { clampZoom, type ElementPicker, type PagePresentation, type RenderCaptureFactory, type Tool, type ZoomMode } from '../../lib/presentation';
-import type { Annotation, PageData, Point } from '../../lib/types';
+import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
 import { CommentLayer, type CommentLayerProps } from './CommentLayer';
 import { ElementOverlay } from './ElementOverlay';
 import { MarkupLayer } from './MarkupLayer';
@@ -37,6 +37,8 @@ interface Props {
     onStartComment: (point: Point) => void;
     /** A text box was dropped after a drag; the app re-ties it to whatever its leader tip is over. */
     onMoveAnnotation: (id: string, patch: { from: Point; to: Point }) => void;
+    /** The elements a revision cloud with these corners would cover. */
+    coverOf: (a: Pick<Annotation, 'from' | 'to'>) => ContainedElement[];
     pickElement?: ElementPicker;
     createCapture?: RenderCaptureFactory;
     onPresentation?: (presentation: PagePresentation) => void;
@@ -178,6 +180,7 @@ export function PdfStage(props: Props) {
                     // Comment pins and text boxes highlight their drop target the same way.
                     onDragTarget={props.commentLayer.onDragTarget}
                     onMoveAnnotation={props.onMoveAnnotation}
+                    coverOf={props.coverOf}
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} drawingIds={props.drawingIds} />
                 </MarkupLayer>

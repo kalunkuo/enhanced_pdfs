@@ -97,3 +97,25 @@ describe('tying a cloud', () => {
         expect(after.contained).toBeUndefined();
     });
 });
+
+import { clampShift } from '../src/lib/cloud';
+
+describe('moving a cloud', () => {
+    const corners: Point[] = [[100, 100], [260, 180]];
+    it('passes a drag through when it stays on the page', () => {
+        expect(clampShift(corners, 30, -20, 792, 612)).toEqual([30, -20]);
+    });
+    it('stops at each edge without changing the cloud size', () => {
+        expect(clampShift(corners, -500, 0, 792, 612)).toEqual([-100, 0]); // left edge
+        expect(clampShift(corners, 900, 0, 792, 612)).toEqual([792 - 260, 0]); // right edge
+        expect(clampShift(corners, 0, -500, 792, 612)).toEqual([0, -100]); // top edge
+        expect(clampShift(corners, 0, 900, 792, 612)).toEqual([0, 612 - 180]); // bottom edge
+    });
+    it('changes which objects it covers as it moves', () => {
+        const sources = [{ elementKey: 'a', bounds: [120, 120, 160, 130] as const }, { elementKey: 'b', bounds: [400, 120, 440, 130] as const }];
+        const at = (dx: number) => elementsInCloud({ from: [100 + dx, 100], to: [260 + dx, 180] }, sources).map((e) => e.key);
+        expect(at(0)).toEqual(['a']);
+        expect(at(300)).toEqual(['b']);
+        expect(at(100)).toEqual([]); // x 200..360: between the two
+    });
+});
