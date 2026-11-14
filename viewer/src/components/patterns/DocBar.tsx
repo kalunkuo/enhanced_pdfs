@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { IconButton } from '../ui/Button';
+import { Button, IconButton } from '../ui/Button';
 import { Logo } from '../ui/Logo';
-import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon } from '../ui/icons';
+import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon, UploadIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -21,11 +21,15 @@ interface Props {
     onZoomMode: (m: ZoomMode) => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
-    /** Right-aligned content on the same row: file name, upload, profile. */
-    trailing?: ReactNode;
+    onUpload: () => void;
+    onOpenDemo: () => void;
+    /** File name and status, shown before the upload buttons. */
+    info?: ReactNode;
+    /** Your profile, shown after the upload buttons. */
+    account?: ReactNode;
 }
 
-/** The document bar: save, print, pages, select and pan, zoom. Laid out like Acrobat's. */
+/** The document bar: save, print, pages, select and pan, zoom, then demo and upload at the far right. Laid out like Acrobat's. */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
@@ -44,7 +48,11 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom out" disabled={p.disabled} onClick={p.onZoomOut}><MinusIcon /></IconButton>
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
-            {p.trailing && <div className="trailing">{p.trailing}</div>}
+            <span className="docbar-spacer" />
+            {p.info && <div className="docbar-info">{p.info}</div>}
+            <Button variant="ghost" onClick={p.onOpenDemo}>Open demo drawing</Button>
+            <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
+            {p.account}
         </div>
     );
 }

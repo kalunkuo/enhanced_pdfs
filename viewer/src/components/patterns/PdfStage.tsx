@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createShapePicker } from '../../lib/hit';
 import { clampZoom, type ElementPicker, type PagePresentation, type RenderCaptureFactory, type Tool, type ZoomMode } from '../../lib/presentation';
 import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
@@ -77,6 +77,50 @@ export function PdfStage(props: Props) {
     useEffect(() => {
         onZoom(zoom);
     }, [zoom, onZoom]);
+
+    // Two-finger scroll (and pinch, which browsers report as ctrl+wheel) zooms around the cursor.
+    const zoomRef = useRef(zoom);
+    const anchorRef = useRef<{ clientX: number; clientY: number; fx: number; fy: number } | null>(null);
+    const onZoomModeRef = useRef(props.onZoomMode);
+    onZoomModeRef.current = props.onZoomMode;
+    useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+    useEffect(() => {
+        const element = wrapRef.current;
+        if (!element) return;
+        const onWheel = (event: WheelEvent) => {
+            const setMode = onZoomModeRef.current;
+            const pageEl = pageRef.current;
+            if (!setMode || !pageEl) return;
+            event.preventDefault();
+            const lineScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1;
+            const delta = event.deltaY * lineScale;
+            if (!delta) return;
+            const sensitivity = event.ctrlKey ? 0.01 : 0.0025;
+            const next = clampZoom(zoomRef.current * Math.exp(-delta * sensitivity));
+            if (next === zoomRef.current) return;
+            const rect = pageEl.getBoundingClientRect();
+            anchorRef.current = {
+                clientX: event.clientX,
+                clientY: event.clientY,
+                fx: rect.width ? (event.clientX - rect.left) / rect.width : 0.5,
+                fy: rect.height ? (event.clientY - rect.top) / rect.height : 0.5,
+            };
+            zoomRef.current = next;
+            setMode({ kind: 'value', value: next });
+        };
+        element.addEventListener('wheel', onWheel, { passive: false });
+        return () => element.removeEventListener('wheel', onWheel);
+    }, []);
+    useLayoutEffect(() => {
+        const anchor = anchorRef.current;
+        const element = wrapRef.current;
+        const pageEl = pageRef.current;
+        if (!anchor || !element || !pageEl) return;
+        anchorRef.current = null;
+        const rect = pageEl.getBoundingClientRect();
+        element.scrollLeft += rect.left + anchor.fx * rect.width - anchor.clientX;
+        element.scrollTop += rect.top + anchor.fy * rect.height - anchor.clientY;
+    }, [zoom]);
     useEffect(() => {
         panRef.current = null;
         setPanning(false);

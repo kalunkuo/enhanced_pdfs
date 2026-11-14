@@ -8,7 +8,9 @@ button, input { font: inherit; color: inherit; }
 .header { display: flex; align-items: center; gap: var(--primitive-space-3); padding: var(--primitive-space-2) var(--space-panel-padding); background: var(--color-surface);
     border-bottom: var(--primitive-border-1) solid var(--color-border); flex-wrap: wrap; }
 .header h1 { margin: 0 var(--primitive-space-2) 0 0; }
-.file-name { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+.header .ui-action-button, .docbar .ui-action-button { min-height: var(--toolbar-action-height); padding: 0 var(--primitive-space-3); }
+/* Pinned to the header's right edge. */
+.file-name { margin-left: auto; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 
 /* The zoom menu trigger retains its existing behavior and uses shared control values. */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--control-gap); min-height: var(--control-height); padding: 0 var(--control-inline-padding);
@@ -19,8 +21,9 @@ button, input { font: inherit; color: inherit; }
 .viewer-notices { display: grid; gap: var(--primitive-space-2); padding: var(--primitive-space-2) var(--space-panel-padding); background: var(--color-canvas); }
 .viewer-notices:empty { padding: 0; }
 
-.main { display: grid; grid-template-columns: minmax(0, 1fr) var(--viewer-side-width); min-height: 0; border-top: var(--primitive-border-1) solid var(--color-border); }
-@media (max-width: 860px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; } }
+/* Always the last (1fr) row, even when the notices row is hidden. */
+.main { grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; border-top: var(--primitive-border-1) solid var(--color-border); }
+@media (max-width: 860px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; } .side { min-width: 0; } }
 
 .stage-wrap { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--color-canvas); }
 .stage { overflow: auto; scrollbar-gutter: stable; padding: var(--primitive-space-4) calc(var(--viewer-rail-width) + var(--primitive-space-8) + var(--primitive-space-1)) var(--primitive-space-4) var(--primitive-space-4); min-height: 0; flex: 1; position: relative; }
@@ -40,6 +43,10 @@ button, input { font: inherit; color: inherit; }
     border: 1px solid var(--color-control-border); background: var(--color-canvas); color: var(--color-text); box-shadow: var(--viewer-shadow-md); }
 .note-input.signature { height: 44px; font: italic 22px 'Snell Roundhand','Segoe Script','Brush Script MT',cursive; }
 
+/* File open dialog: compact type. */
+.load-dialog .ui-dialog-content h2 { margin-bottom: var(--primitive-space-1); }
+.load-dialog .ui-dialog-content p { font-size: var(--text-label-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Popover / HoverCard */
 .hover-card { position: fixed; z-index: 10; pointer-events: none; padding: 12px 14px; max-width: 280px;
     background: var(--menu-background); color: var(--color-text); border: 1px solid var(--color-border);
@@ -48,14 +55,23 @@ button, input { font: inherit; color: inherit; }
 .muted { color: var(--color-text-muted); }
 .hover-card .muted { font-size: var(--primitive-font-size-xs); }
 
-.side { display: flex; flex-direction: column; min-height: 0; background: var(--color-surface); border-left: var(--primitive-border-1) solid var(--color-border); }
+/* Only the segmented control sizes the inspector; panel content is contained so long values wrap instead of widening it. */
+.side { display: flex; flex-direction: column; min-width: var(--viewer-side-min-width); min-height: 0; background: var(--color-surface); border-left: var(--primitive-border-1) solid var(--color-border); }
 /* Tabs */
-.tabs { display: flex; gap: 2px; margin: 12px 16px; padding: 4px; background: var(--color-surface-raised); border-radius: var(--radius-control); }
-.tab { flex: 1; min-height: var(--menu-item-height); border: 0; border-radius: var(--menu-radius); background: none; cursor: pointer;
-    color: var(--color-text-muted); font-weight: var(--primitive-font-weight-medium); white-space: nowrap; transition: background-color var(--button-transition-duration) var(--ease-interaction), color var(--button-transition-duration) var(--ease-interaction); }
+.tabs { position: relative; isolation: isolate; display: flex; gap: var(--segmented-gap); margin: 12px 16px; padding: var(--segmented-padding);
+    background: var(--segmented-background); border-radius: var(--radius-control); }
+/* Segments start at label plus --segmented-indicator-inset each side, then grow to fill the track; the indicator matches the selected segment. */
+.tabs::before { content: ''; position: absolute; z-index: -1; top: var(--segmented-padding); bottom: var(--segmented-padding); left: 0;
+    width: var(--indicator-w, 0); transform: translateX(var(--indicator-x, 0)); opacity: 0;
+    border-radius: var(--menu-radius); background: var(--segmented-indicator-background); }
+.tabs[data-indicator]::before { opacity: 1; }
+.tabs[data-indicator='ready']::before { transition: transform var(--segmented-slide-duration) var(--segmented-slide-easing), width var(--segmented-slide-duration) var(--segmented-slide-easing); }
+.tab { flex: 1 0 auto; min-height: var(--menu-item-height); padding: 0 var(--segmented-indicator-inset); font-size: var(--text-label-size); border: 0; border-radius: var(--menu-radius); background: none; cursor: pointer;
+    color: var(--color-text-muted); font-weight: var(--primitive-font-weight-medium); white-space: nowrap; transition: color var(--segmented-slide-duration) var(--segmented-slide-easing); }
 .tab:hover { color: var(--color-text); }
-.tab[aria-selected='true'] { background: var(--menu-active-background); color: var(--menu-active-foreground); }
-.panel { overflow: auto; flex: 1; min-height: 0; border-top: 1px solid var(--color-border); }
+.tab[aria-selected='true'] { color: var(--segmented-indicator-foreground); }
+@media (prefers-reduced-motion: reduce) { .tabs::before, .tab { transition-duration: .01ms; } }
+.panel { overflow: auto; flex: 1; min-height: 0; contain: inline-size; border-top: 1px solid var(--color-border); }
 .panel-empty { padding: 16px; color: var(--color-text-muted); }
 
 /* Properties: header card, then Revit-style grouped rows */
@@ -91,11 +107,11 @@ button, input { font: inherit; color: inherit; }
 
 /* Vertical tool rail, anchored to the right edge of the page area like Acrobat's. */
 .vtoolbar { position: absolute; top: var(--primitive-space-4); right: var(--primitive-space-4); z-index: 5; width: var(--viewer-rail-width); display: flex; flex-direction: column; align-items: center;
-    gap: var(--toolbar-gap); padding: 0 0 var(--primitive-space-2); background: var(--color-surface); border: var(--primitive-border-1) solid var(--color-border); border-radius: var(--radius-control); box-shadow: var(--viewer-shadow-md); }
-.vtoolbar .grip { width: 100%; height: 8px; background: var(--color-surface-raised); border-radius: var(--radius-control) var(--radius-control) 0 0; margin-bottom: 4px; }
+    gap: var(--toolbar-gap); padding: 0 var(--toolbar-padding) var(--toolbar-padding); background: var(--color-surface); border: var(--primitive-border-1) solid var(--color-border); border-radius: var(--radius-control); box-shadow: var(--viewer-shadow-md); }
+.vtoolbar .grip { width: calc(100% + 2 * var(--toolbar-padding)); height: var(--toolbar-padding); margin: 0 calc(-1 * var(--toolbar-padding)); background: var(--color-surface-raised); border-radius: var(--radius-control) var(--radius-control) 0 0; }
 .vtoolbar .icon-button { width: var(--button-icon-size); height: var(--button-icon-size); }
 .tool-slot { position: relative; }
-.corner { position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; padding: 0; border: 0; cursor: pointer; border-bottom-right-radius: var(--radius-control);
+.corner { position: absolute; right: 1px; bottom: 1px; width: 6px; height: 6px; padding: 0; border: 0; cursor: pointer; border-bottom-right-radius: var(--radius-control);
     background: linear-gradient(135deg, transparent 50%, var(--color-text-muted) 50%); }
 .corner:hover:not(:disabled) { background: linear-gradient(135deg, transparent 50%, var(--color-text) 50%); }
 .corner:disabled { opacity: 0.4; cursor: default; }
@@ -103,7 +119,7 @@ button, input { font: inherit; color: inherit; }
     color: var(--color-text); border: var(--primitive-border-1) solid var(--color-control-border); border-radius: var(--menu-radius); box-shadow: var(--viewer-shadow-md); transform-origin: calc(100% + 20px) var(--primitive-space-3); animation: viewer-menu-in var(--menu-transition-duration) var(--ease-enter) both; }
 .flyout.column { flex-direction: column; min-width: 232px; gap: 0; }
 .flyout .icon-button { width: var(--button-icon-size); height: var(--button-icon-size); }
-.swatch { width: 26px; height: 26px; margin: 4px; border-radius: 50%; border: 2px solid var(--menu-background); cursor: pointer; box-shadow: 0 0 0 1px var(--color-border); }
+.swatch { width: var(--button-icon-size); height: var(--button-icon-size); margin: 0; border-radius: 50%; border: 2px solid var(--menu-background); cursor: pointer; box-shadow: 0 0 0 1px var(--color-border); }
 .swatch[aria-checked='true'] { box-shadow: 0 0 0 2px var(--color-focus-ring); }
 /* DropdownMenuItem */
 .menu-item { display: flex; align-items: center; gap: var(--menu-item-gap); min-height: var(--menu-item-height); padding: var(--primitive-space-2); border: 0; background: none; border-radius: var(--menu-radius);
@@ -127,14 +143,15 @@ button, input { font: inherit; color: inherit; }
 .status { color: var(--color-text-muted); font-size: var(--text-label-size); }
 
 /* Document bar */
-.docbar { display: flex; align-items: center; gap: var(--toolbar-gap); padding: var(--primitive-space-2) var(--space-panel-padding); background: var(--color-surface); border-bottom: var(--primitive-border-1) solid var(--color-border); flex-wrap: wrap; }
-.docbar .sep { width: 1px; align-self: stretch; margin: 6px 8px; background: var(--color-border); }
-.page-ctl { display: inline-flex; align-items: center; gap: 8px; padding: 0 4px; white-space: nowrap; }
-.page-input { width: 52px; height: var(--control-height); padding: 0 var(--primitive-space-2); text-align: center; border-radius: var(--control-radius); border: var(--primitive-border-1) solid var(--control-border);
+.docbar { display: flex; align-items: center; gap: var(--toolbar-gap); padding: var(--docbar-padding-block) var(--space-panel-padding); background: var(--color-surface); border-bottom: var(--primitive-border-1) solid var(--color-border); flex-wrap: wrap; }
+.docbar .sep { width: 1px; height: var(--toolbar-control-height); margin: 0 var(--toolbar-separator-inset); background: var(--color-border); }
+.docbar-spacer { flex: 1; }
+.page-ctl { display: inline-flex; align-items: center; gap: var(--toolbar-gap); white-space: nowrap; font-size: var(--text-label-size); }
+.page-input { width: 40px; height: var(--toolbar-control-height); padding: 0 var(--primitive-space-1); font-size: var(--text-label-size); text-align: center; border-radius: var(--control-radius); border: var(--primitive-border-1) solid var(--control-border);
     background: var(--control-background); font-variant-numeric: tabular-nums; }
 .page-input:disabled { opacity: 0.5; }
 .zoom-menu { position: relative; }
-.zoom-btn { min-height: var(--control-height); padding: 0 var(--control-inline-padding); min-width: 76px; justify-content: space-between; box-shadow: none; font-variant-numeric: tabular-nums; }
+.zoom-btn { min-height: 0; height: var(--toolbar-control-height); padding: 0 var(--primitive-space-1) 0 var(--primitive-space-2); gap: var(--primitive-space-1); min-width: 64px; justify-content: space-between; box-shadow: none; font-size: var(--text-label-size); font-variant-numeric: tabular-nums; }
 .zoom-btn svg { width: 14px; height: 14px; color: var(--color-text-muted); }
 .dropdown { position: absolute; top: calc(100% + var(--primitive-space-1)); left: 0; z-index: 20; min-width: 160px; padding: var(--menu-padding); background: var(--menu-background); color: var(--color-text);
     border: var(--primitive-border-1) solid var(--color-control-border); border-radius: var(--menu-radius); box-shadow: var(--viewer-shadow-md); transform-origin: var(--primitive-space-4) calc(-1 * var(--primitive-space-4)); animation: viewer-menu-in var(--menu-transition-duration) var(--ease-enter) both; }
@@ -155,7 +172,6 @@ button, input { font: inherit; color: inherit; }
 .tick svg { width: 14px; height: 14px; color: var(--color-text); }
 
 /* BIM controls are independent of the PDF raster and markup tools. */
-.geometry-status { padding: 10px 14px; border-bottom: 1px solid var(--color-border); font-size: var(--primitive-font-size-xs); color: var(--color-text-muted); }
 .filter-panel { padding: 12px; border-bottom: 1px solid var(--color-border); display: grid; gap: 10px; }
 .filter-panel .search { width: 100%; margin: 0; }
 .filter-counts, .result-count, .parameter-scope-note { color: var(--color-text-muted); font-size: var(--primitive-font-size-xs); margin: 0; }

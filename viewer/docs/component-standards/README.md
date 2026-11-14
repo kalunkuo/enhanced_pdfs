@@ -16,5 +16,7 @@ The files in this folder define reusable React/TypeScript viewer controls in `sr
 | Metadata rows | [metadata-rows.md](metadata-rows.md) | Inspector property reference |
 | Vertical navigation | [menubar.md](menubar.md) | Reusable navigation control |
 | Flyout menu | [flyout-menu.md](flyout-menu.md) | Menu visual and interaction reference |
+| Progress bar | [progress-bar.md](progress-bar.md) | File open dialog |
+| Segmented control | [segmented-control.md](segmented-control.md) | Inspector tabs (`SegmentedControl`) |
 
 For each component, verify resting, hover, focus, active, disabled, loading, empty, warning, and error states where applicable. Document an omitted state as intentionally unsupported. The functional viewer in `src/App.tsx` is the live composition; the former test gallery has been removed.

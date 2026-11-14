@@ -97,8 +97,8 @@
 .ccard textarea:focus-visible, .cname:focus-visible { box-shadow: none; }
 .cname:focus-visible { border-color: var(--comment); }
 /* Right side of the navigation bar: file name, upload, profile. */
-.docbar .trailing { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; padding-left: 12px; }
-.docbar .trailing .file-name { max-width: 28ch; }
+.docbar-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.docbar-info .file-name { max-width: 28ch; }
 /* Thread in the Notes panel */
 .thread { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: grid; gap: 10px; }
 .tmsg { display: flex; gap: 10px; }

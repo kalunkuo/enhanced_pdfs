@@ -96,20 +96,22 @@ export function buildAppearances(rows: readonly Row[]): AppearanceInfo[] {
 /** Attachment bytes keyed by file name, e.g. "elements.parquet". */
 export type Attachments = ReadonlyMap<string, Uint8Array>;
 
-export async function readTables(attachments: Attachments): Promise<{
+export async function readTables(attachments: Attachments, onTable?: (done: number, total: number) => void): Promise<{
     tables: Map<string, Row[]>;
     warnings: string[];
 }> {
     const tables = new Map<string, Row[]>();
     const warnings: string[] = [];
-    for (const [name, bytes] of attachments) {
-        if (!name.endsWith('.parquet')) continue;
+    const parquet = [...attachments].filter(([name]) => name.endsWith('.parquet'));
+    let done = 0;
+    for (const [name, bytes] of parquet) {
         try {
             const copy = bytes.slice().buffer as ArrayBuffer;
             tables.set(name.replace(/\.parquet$/, ''), (await parquetReadObjects({ file: copy, compressors })) as Row[]);
         } catch (e) {
             warnings.push(`Could not read ${name}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        onTable?.(++done, parquet.length);
     }
     return { tables, warnings };
 }

@@ -56,4 +56,7 @@
   --duration-menu-stagger: var(--primitive-duration-30);
   --ease-interaction: var(--primitive-ease-standard);
   --ease-enter: var(--primitive-ease-out);
+  --duration-slide: var(--primitive-duration-300);
+  --duration-reveal-app: var(--primitive-duration-1500);
+  --ease-slide: var(--primitive-ease-in-out);
 }
