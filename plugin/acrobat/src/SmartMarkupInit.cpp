@@ -78,3 +78,5 @@ ACCB1 ASBool ACCB2 PIHandshake(Uns32 handshakeVersion, void* handshakeData) {
     hs->unloadCallback = (void*)ASCallbackCreateProto(PIUnloadProcType, &PluginUnload);
     return true;
 }
+
+AVMenu SmartMarkupMenu() { return gMenu; }
