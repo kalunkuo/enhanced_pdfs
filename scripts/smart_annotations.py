@@ -34,7 +34,9 @@ import pymupdf
 SCHEMA_VERSION = 1
 ANNOTATIONS = "annotations.parquet"
 LINKS = "annotation-links.parquet"
-MARKER_KEY = "EP_SchemaVersion"  # custom key that identifies our annotations inside the PDF
+MARKER_KEY = "EP_SchemaVersion"  # custom key the PoC writes on its own clouds (the plug-in does not)
+# Markup subtypes the Acrobat plug-in links (spec: text highlights are out of scope).
+MARKUP_SUBTYPES = {"Square", "Circle", "Polygon", "PolyLine", "Line", "Ink", "FreeText", "Text"}
 TAG = re.compile(r"Element(\d+)$")
 
 ANNOTATION_SCHEMA = pa.schema([
@@ -189,16 +191,21 @@ def list_annotations(args) -> None:
     elements = {row["ElementKey"]: row for row in read_table(doc, "elements.parquet").to_pylist()}
     drawings = {row["DrawingId"]: row for row in read_table(doc, "drawings.parquet").to_pylist()}
 
+    # Markups are matched to rows by /NM (the plug-in writes no custom keys on markups).
     in_pdf = {}
     for page in doc:
         for annot in page.annots():
-            if doc.xref_get_key(annot.xref, MARKER_KEY)[0] != "null":
+            if annot.type[1] in MARKUP_SUBTYPES and annot.info.get("id"):
                 in_pdf[annot.info["id"]] = page.number + 1
 
     for a in annotations:
-        state = "ok" if a["AnnotationId"] in in_pdf else "ORPHAN (markup deleted from PDF)"
+        if a.get("Status") == "Deleted":
+            state = "DELETED"
+        else:
+            state = "ok" if a["AnnotationId"] in in_pdf else "ORPHAN (markup deleted from PDF)"
         view = drawings.get(a["DrawingId"], {}).get("Name", a["DrawingId"])
-        print(f"\n[{a['Kind']}] {a['AnnotationId']}  page {a['Page']}  view '{view}'  {a['Status']}  {state}")
+        subtype = f" {a['Subtype']}" if a.get("Subtype") else ""
+        print(f"\n[{a['Kind']}{subtype}] {a['AnnotationId']}  page {a['Page']}  view '{view}'  {state}")
         print(f"  {a['Author']}: {a['Text']}")
         for link in (l for l in links if l["AnnotationId"] == a["AnnotationId"]):
             e = elements.get(link["ElementKey"], {})
