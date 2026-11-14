@@ -4,7 +4,7 @@ namespace EnhancedPdfs;
 
 internal static class DrawingExport
 {
-    public static DrawingData Export(View view, string outputPath)
+    public static DrawingData Export(IReadOnlyList<View> views, string outputPath)
     {
         var directory = Path.GetDirectoryName(outputPath)
             ?? throw new ArgumentException("Choose a PDF output folder.", nameof(outputPath));
@@ -12,8 +12,8 @@ internal static class DrawingExport
         var stagingPath = Path.Combine(directory, $".enhanced-pdfs-{Guid.NewGuid():N}.tmp");
         try
         {
-            string nativePath = ExportNative(view, buffer.FullName);
-            var data = new DrawingCollector(view).Collect();
+            string nativePath = ExportNative(views, buffer.FullName);
+            var data = new DrawingCollector(views).Collect();
             // Run Parquet's async writer without capturing Revit's UI synchronization context.
             Task.Run(() => PdfEnrichment.Write(nativePath, stagingPath, data)).GetAwaiter().GetResult();
             File.Move(stagingPath, outputPath, overwrite: true);
@@ -26,9 +26,10 @@ internal static class DrawingExport
         }
     }
 
-    internal static string ExportNative(View view, string directory)
+    private static string ExportNative(IReadOnlyList<View> views, string directory)
     {
-        using var settings = ExportPDFSettings.GetActivePredefinedSettings(view.Document);
+        var document = views[0].Document;
+        using var settings = ExportPDFSettings.GetActivePredefinedSettings(document);
         using var options = settings?.GetOptions() ?? new PDFExportOptions();
         options.Combine = true;
         options.FileName = "revit-native";
@@ -36,7 +37,7 @@ internal static class DrawingExport
         options.SetExportInBackground(false);
 
         string path = Path.Combine(directory, options.FileName + ".pdf");
-        if (!view.Document.Export(directory, [view.Id], options) || !File.Exists(path))
+        if (!document.Export(directory, views.Select(view => view.Id).ToArray(), options) || !File.Exists(path))
             throw new IOException("Revit could not create the native PDF.");
         return path;
     }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.Advanced;
@@ -164,9 +165,13 @@ internal static class HiddenText
 
     private static PdfReference Stream(PdfDocument pdf, string content)
     {
+        using var compressed = new MemoryStream();
+        using (var compressor = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+            compressor.Write(Encoding.ASCII.GetBytes(content));
+
         var stream = new PdfDictionary(pdf);
-        stream.CreateStream(Encoding.ASCII.GetBytes(content));
-        stream.Stream.Zip();
+        stream.CreateStream(compressed.ToArray());
+        stream.Elements.SetName("/Filter", "/FlateDecode");
         pdf.Internals.AddObject(stream);
         return stream.ReferenceNotNull;
     }
