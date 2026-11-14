@@ -64,4 +64,11 @@
   --geometry-outline: var(--color-geometry-highlight);
   --geometry-outline-width: 2px;
   --metadata-link-indicator: var(--color-metadata-link);
+
+  /* Existing viewer composition: these govern chrome, not the PDF raster. */
+  --viewer-side-width: 360px;
+  --viewer-rail-width: 52px;
+  --viewer-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.2);
+  --viewer-shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
+  --viewer-warning-background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
 }

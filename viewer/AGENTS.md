@@ -1,33 +1,71 @@
-# Viewer agent instructions
+# Enhanced PDF Viewer
 
-This folder contains the enhanced-PDF React/TypeScript design library. The default screen puts design tokens and reusable components together; the viewer demo is a secondary context example. Read [docs/design-system.md](docs/design-system.md) and the relevant file in [docs/component-standards/](docs/component-standards/) before changing a control. The sample PDF and records are illustrative.
+Browser app (React, TypeScript, Vite) that opens an enhanced PDF from the Revit add-in, lets you hover and click elements on the drawing, and annotate it. Everything runs client-side. Design rules: `docs/design-system.md`.
 
-## Token ownership
+```sh
+bun install
+bun run dev        # http://localhost:5313, or DEV_PORT=NNNN bun run dev
+bun run typecheck
+bun run test
+```
 
-Import [src/styles/tokens.css](src/styles/tokens.css) once in the application entry point. It loads the tiers in dependency order:
+Use `bun`, not npm.
 
-1. **Primitives:** [src/styles/tokens/primitives.css](src/styles/tokens/primitives.css) owns literal palette, spacing, typography, size, radius, and motion values. Change this tier when the foundation changes.
-2. **Semantics:** [src/styles/tokens/semantic.css](src/styles/tokens/semantic.css) assigns purpose to colors, type styles, spacing, radii, and durations shared across the application. Use semantic tokens for page and pattern styling.
-3. **Components:** [src/styles/tokens/components.css](src/styles/tokens/components.css) owns values specific to buttons, menus, fields, panels, dialogs, and other controls. Add a component token when a control needs a stable named value or coordinated states.
+## Design system implementation
 
-Do not put raw colors, radii, or control dimensions in component styles. Reuse a semantic role when several components share a meaning. Keep aliases pointed toward the tier above them.
+The default screen is the functional viewer in `src/App.tsx`. Keep PDF loading, rendering, native geometry capture, Parquet lookup, annotation coordinates, filtering, and save/print behavior intact when changing the visual system. Do not restore the former test frontend or sample data as the application entry point.
 
-## Code and documentation locations
+- `src/styles/tokens/primitives.css`: raw palette, Manrope scale, spacing, 6px radius, and motion values. Add literals here when a reusable foundation is needed.
+- `src/styles/tokens/semantic.css`: app roles such as canvas, text, blue primary, red secondary, review status, and geometry accents. View and pattern styles should use these roles.
+- `src/styles/tokens/components.css`: values shared by controls, menus, comments, toolbars, and viewer chrome. Add a component token when a value coordinates variants or states.
+- `src/styles/tokens.css`: import entry point and local Manrope font face. Import once in `src/main.tsx`, followed by `src/styles/typography.css`, `src/components/ui/icon-button.css`, `src/components/ui/kit.css`, and `src/styles/app.css`.
+- `src/components/ui/`: reusable React/TypeScript controls and SVG icons; `src/components/ui/index.ts` exports the design kit. `src/components/ui/Button.tsx` adapts the viewer's existing button API to the kit. Keep accessible names on icon-only actions.
+- `src/components/patterns/`: viewer compositions and interaction state. Use the shared tokens and controls here without replacing specialized PDF behavior with a generic demo control.
+- `docs/component-standards/`: anatomy, variants, states, accessibility, and interaction rules for each reusable control. `docs/screen-examples/` describes composition.
 
-- Build reusable React controls in `src/components/ui/`, export them from `src/components/ui/index.ts`, and keep their shared CSS in `src/components/ui/kit.css`. The 24px toolbar button rules are in `src/components/ui/icon-button.css`. SVG glyphs are defined in `src/components/ui/Icon.tsx`; source SVG assets are in `src/components/ui/icons/`.
-- Put viewer compositions and drawing patterns in `src/components/patterns/`. Keep application wiring in `src/App.tsx`, the token inventory in `src/examples/TokenLibrary.tsx`, and component specimens in `src/examples/ComponentGallery.tsx`. The token inventory reads the primitive, semantic, and component CSS files directly; keep it on the default screen with the components.
-- Use `src/components/ui/Comment.tsx` for authored comments and their composer, and `src/components/patterns/ElementComments.tsx` for the geometry inspector composition. Follow `docs/component-standards/comment.md` for tone behavior.
-- Put screen arrangements in `docs/screen-examples/`. Update `docs/design-system.md` when a rule becomes general, and update the matching file in `docs/component-standards/` when component anatomy, props, states, accessibility, or behavior changes.
-- Use `src/styles/typography.css` for title, H1, H2, H3, and paragraph styles. Semantic type tokens live in `src/styles/tokens/semantic.css`; raw scales live in `src/styles/tokens/primitives.css`. The current Manrope sizes are 36/28/24/18/14px for those five styles, with 13px labels and 11px compact captions. Keep HTML heading levels in a meaningful order regardless of visual style.
-- Run the design library with `npm.cmd run dev -- --port 8765` from this folder. Run `npm.cmd run build` after code changes. See [README.md](README.md).
+Chrome is off-black with white Manrope text. Blue is primary, red secondary, and pink/green/yellow are contextual accents. The PDF raster retains its document colors. Compact icon buttons are 24px with a 6px radius, transparent/white at rest and white/off-black on hover. Button state transitions are 500ms; action buttons scale to 0.97 on press. Menus enter with ease-out scale/fade from the trigger focal point, rows reveal over 150ms with 30ms stagger, and exit is 400ms. Respect reduced motion. Treat the annotation ink palette as document data; changing it would alter saved PDF output.
 
-## Interaction and accessibility rules
+## Data contract
 
-- Application chrome uses an off-black background, white primary text, Manrope, primary blue, secondary red, and tertiary pink, green, and yellow. Never recolor the rendered PDF page.
-- Toolbar icon buttons are 24px square with 6px corners. Resting state is transparent with a white SVG glyph. Hover and pressed states have white fill and an off-black glyph. SVGs use `currentColor`. Button state transitions take 500ms.
-- Action buttons scale to 0.97 while pressed. Toolbar buttons and menu triggers do not scale on press.
-- Flyout shells fade and scale from the trigger button's focal point on both entrance and exit. Entrance uses ease-out over 500ms; exit takes 400ms. Menu rows start their 150ms fade as the shell opens, staggered by 30ms. Disable and hide menu options at the start of closing. Respect reduced-motion preferences.
-- Persistent vertical navigation uses a labeled `<nav>` and normal Tab order. Flyout menus provide Escape, Arrow, Home, and End behavior and restore focus to the trigger when Escape closes them.
-- Give icon-only buttons an accessible name, a visible keyboard focus ring, and a tooltip where the icon may be unclear. Use `aria-pressed` only for toggle controls. Pair status colors with text or another visible cue.
-- Show whether a PDF geometry-to-Parquet-record link is verified, provisional, or absent. Never present a candidate match as a confirmed link.
-- Keep user-assigned Info, Warning, and Error comment tones separate from metadata-link status. Show the tone icon and word alongside its accent; an Error comment is not a system alert.
+The viewer reads the Parquet attachments the add-in already writes (`elements`, `parameters`, `drawings`, `appearances`). **Do not require `geometry.parquet` or an exporter change for element interaction.** The primary route indexes native PDF marked-content groups (`/ViewRegion...`, `/Element...`), resolves them through drawing membership, and captures actual painted paths. Track work and branch ownership in [`../TASKS.md`](../TASKS.md).
+
+`nativeTags.ts` resolves identities; `nativeGeometry.ts` captures paths and clips from a complete main-thread render and builds a Flatbush/Path2D picker. Unresolved/ambiguous identities and unsupported graphics remain explicit. Capture must index the exact operator list for the render's annotation mode and honor its abort signal before publishing.
+
+The loader also accepts optional `geometry.parquet` for compatibility with the synthetic demo, one row per element drawn on the page:
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `DrawingId` | string | Matches `drawings.DrawingId`. |
+| `ElementKey` | string | Matches `elements.ElementKey`. |
+| `MinX`, `MinY`, `MaxX`, `MaxY` | double | Bounding box in PDF points, origin bottom-left. |
+| `Outline` | string, optional | JSON `[[x,y],...]` polygon in the same space. Used for hit-testing when present. |
+
+`scripts/make-demo-pdf.py` writes a synthetic PDF with this optional table (`public/demo/demo-enhanced.pdf`); its data is made up. Its legacy geometry conversion assumes the simple demo frame; use the shared viewport transformations for native PDF geometry, including cropped and negative-origin pages.
+
+## Ordinary PDFs and unsupported graphics
+
+Production loading never invents walls, element IDs, or properties. Ordinary PDFs remain viewable and annotatable with no model identities. Metadata-only records remain searchable and inspectable without an invented location. The old `placeholderWalls.ts` algorithm remains only as a legacy reference with tests; `load.ts` does not call it.
+
+Native capture supports bounded Path2D fills/strokes and explicit clips on the base rendering context. Text/images without supported path bounds, patterns, unknown clipping, and offscreen compositing are not assigned invented hit areas. Preserve disconnected strokes and openings; do not close a wall's printed edges into a filled footprint.
+
+## Layers and parallel ownership
+
+Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from its published shared baseline for annotation/review tools. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
+
+- `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
+- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
+- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
+- `MarkupLayer` owns annotation rendering, draft/editor state, and creation gestures. It forwards select-mode page gestures to the shared picker.
+- Shared contracts live in `src/lib/presentation.ts`. Existing markup coordinates remain the scale-1 PDF.js viewport (top-left); native PDF geometry uses explicit forward/inverse transforms. Do not silently migrate saved annotation coordinates.
+- Observe PDF operations without skipping graphics-state, path, or clipping operations. Keep canvas backing scale separate from page/CSS coordinates.
+
+## Annotations and object IDs
+
+Every annotation carries an optional `elementKey` (the object ID). It is set automatically from the element under the annotation's anchor point, and can be changed or cleared in the Notes tab ("Object ID" select).
+
+## Gotchas
+
+- pdf.js v6 `getAttachments()` returns names only. Bytes come from `getAttachmentContent(name)`.
+- Open text editors on `click`, not `pointerdown`, or the trailing focus change closes them.
+- The add-in writes gzip Parquet; `hyparquet-compressors` is required.
+- Missing native tags, ambiguous model identities, and unsupported paint types must remain explicit statuses; do not invent an authoritative geometry mapping.

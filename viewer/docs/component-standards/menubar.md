@@ -32,4 +32,4 @@ The same menu values apply to flyout rows. Use `--primitive-space-*` for layout 
 - An active child should describe the current destination. If navigation changes to another view, update active styling and the corresponding page content together.
 - Give icon and text the same hover/focus state. Keep icons simple, 24 × 24 viewBox line art using `currentColor`.
 
-Implementation: `src/components/ui/VerticalMenu.tsx` and `src/components/ui/kit.css`. Supply `items`, `selected`, and `onSelect`; nested items use `children`, and a final help action can use `footer`. Inspect the live example in `src/examples/ComponentGallery.tsx`.
+Implementation: `src/components/ui/VerticalMenu.tsx` and `src/components/ui/kit.css`. Supply `items`, `selected`, and `onSelect`; nested items use `children`, and a final help action can use `footer`. The current viewer does not need persistent site navigation; use this component when the application gains destinations beyond the document workspace.

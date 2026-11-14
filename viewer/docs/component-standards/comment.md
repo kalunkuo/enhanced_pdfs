@@ -12,4 +12,4 @@
 
 **Tokens:** raw palette, 6px radius, spacing, and type scale live in `src/styles/tokens/primitives.css`; shared color and type roles live in `src/styles/tokens/semantic.css`; comment surface, padding, avatar, and tone aliases live in `src/styles/tokens/components.css`.
 
-**Implementation:** `src/components/ui/Comment.tsx` exports `Comment`, `CommentComposer`, and `CommentTone`. The viewer composition is `src/components/patterns/ElementComments.tsx`. The gallery shows all three tones, tone changes, and posting. Prototype comments are held in browser memory for the current session.
+**Implementation:** `src/components/ui/Comment.tsx` exports `Comment`, `CommentComposer`, and `CommentTone`. These are reusable review controls. The viewer's existing Notes tab represents saved PDF annotations and has no user-defined tone field; do not substitute review comments for those annotations or change their saved format without a separate feature request.

@@ -9,6 +9,7 @@
 .ui-action-button--ghost { background: transparent; color: var(--color-text); }
 .ui-action-button:active:not(:disabled) { transform: scale(var(--action-press-scale)); }
 .ui-action-button:disabled { opacity: var(--button-icon-disabled-opacity); cursor: not-allowed; }
+.ui-action-button svg { width: var(--button-icon-glyph-size); height: var(--button-icon-glyph-size); }
 
 .ui-panel { display: flex; flex-direction: column; min-width: 0; border: var(--primitive-border-1) solid var(--panel-border); background: var(--panel-background); color: var(--color-text); }
 .ui-panel-header { display: flex; align-items: center; justify-content: space-between; gap: var(--control-gap); padding: var(--space-panel-padding); border-bottom: var(--primitive-border-1) solid var(--panel-border); }

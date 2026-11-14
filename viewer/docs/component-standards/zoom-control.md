@@ -4,7 +4,7 @@
 
 **Anatomy:** zoom-out icon button, editable percentage field with visible or programmatic percent unit, zoom-in icon button. Use the shared icon button and field standards.
 
-**States:** minimum, intermediate, maximum, invalid entry, and disabled/unavailable. Default prototype range is 50–180% in 10% steps; a real viewer may expand this range only after documenting the new limits. Disable decrement/increment at the bounds.
+**States:** minimum, intermediate, maximum, invalid entry, and disabled/unavailable. The reusable control defaults to 50–180% in 10% steps. The functional viewer has its own fit modes and preset range; preserve those behaviors. Disable decrement/increment at the configured bounds.
 
 **Interaction:** accept a valid entered percentage on Enter or blur, clamp or reject out-of-range input consistently, and display the committed value. Zoom should preserve the user's point of interest when practical. A fit-to-page action, if added, must show whether the displayed value is computed or user-entered. Recalculate geometry overlays from document coordinates; do not leave highlight regions at their old screen position.
 
