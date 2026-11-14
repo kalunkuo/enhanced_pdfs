@@ -10,10 +10,14 @@ internal static class PdfEnrichment
     public static void Write(string sourcePath, string outputPath, DrawingData data)
     {
         using var pdf = PdfReader.Open(sourcePath, PdfDocumentOpenMode.Modify);
-        if (pdf.PageCount != 1)
-            throw new InvalidDataException($"Expected one page from Revit, but received {pdf.PageCount}.");
+        int expectedPages = data.Drawings.Count(drawing => drawing.ParentDrawingId is null);
+        if (pdf.PageCount != expectedPages)
+            throw new InvalidDataException($"Revit returned {pdf.PageCount} PDF pages for {expectedPages} views and sheets. The BIM data could not be matched to the pages.");
 
-        HiddenText.Append(pdf, pdf.Pages[0], PageText.Lines(data));
+        var text = new PageText(data);
+        for (int index = 0; index < pdf.PageCount; index++)
+            HiddenText.Append(pdf, pdf.Pages[index], text.Lines(index + 1));
+
         Attach(pdf, "drawings.parquet", data.Drawings);
         Attach(pdf, "elements.parquet", data.Elements.Values);
         Attach(pdf, "appearances.parquet", data.Appearances.OrderBy(row => row.DrawingId).ThenBy(row => row.ElementKey));
@@ -34,22 +38,26 @@ internal static class PdfEnrichment
     }
 }
 
-internal static class PageText
+internal sealed class PageText(DrawingData data)
 {
-    public static IEnumerable<string> Lines(DrawingData data)
+    private readonly ILookup<int, DrawingRow> _drawingsByPage = data.Drawings.ToLookup(row => row.Page);
+    private readonly ILookup<string, AppearanceRow> _appearancesByDrawing = data.Appearances.ToLookup(row => row.DrawingId);
+    private readonly ILookup<string, ScheduleCellRow> _cellsByDrawing = data.ScheduleCells.ToLookup(row => row.DrawingId);
+    private readonly ILookup<int, DrawingNote> _notesByPage = data.Notes.ToLookup(row => row.Page);
+
+    public IEnumerable<string> Lines(int page)
     {
-        var root = data.Drawings[0];
+        var drawings = _drawingsByPage[page];
+        var root = drawings.Single(row => row.ParentDrawingId is null);
         yield return "REVIT BIM DATA";
         yield return $"Model: {root.Model} | Revit: {root.RevitVersion} | Exported UTC: {root.ExportedUtc}";
         yield return "Revit element properties as exported. Blank fire ratings are unspecified.";
-        foreach (var note in data.Notes)
-            yield return $"Coverage: {note}";
+        foreach (var note in _notesByPage[page])
+            yield return $"Coverage: {note.Text}";
 
-        var byDrawing = data.Appearances.ToLookup(row => row.DrawingId);
-        var scheduleCells = data.ScheduleCells.ToLookup(row => row.DrawingId);
-        foreach (var drawing in data.Drawings)
+        foreach (var drawing in drawings)
         {
-            var members = byDrawing[drawing.DrawingId].Select(row => data.Elements[row.ElementKey])
+            var members = _appearancesByDrawing[drawing.DrawingId].Select(row => data.Elements[row.ElementKey])
                 .OrderBy(element => element.Category, StringComparer.Ordinal)
                 .ThenBy(element => element.ElementId).ToArray();
             string detail = drawing.DetailNumber is null ? "" : $" | Detail: {drawing.DetailNumber}";
@@ -83,7 +91,7 @@ internal static class PageText
                 yield return string.Join(" | ", fields);
             }
 
-            foreach (var row in scheduleCells[drawing.DrawingId].GroupBy(cell => (cell.Section, cell.Row)))
+            foreach (var row in _cellsByDrawing[drawing.DrawingId].GroupBy(cell => (cell.Section, cell.Row)))
             {
                 yield return $"Schedule {row.Key.Section} {row.Key.Row}: " +
                     string.Join(" | ", row.OrderBy(cell => cell.Column).Select(cell => cell.Value));

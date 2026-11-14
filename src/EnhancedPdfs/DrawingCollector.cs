@@ -3,7 +3,7 @@ using Autodesk.Revit.DB.Electrical;
 
 namespace EnhancedPdfs;
 
-internal sealed class DrawingCollector(View root)
+internal sealed class DrawingCollector(IReadOnlyList<View> views)
 {
     private readonly DrawingData _data = new();
     private readonly Dictionary<Document, string> _modelKeys = [];
@@ -17,6 +17,13 @@ internal sealed class DrawingCollector(View root)
 
     public DrawingData Collect()
     {
+        for (int index = 0; index < views.Count; index++)
+            CollectPage(views[index], index + 1);
+        return _data;
+    }
+
+    private void CollectPage(View root, int page)
+    {
         var document = root.Document;
         string? sheetNumber = null;
         string? revision = null;
@@ -28,33 +35,31 @@ internal sealed class DrawingCollector(View root)
                 revision = sheet.GetRevisionNumberOnSheet(revisionId);
         }
 
-        string rootId = AddDrawing(root, null, root.UniqueId, sheetNumber, null, revision);
-        if (root is ViewSheet sheetView)
+        AddDrawing(root, page, null, root.UniqueId, sheetNumber, null, revision);
+        if (root is not ViewSheet sheetView)
+            return;
+
+        foreach (var viewportId in sheetView.GetAllViewports().OrderBy(id => id.Value))
         {
-            foreach (var viewportId in sheetView.GetAllViewports().OrderBy(id => id.Value))
-            {
-                var viewport = (Viewport)document.GetElement(viewportId);
-                var view = (View)document.GetElement(viewport.ViewId);
-                AddDrawing(view, rootId, viewport.UniqueId, sheetNumber,
-                    viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)?.AsString(), revision);
-            }
-
-            foreach (var item in SheetItems<ScheduleSheetInstance>(sheetView))
-            {
-                if (item.IsTitleblockRevisionSchedule)
-                    continue;
-                var view = (ViewSchedule)document.GetElement(item.ScheduleId);
-                AddDrawing(view, rootId, item.UniqueId, sheetNumber, null, revision, item.SegmentIndex);
-            }
-
-            foreach (var item in SheetItems<PanelScheduleSheetInstance>(sheetView))
-            {
-                var view = (PanelScheduleView)document.GetElement(item.ScheduleId);
-                AddDrawing(view, rootId, item.UniqueId, sheetNumber, null, revision);
-            }
+            var viewport = (Viewport)document.GetElement(viewportId);
+            var view = (View)document.GetElement(viewport.ViewId);
+            AddDrawing(view, page, root.UniqueId, viewport.UniqueId, sheetNumber,
+                viewport.get_Parameter(BuiltInParameter.VIEWPORT_DETAIL_NUMBER)?.AsString(), revision);
         }
 
-        return _data;
+        foreach (var item in SheetItems<ScheduleSheetInstance>(sheetView))
+        {
+            if (item.IsTitleblockRevisionSchedule)
+                continue;
+            var view = (ViewSchedule)document.GetElement(item.ScheduleId);
+            AddDrawing(view, page, root.UniqueId, item.UniqueId, sheetNumber, null, revision, item.SegmentIndex);
+        }
+
+        foreach (var item in SheetItems<PanelScheduleSheetInstance>(sheetView))
+        {
+            var view = (PanelScheduleView)document.GetElement(item.ScheduleId);
+            AddDrawing(view, page, root.UniqueId, item.UniqueId, sheetNumber, null, revision);
+        }
     }
 
     private static IEnumerable<T> SheetItems<T>(ViewSheet sheet) where T : Element
@@ -64,7 +69,7 @@ internal sealed class DrawingCollector(View root)
             .OrderBy(item => item.Id.Value).ToArray();
     }
 
-    private string AddDrawing(View view, string? parentId, string drawingId,
+    private void AddDrawing(View view, int page, string? parentId, string drawingId,
         string? sheetNumber, string? detailNumber, string? revision, int scheduleSegment = -1)
     {
         bool supportsGeometry = view.ViewType is ViewType.FloorPlan or ViewType.EngineeringPlan
@@ -81,7 +86,7 @@ internal sealed class DrawingCollector(View root)
         var document = view.Document;
         string? version = string.IsNullOrEmpty(document.PathName)
             ? null : Document.GetDocumentVersion(document).VersionGUID.ToString();
-        _data.Drawings.Add(new DrawingRow(drawingId, parentId, view.UniqueId, view.Id.Value, 1, view.Name,
+        _data.Drawings.Add(new DrawingRow(drawingId, parentId, view.UniqueId, view.Id.Value, page, view.Name,
             view.ViewType.ToString(), supportsGeometry || view.ViewType is ViewType.DraftingView or ViewType.Legend
                 ? view.Scale : null, sheetNumber, detailNumber, revision, document.Title, ModelKey(document),
             document.Application.VersionNumber, _exportedUtc, version, document.IsModified, source,
@@ -89,7 +94,7 @@ internal sealed class DrawingCollector(View root)
 
         if (view is ViewSchedule schedule)
         {
-            CollectSchedule(schedule, drawingId, scheduleSegment);
+            CollectSchedule(schedule, page, drawingId, scheduleSegment);
         }
         else if (view is PanelScheduleView panel)
         {
@@ -104,7 +109,7 @@ internal sealed class DrawingCollector(View root)
         else
         {
             if (view is not ViewSheet)
-                _data.Notes.Add($"'{view.Name}' uses view-owned elements. Revit's drawing callbacks do not cover {view.ViewType} views.");
+                _data.Notes.Add(new(page, $"'{view.Name}' uses view-owned elements. Revit's drawing callbacks do not cover {view.ViewType} views."));
 
             if (FilteredElementCollector.IsViewValidForElementIteration(document, view.Id))
             {
@@ -114,11 +119,9 @@ internal sealed class DrawingCollector(View root)
             }
             else
             {
-                _data.Notes.Add($"Revit does not expose an element list for '{view.Name}'.");
+                _data.Notes.Add(new(page, $"Revit does not expose an element list for '{view.Name}'."));
             }
         }
-
-        return drawingId;
     }
 
     private void CollectGeometry(View view, string drawingId)
@@ -144,11 +147,11 @@ internal sealed class DrawingCollector(View root)
         }
     }
 
-    private void CollectSchedule(ViewSchedule schedule, string drawingId, int segment)
+    private void CollectSchedule(ViewSchedule schedule, int page, string drawingId, int segment)
     {
         if (segment >= 0 && schedule.GetSegmentCount() > 1)
         {
-            _data.Notes.Add($"'{schedule.Name}' segment {segment + 1} is shown. Its data covers the full schedule.");
+            _data.Notes.Add(new(page, $"'{schedule.Name}' segment {segment + 1} is shown. Its data covers the full schedule."));
         }
 
         var table = schedule.GetTableData();
@@ -161,7 +164,7 @@ internal sealed class DrawingCollector(View root)
             AddElement(drawingId, element, null, null, ScheduleSource);
 
         if (schedule.Definition.IncludeLinkedFiles)
-            _data.Notes.Add($"'{schedule.Name}' includes linked rows. Their cell text is included with the schedule.");
+            _data.Notes.Add(new(page, $"'{schedule.Name}' includes linked rows. Their cell text is included with the schedule."));
     }
 
     private void CollectPanelSchedule(PanelScheduleView schedule, string drawingId)
