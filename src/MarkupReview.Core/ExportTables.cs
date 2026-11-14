@@ -1,0 +1,78 @@
+using Parquet.Serialization;
+
+namespace MarkupReview.Core;
+
+// Read-side rows; column names follow src/EnhancedPdfs/DrawingData.cs. Only the columns review needs.
+public sealed class ExportedDrawing
+{
+    public string DrawingId { get; set; } = "";
+    public string? ParentDrawingId { get; set; }
+    public string ViewUniqueId { get; set; } = "";
+    public int Page { get; set; }
+    public string Name { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string ModelKey { get; set; } = "";
+    public string ExportedUtc { get; set; } = "";
+}
+
+public sealed class ExportedElement
+{
+    public string ElementKey { get; set; } = "";
+    public string ModelKey { get; set; } = "";
+    public long? LinkInstanceId { get; set; }
+    public string UniqueId { get; set; } = "";
+    public long ElementId { get; set; }
+    public string Category { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string? Family { get; set; }
+    public string? Type { get; set; }
+    public string? TypeKey { get; set; }
+    public string VersionGuid { get; set; } = "";
+}
+
+public sealed class ExportedParameter
+{
+    public string OwnerKey { get; set; } = "";
+    public string Scope { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Storage { get; set; } = "";
+    public string? DisplayValue { get; set; }
+}
+
+/// <summary>The exporter's attachments, as data the review can join on.</summary>
+public sealed class ExportTables
+{
+    public required IReadOnlyList<ExportedDrawing> Drawings { get; init; }
+    public required IReadOnlyDictionary<string, ExportedElement> ElementsByKey { get; init; }
+    public required ILookup<long, ExportedElement> ElementsById { get; init; }
+    public required ILookup<string, ExportedParameter> ParametersByOwner { get; init; }
+
+    /// <summary>The model the PDF was exported from (root drawing).</summary>
+    public string ModelKey => RootDrawing?.ModelKey ?? "";
+    public string ModelName => RootDrawing?.Model ?? "";
+    private ExportedDrawing? RootDrawing => Drawings.FirstOrDefault(d => d.ParentDrawingId is null) ?? Drawings.FirstOrDefault();
+
+    public static ExportTables Load(ReturnedPdf pdf)
+    {
+        if (!pdf.Attachments.ContainsKey("elements.parquet"))
+            throw new InvalidDataException("This PDF has no Enhanced PDF data (elements.parquet is missing). Export it from Revit with Enhanced PDFs first.");
+
+        var drawings = Rows<ExportedDrawing>(pdf, "drawings.parquet");
+        var elements = Rows<ExportedElement>(pdf, "elements.parquet");
+        var parameters = Rows<ExportedParameter>(pdf, "parameters.parquet");
+        return new ExportTables
+        {
+            Drawings = [.. drawings],
+            ElementsByKey = elements.ToDictionary(e => e.ElementKey, StringComparer.Ordinal),
+            ElementsById = elements.ToLookup(e => e.ElementId),
+            ParametersByOwner = parameters.ToLookup(p => p.OwnerKey, StringComparer.Ordinal),
+        };
+    }
+
+    internal static IList<T> Rows<T>(ReturnedPdf pdf, string name) where T : class, new()
+    {
+        if (!pdf.Attachments.TryGetValue(name, out var bytes)) return [];
+        using var stream = new MemoryStream(bytes);
+        return ParquetSerializer.DeserializeAsync<T>(stream).GetAwaiter().GetResult().Data;
+    }
+}
