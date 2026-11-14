@@ -3,7 +3,7 @@ import type { Tool } from '../../lib/presentation';
 import type { Annotation, PageData, Point } from '../../lib/types';
 
 type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen';
-type NoteTool = 'text' | 'comment' | 'signature';
+type NoteTool = 'text' | 'signature';
 type Draft = { kind: DrawingTool; from: Point; to: Point; points?: Point[] };
 type Editor = { kind: NoteTool; at: Point; value: string };
 
@@ -21,6 +21,8 @@ export interface MarkupLayerProps {
     onElementMove: (point: Point, client: { x: number; y: number }) => void;
     onElementSelect: (point: Point) => void;
     onElementLeave: () => void;
+    /** The comment tool was clicked at a page point; the comment layer opens its composer. */
+    onStartComment: (point: Point) => void;
     /** Element highlights render below the markup content in the shared SVG. */
     children?: ReactNode;
 }
@@ -34,7 +36,7 @@ function isDrawingTool(tool: Tool): tool is DrawingTool {
 }
 
 function isNoteTool(tool: Tool): tool is NoteTool {
-    return tool === 'text' || tool === 'comment' || tool === 'signature';
+    return tool === 'text' || tool === 'signature';
 }
 
 /**
@@ -101,7 +103,8 @@ export function MarkupLayer(props: MarkupLayerProps) {
     // Opening on click avoids the trailing pointer-down focus change closing
     // the newly mounted text editor before the user can enter anything.
     const onClick = (event: ReactMouseEvent<SVGSVGElement>) => {
-        if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
+        if (tool === 'comment') props.onStartComment(toPage(event));
+        else if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
     };
 
     const onUp = () => {
@@ -141,7 +144,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 onPointerLeave={() => !draftRef.current && props.onElementLeave()}
             >
                 {props.children}
-                {annotations.map((annotation) => (
+                {annotations.filter((annotation) => annotation.kind !== 'comment').map((annotation) => (
                     <AnnotationShape
                         key={annotation.id}
                         annotation={annotation}
@@ -166,7 +169,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 <input
                     className={`note-input ${editor.kind}`}
                     autoFocus
-                    placeholder={editor.kind === 'comment' ? 'Add comment…' : editor.kind === 'signature' ? 'Type your name…' : 'Type text…'}
+                    placeholder={editor.kind === 'signature' ? 'Type your name…' : 'Type text…'}
                     style={{ left: editor.at[0] * zoom, top: editor.at[1] * zoom }}
                     value={editor.value}
                     onChange={(event) => updateEditor({ ...editor, value: event.target.value })}
@@ -223,15 +226,7 @@ function AnnotationShape({ annotation: a, selected, interactive, label, onClick 
         );
         chipAt = [x0 - 4, y0 - 18];
     } else {
-        const width = Math.max(40, (a.text?.length ?? 0) * 6.2 + 12);
-        body = (
-            <g>
-                <circle cx={x0} cy={y0} r={5} fill={color} />
-                <rect x={x0 + 8} y={y0 - 10} width={width} height={20} rx={4} fill="#fff" stroke={color} strokeWidth={1} strokeDasharray={common.strokeDasharray} vectorEffect="non-scaling-stroke" />
-                <text x={x0 + 14} y={y0 + 4} fontSize={11} fill={INK}>{a.text}</text>
-            </g>
-        );
-        chipAt = [x0, y0 - 12];
+        return null; // comments are drawn by the comment layer
     }
     const chip = tied ? `↳ ${label ?? 'element'}` : 'untied';
     return (

@@ -2,7 +2,8 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createShapePicker } from '../../lib/hit';
 import { clampZoom, type ElementPicker, type PagePresentation, type RenderCaptureFactory, type Tool, type ZoomMode } from '../../lib/presentation';
-import type { Annotation, PageData } from '../../lib/types';
+import type { Annotation, PageData, Point } from '../../lib/types';
+import { CommentLayer, type CommentLayerProps } from './CommentLayer';
 import { ElementOverlay } from './ElementOverlay';
 import { MarkupLayer } from './MarkupLayer';
 import { PdfCanvas } from './PdfCanvas';
@@ -27,6 +28,10 @@ interface Props {
     onSelectElement: (key: string | null) => void;
     onSelectAnnotation: (id: string | null) => void;
     onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
+    /** Comment threads drawn over the page. `comments`, `page` and `zoom` come from the stage. */
+    commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments'>;
+    /** The comment tool was clicked at a page point. */
+    onStartComment: (point: Point) => void;
     pickElement?: ElementPicker;
     createCapture?: RenderCaptureFactory;
     onPresentation?: (presentation: PagePresentation) => void;
@@ -108,9 +113,11 @@ export function PdfStage(props: Props) {
                         props.onSelectAnnotation(null);
                     }}
                     onElementLeave={() => props.onHover(null, { x: 0, y: 0 })}
+                    onStartComment={props.onStartComment}
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} />
                 </MarkupLayer>
+                <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} {...props.commentLayer} />
             </div>
         </div>
     );

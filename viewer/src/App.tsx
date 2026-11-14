@@ -3,6 +3,7 @@ import { DocBar } from './components/patterns/DocBar';
 import { ElementList } from './components/patterns/ElementList';
 import { HoverCard } from './components/patterns/HoverCard';
 import { NotesList } from './components/patterns/NotesList';
+import { ProfileMenu } from './components/patterns/ProfileMenu';
 import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patterns/PdfStage';
 import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
@@ -12,7 +13,8 @@ import { createShapePicker, tieWithPicker } from './lib/hit';
 import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
-import type { Annotation, EnhancedPdf, PageData } from './lib/types';
+import { useProfile } from './lib/profile';
+import type { Annotation, EnhancedPdf, PageData, Point } from './lib/types';
 
 type Tab = 'properties' | 'elements' | 'notes';
 const KEYS: Record<string, Tool | 'draw'> = { v: 'select', c: 'comment', h: 'highlight', d: 'draw', t: 'text', s: 'signature' };
@@ -26,6 +28,8 @@ export function App() {
     const [status, setStatus] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [tool, setTool] = useState<Tool>('select');
+    const [profile, setProfile] = useProfile();
+    const [composerAt, setComposerAt] = useState<Point | null>(null);
     const [drawKind, setDrawKind] = useState<DrawKind>('pen');
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
@@ -127,6 +131,23 @@ export function App() {
         setTool('select');
     };
 
+    // A comment being written belongs to the comment tool and to one page.
+    useEffect(() => setComposerAt(null), [tool, pageData?.number]);
+
+    const sendComment = (c: { text: string; image?: string; at: Point; name: string }) => {
+        addAnnotation({
+            kind: 'comment', from: c.at, to: c.at, text: c.text, createdAt: new Date().toISOString(),
+            author: { name: c.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+            ...(c.image ? { image: c.image } : {}),
+        });
+        setComposerAt(null);
+    };
+
+    const deleteById = useCallback((id: string) => {
+        setAnnotations((list) => list.filter((a) => a.id !== id));
+        setSelectedAnnotationId((current) => (current === id ? null : current));
+    }, []);
+
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
         setAnnotations((list) =>
             list.map((a) => {
@@ -211,6 +232,8 @@ export function App() {
                 <Button variant="ghost" onClick={() => void openDemo()}>Open demo drawing</Button>
                 {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
                 {status && <span className="status" role="status">{status}</span>}
+                <span className="spacer" />
+                <ProfileMenu profile={profile} onChange={setProfile} />
             </header>
             <DocBar
                 disabled={!doc}
@@ -252,6 +275,20 @@ export function App() {
                             onSelectElement={selectElement}
                             onSelectAnnotation={setSelectedAnnotationId}
                             onAddAnnotation={addAnnotation}
+                            onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
+                            commentLayer={{
+                                selectedId: selectedAnnotationId,
+                                composerAt,
+                                profile,
+                                onProfile: setProfile,
+                                labelFor,
+                                idFor: (key) => doc.elements.get(key)?.elementId,
+                                onSelect: (id) => { setSelectedAnnotationId(id); setComposerAt(null); const k = annotations.find((a) => a.id === id)?.elementKey ?? null; setSelectedKey(k); },
+                                onSelectElement: selectElement,
+                                onSend: sendComment,
+                                onCancel: () => setComposerAt(null),
+                                onDelete: deleteById,
+                            }}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
                         />

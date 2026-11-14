@@ -27,6 +27,7 @@
     --element-strong: hsl(221 83% 53% / 0.34);
     --tied: hsl(0 84.2% 60.2%); /* annotation anchored to an element */
     --untied: hsl(240 3.8% 46.1%); /* annotation on empty paper */
+    --comment: hsl(212 100% 62%); /* new-comment pin and send button */
     --warning-bg: hsl(48 96% 95%);
     --warning-border: hsl(45 93% 78%);
     --warning-fg: hsl(32 81% 29%);
@@ -63,6 +64,7 @@
         --element-strong: hsl(217 91% 65% / 0.4);
         --tied: hsl(0 72% 62%);
         --untied: hsl(240 5% 64.9%);
+        --comment: hsl(212 100% 66%);
         --warning-bg: hsl(36 60% 12%);
         --warning-border: hsl(36 60% 25%);
         --warning-fg: hsl(45 93% 75%);
