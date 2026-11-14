@@ -1,0 +1,4 @@
+.element-comments { display: grid; gap: var(--primitive-space-3); }
+.element-comments > h3 { margin-bottom: 0; }
+.element-comment-list { display: grid; gap: var(--primitive-space-2); }
+.element-comment-list > p { margin: 0; color: var(--color-text-muted); font-size: var(--text-label-size); }

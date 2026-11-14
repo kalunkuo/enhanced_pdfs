@@ -1,0 +1,54 @@
+:root {
+  /* Surfaces and text. PDF pages retain their own document colors. */
+  --color-canvas: var(--primitive-color-ink-950);
+  --color-surface: var(--primitive-color-ink-900);
+  --color-surface-raised: var(--primitive-color-ink-800);
+  --color-text: var(--primitive-color-white);
+  --color-text-muted: var(--primitive-color-white-80);
+  --color-text-subtle: var(--primitive-color-white-60);
+  --color-border: #474c50;
+  --color-control-border: var(--primitive-color-ink-500);
+  --color-primary: var(--primitive-color-blue-500);
+  --color-secondary: var(--primitive-color-red-500);
+  --color-tertiary-pink: var(--primitive-color-pink-300);
+  --color-tertiary-green: var(--primitive-color-green-500);
+  --color-tertiary-yellow: var(--primitive-color-yellow-500);
+  --color-focus-ring: var(--color-primary);
+
+  /* Accents carry meaning in the viewer; do not use color alone for status. */
+  --color-action: var(--primitive-color-white);
+  --color-geometry-highlight: var(--color-primary);
+  --color-selection: var(--color-secondary);
+  --color-annotation: var(--color-tertiary-pink);
+  --color-metadata-link: var(--color-tertiary-green);
+  --color-warning: var(--color-tertiary-yellow);
+  --color-error: var(--color-secondary);
+
+  --space-control-gap: var(--primitive-space-2);
+  --space-panel-padding: var(--primitive-space-4);
+  --radius-control: var(--primitive-radius-1);
+  --font-ui: var(--primitive-font-family);
+  --text-label-size: var(--primitive-font-size-sm);
+  --text-body-size: var(--primitive-font-size-md);
+  --type-title-size: var(--primitive-font-size-3xl);
+  --type-title-weight: var(--primitive-font-weight-bold);
+  --type-title-line-height: var(--primitive-line-height-tight);
+  --type-h1-size: var(--primitive-font-size-2xl);
+  --type-h1-weight: var(--primitive-font-weight-bold);
+  --type-h1-line-height: var(--primitive-line-height-tight);
+  --type-h2-size: var(--primitive-font-size-xl);
+  --type-h2-weight: var(--primitive-font-weight-bold);
+  --type-h2-line-height: var(--primitive-line-height-tight);
+  --type-h3-size: var(--primitive-font-size-lg);
+  --type-h3-weight: var(--primitive-font-weight-semibold);
+  --type-h3-line-height: var(--primitive-line-height-tight);
+  --type-paragraph-size: var(--primitive-font-size-md);
+  --type-paragraph-weight: var(--primitive-font-weight-regular);
+  --type-paragraph-line-height: var(--primitive-line-height-body);
+  --duration-interaction: var(--primitive-duration-500);
+  --duration-content-reveal: var(--primitive-duration-150);
+  --duration-menu-exit: var(--primitive-duration-400);
+  --duration-menu-stagger: var(--primitive-duration-30);
+  --ease-interaction: var(--primitive-ease-standard);
+  --ease-enter: var(--primitive-ease-out);
+}

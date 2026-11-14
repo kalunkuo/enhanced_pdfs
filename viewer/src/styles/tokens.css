@@ -1,0 +1,12 @@
+/* Public entry point. Import once, before component styles. */
+@import "./tokens/primitives.css";
+@import "./tokens/semantic.css";
+@import "./tokens/components.css";
+
+@font-face {
+  font-family: Manrope;
+  src: url("../assets/fonts/Manrope-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}

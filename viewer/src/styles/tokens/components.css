@@ -1,0 +1,67 @@
+:root {
+  /* Compact toolbar button: exactly 24 × 24 CSS pixels. */
+  --button-icon-size: var(--primitive-size-6);
+  --button-icon-glyph-size: var(--primitive-size-4);
+  --button-icon-radius: var(--primitive-radius-1);
+  --button-icon-rest-background: transparent;
+  --button-icon-rest-foreground: var(--color-action);
+  --button-icon-hover-background: var(--primitive-color-white);
+  --button-icon-hover-foreground: var(--primitive-color-ink-950);
+  --button-icon-pressed-background: var(--primitive-color-white);
+  --button-icon-pressed-foreground: var(--primitive-color-ink-950);
+  --button-icon-disabled-opacity: 0.4;
+  --button-icon-focus-ring: var(--color-focus-ring);
+  --button-transition-duration: var(--duration-interaction);
+  --action-press-scale: .97;
+
+  --control-height: var(--primitive-size-11);
+  --control-radius: var(--radius-control);
+  --control-inline-padding: var(--primitive-space-3);
+  --control-gap: var(--space-control-gap);
+  --control-background: var(--color-canvas);
+  --control-border: var(--color-control-border);
+  --control-text: var(--color-text);
+  --control-placeholder: var(--color-text-subtle);
+
+  --menu-item-height: 32px;
+  --menu-icon-size: var(--primitive-size-4);
+  --menu-item-gap: var(--space-control-gap);
+  --menu-padding: var(--primitive-space-2);
+  --menu-radius: var(--radius-control);
+  --menu-background: var(--color-surface);
+  --menu-hover-background: var(--color-surface-raised);
+  --menu-active-background: var(--color-primary);
+  --menu-active-foreground: var(--color-canvas);
+  --menu-transition-duration: var(--duration-interaction);
+  --menu-exit-duration: var(--duration-menu-exit);
+  --menu-options-transition-duration: var(--duration-content-reveal);
+  --menu-row-stagger: var(--duration-menu-stagger);
+  --menu-scale-closed: .94;
+
+  --dialog-width: 440px;
+  --dialog-padding: var(--primitive-space-6);
+  --tooltip-padding-block: var(--primitive-space-2);
+  --tooltip-padding-inline: var(--primitive-space-3);
+  --table-cell-padding: var(--primitive-space-2);
+  --status-padding: var(--primitive-space-3);
+  --metadata-row-gap: var(--primitive-space-3);
+
+  --comment-background: var(--color-surface-raised);
+  --comment-border: var(--color-border);
+  --comment-radius: var(--radius-control);
+  --comment-padding: var(--space-panel-padding);
+  --comment-gap: var(--space-control-gap);
+  --comment-avatar-size: var(--primitive-space-8);
+  --comment-avatar-background: var(--color-canvas);
+  --comment-accent-border-width: 3px;
+  --comment-info-accent: var(--color-primary);
+  --comment-warning-accent: var(--color-warning);
+  --comment-error-accent: var(--color-error);
+
+  --toolbar-gap: var(--primitive-space-2);
+  --panel-background: var(--color-surface);
+  --panel-border: var(--color-border);
+  --geometry-outline: var(--color-geometry-highlight);
+  --geometry-outline-width: 2px;
+  --metadata-link-indicator: var(--color-metadata-link);
+}
