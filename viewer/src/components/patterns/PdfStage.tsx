@@ -45,6 +45,7 @@ interface Props {
     onRenderError?: (error: unknown) => void;
     geometry?: NativeGeometry | null;
     matchedKeys?: ReadonlySet<string> | null;
+    elementColors?: ReadonlyMap<string, string> | null;
     drawingIds?: ReadonlySet<string> | null;
     focusRequest?: FocusRequest | null;
     onZoomMode?: (mode: ZoomMode) => void;
@@ -201,7 +202,7 @@ export function PdfStage(props: Props) {
                 <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
-                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} drawingIds={props.drawingIds} />
+                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
                     selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
@@ -226,7 +227,7 @@ export function PdfStage(props: Props) {
                     onMoveAnnotation={props.onMoveAnnotation}
                     coverOf={props.coverOf}
                 >
-                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} drawingIds={props.drawingIds} />
+                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {pickNotice && <div className="pick-status" role="status">{pickNotice}</div>}
