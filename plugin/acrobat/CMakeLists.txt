@@ -10,9 +10,11 @@ set_target_properties(SmartMarkup PROPERTIES SUFFIX ".api")
 target_include_directories(SmartMarkup PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/src"
   "${SDK_HEADERS}" "${SDK_HEADERS}/SDK" "${SDK_HEADERS}/ADM" "${SDK_HEADERS}/API")
-# Same defines as the SDK samples (x64), with a newer SDK level for the save/annotation notifications.
-target_compile_definitions(SmartMarkup PRIVATE WIN_PLATFORM _WINDOWS WIN_ENV ACRO_SDK_LEVEL=0x00090000
-  _CRT_SECURE_NO_WARNINGS NOMINMAX)
+# Same defines as the SDK samples (vcxproj + Samples/AcroDspOptions.rsp, x64).
+target_compile_definitions(SmartMarkup PRIVATE WIN_PLATFORM _WINDOWS WIN_ENV ACRO_SDK_LEVEL=0x000A0000
+  PI_ACROCOLOR_VERSION=0x00060000 PDMETADATA_HFT=1 PLUGIN=1 _CRT_SECURE_NO_WARNINGS NOMINMAX)
+# Acrobat finds plug-ins through this export; without it the .api is silently skipped.
+target_link_options(SmartMarkup PRIVATE /EXPORT:PlugInMain)
 target_compile_options(SmartMarkup PRIVATE /wd4267 /wd4244 /wd4996 /wd4828)  # 4828: non-UTF-8 byte in an SDK header
 target_link_libraries(SmartMarkup PRIVATE smartmarkup_core comctl32)
 
