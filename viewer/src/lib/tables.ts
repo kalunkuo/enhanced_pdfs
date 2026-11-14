@@ -1,6 +1,6 @@
 import { parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
-import type { ElementInfo, ParameterInfo, Point, Shape } from './types';
+import type { AppearanceInfo, DrawingInfo, ElementInfo, ParameterInfo, Point, Shape } from './types';
 
 export type Row = Record<string, unknown>;
 
@@ -25,7 +25,7 @@ export function buildShapes(rows: readonly Row[], pageHeight: number): Shape[] {
                 outline = undefined;
             }
         }
-        shapes.push({ elementKey: key, bbox: [num(r.MinX), y0, num(r.MaxX), y1], ...(outline ? { outline } : {}) });
+        shapes.push({ elementKey: key, ...(str(r.DrawingId) ? { drawingId: str(r.DrawingId) } : {}), bbox: [num(r.MinX), y0, num(r.MaxX), y1], ...(outline ? { outline } : {}) });
     }
     return shapes;
 }
@@ -38,6 +38,7 @@ export function buildElements(rows: readonly Row[]): Map<string, ElementInfo> {
         out.set(key, {
             key,
             elementId: num(r.ElementId),
+            elementIdText: str(r.ElementId),
             category: str(r.Category) ?? 'Element',
             name: str(r.Name) ?? key,
             family: str(r.Family),
@@ -47,6 +48,10 @@ export function buildElements(rows: readonly Row[]): Map<string, ElementInfo> {
             fireRating: str(r.FireRating),
             wallFunction: str(r.WallFunction),
             typeKey: str(r.TypeKey),
+            model: str(r.Model),
+            modelKey: str(r.ModelKey),
+            linkInstanceId: str(r.LinkInstanceId),
+            fireRatingSource: str(r.FireRatingSource),
         });
     }
     return out;
@@ -58,12 +63,33 @@ export function buildParameters(rows: readonly Row[]): Map<string, ParameterInfo
         const owner = str(r.OwnerKey);
         const name = str(r.Name);
         if (!owner || !name) continue;
-        const value = str(r.DisplayValue) ?? str(r.TextValue) ?? (r.InternalValue != null ? String(r.InternalValue) : '');
+        const value = str(r.DisplayValue) ?? str(r.TextValue) ??
+            (r.IntegerValue != null ? String(r.IntegerValue) : r.InternalValue != null ? String(r.InternalValue) : r.ReferenceId != null ? String(r.ReferenceId) : '');
         const list = out.get(owner) ?? [];
-        list.push({ name, scope: r.Scope === 'Type' ? 'Type' : 'Instance', value });
+        list.push({ name, scope: r.Scope === 'Type' ? 'Type' : 'Instance', value,
+            parameterId: str(r.ParameterId), sharedGuid: str(r.SharedGuid), specId: str(r.SpecId), unitId: str(r.UnitId) });
         out.set(owner, list);
     }
     return out;
+}
+
+export function buildDrawings(rows: readonly Row[]): DrawingInfo[] {
+    return rows.flatMap((row) => {
+        const id = str(row.DrawingId);
+        const page = Number(row.Page);
+        if (!id || !Number.isInteger(page) || page < 1) return [];
+        return [{ id, page, name: str(row.Name) ?? id,
+            parentId: str(row.ParentDrawingId), viewId: str(row.ViewId), viewUniqueId: str(row.ViewUniqueId),
+            kind: str(row.Kind), sheetNumber: str(row.SheetNumber), detailNumber: str(row.DetailNumber),
+            model: str(row.Model), modelKey: str(row.ModelKey) }];
+    });
+}
+
+export function buildAppearances(rows: readonly Row[]): AppearanceInfo[] {
+    return rows.flatMap((row) => {
+        const drawingId = str(row.DrawingId), elementKey = str(row.ElementKey);
+        return drawingId && elementKey ? [{ drawingId, elementKey, source: str(row.Source) }] : [];
+    });
 }
 
 
