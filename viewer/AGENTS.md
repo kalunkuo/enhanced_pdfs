@@ -13,9 +13,9 @@ Use `bun`, not npm.
 
 ## Data contract
 
-The viewer reads the Parquet attachments the add-in already writes (`elements`, `parameters`, `drawings`, `appearances`). **Do not require `geometry.parquet` or an exporter change to build element interaction.** The planned primary route uses the native PDF marked-content groups (`/ViewRegion...`, `/Element...`) and actual painted paths, joined to these BIM tables. Track this work and branch ownership in [`../TASKS.md`](../TASKS.md).
+The viewer reads the Parquet attachments the add-in already writes (`elements`, `parameters`, `drawings`, `appearances`). **Do not require `geometry.parquet` or an exporter change for element interaction.** The primary route indexes native PDF marked-content groups (`/ViewRegion...`, `/Element...`), resolves them through drawing membership, and captures actual painted paths. Track work and branch ownership in [`../TASKS.md`](../TASKS.md).
 
-Native-tag mapping is not implemented by the structural layer refactor alone. Until that adapter lands, the loader's existing behavior is the optional geometry-table path or the explicitly labeled placeholder fallback below. Keep the runtime status accurate.
+`nativeTags.ts` resolves identities; `nativeGeometry.ts` captures paths and clips from a complete main-thread render and builds a Flatbush/Path2D picker. Unresolved/ambiguous identities and unsupported graphics remain explicit. Capture must index the exact operator list for the render's annotation mode and honor its abort signal before publishing.
 
 The loader also accepts optional `geometry.parquet` for compatibility with the synthetic demo, one row per element drawn on the page:
 
@@ -28,9 +28,11 @@ The loader also accepts optional `geometry.parquet` for compatibility with the s
 
 `scripts/make-demo-pdf.py` writes a synthetic PDF with this optional table (`public/demo/demo-enhanced.pdf`); its data is made up. Its legacy geometry conversion assumes the simple demo frame; use the shared viewport transformations for native PDF geometry, including cropped and negative-origin pages.
 
-## Placeholder walls (temporary)
+## Ordinary PDFs and unsupported graphics
 
-The current fallback in `src/lib/placeholderWalls.ts` guesses walls from the drawing: filled, thin, long quadrilaterals (not white), read from pdf.js's operator list. Each gets made-up data (`Wall 01`, ID 900001, demo parameters) flagged `placeholder: true`; the UI shows a "Placeholder data" badge. These are demo guesses, not verified Revit element identities or properties. Replace the production fallback with native-tag mapping under task C1; do not wait for a geometry-table export. `scripts/make-demo-pdf.py ... --plain` writes a drawing with no attachments to test the current fallback.
+Production loading never invents walls, element IDs, or properties. Ordinary PDFs remain viewable and annotatable with no model identities. Metadata-only records remain searchable and inspectable without an invented location. The old `placeholderWalls.ts` algorithm remains only as a legacy reference with tests; `load.ts` does not call it.
+
+Native capture supports bounded Path2D fills/strokes and explicit clips on the base rendering context. Text/images without supported path bounds, patterns, unknown clipping, and offscreen compositing are not assigned invented hit areas. Preserve disconnected strokes and openings; do not close a wall's printed edges into a filled footprint.
 
 ## Layers and parallel ownership
 
@@ -38,7 +40,7 @@ Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
 - `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
-- `ElementOverlay` displays BIM hover/selection; the semantic module owns element picking.
+- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
 - `MarkupLayer` owns annotation rendering, draft/editor state, and creation gestures. It forwards select-mode page gestures to the shared picker.
 - Shared contracts live in `src/lib/presentation.ts`. Existing markup coordinates remain the scale-1 PDF.js viewport (top-left); native PDF geometry uses explicit forward/inverse transforms. Do not silently migrate saved annotation coordinates.
 - Observe PDF operations without skipping graphics-state, path, or clipping operations. Keep canvas backing scale separate from page/CSS coordinates.

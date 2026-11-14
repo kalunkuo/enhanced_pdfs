@@ -83,6 +83,8 @@ export interface RenderCaptureFrame {
     context: CanvasRenderingContext2D;
     /** Check before publishing asynchronous geometry after a page/zoom change. */
     signal: AbortSignal;
+    /** The same annotation mode used by the render whose operation indices we observe. */
+    annotationMode: number;
 }
 
 /** Hooks observe a complete render; consumers cannot skip PDF state operations. */

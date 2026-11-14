@@ -41,9 +41,10 @@ export function PdfCanvas({ pdf, pageNumber, zoom, hideEmbeddedAnnotations, crea
             if (!context) throw new Error('A 2D canvas is required to display the PDF.');
             const outputScale = { x: canvas.width / viewport.width, y: canvas.height / viewport.height };
             const presentation = createPagePresentation(pdfPage, zoom, outputScale, generation);
+            const annotationMode = hideEmbeddedAnnotations ? AnnotationMode.DISABLE : AnnotationMode.ENABLE;
             let capture: RenderCapture | undefined;
             try {
-                capture = await createCapture?.({ pdfPage, presentation, context, signal: controller.signal });
+                capture = await createCapture?.({ pdfPage, presentation, context, signal: controller.signal, annotationMode });
                 if (cancelled) return;
                 const onOperation = capture?.onOperation;
                 task = pdfPage.render({
@@ -51,7 +52,7 @@ export function PdfCanvas({ pdf, pageNumber, zoom, hideEmbeddedAnnotations, crea
                     canvasContext: capture?.context ?? context,
                     viewport,
                     transform: [outputScale.x, 0, 0, outputScale.y, 0, 0],
-                    annotationMode: hideEmbeddedAnnotations ? AnnotationMode.DISABLE : AnnotationMode.ENABLE,
+                    annotationMode,
                     operationsFilter: onOperation ? (index) => {
                         onOperation(index);
                         return true;
