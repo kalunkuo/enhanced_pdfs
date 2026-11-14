@@ -8,7 +8,7 @@ import { Byline } from '../ui/Byline';
 import { TrashIcon } from '../ui/icons';
 import { CommentThread } from './CommentThread';
 
-const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature' } as const;
+const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature', cloud: 'Revision cloud' } as const;
 const UNTIED = '';
 
 interface Props {

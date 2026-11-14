@@ -98,7 +98,13 @@ export interface EnhancedPdf {
     page: (n: number) => Promise<PageData>;
 }
 
-export type AnnotationKind = 'line' | 'rect' | 'ellipse' | 'pen' | 'highlight' | 'text' | 'comment' | 'signature';
+export type AnnotationKind = 'line' | 'rect' | 'ellipse' | 'pen' | 'highlight' | 'text' | 'comment' | 'signature' | 'cloud';
+
+/** An element a revision cloud covers. `fully` is false when the element only overlaps the cloud. */
+export interface ContainedElement {
+    key: string;
+    fully: boolean;
+}
 
 /** A reply in a comment thread. */
 export interface Reply {
@@ -132,6 +138,8 @@ export interface Annotation {
     image?: string;
     /** Replies to a comment, oldest first. */
     replies?: Reply[];
+    /** For a revision cloud: the elements it covered when it was drawn or moved, fully inside ones first. */
+    contained?: ContainedElement[];
     /** Set when the annotation is tied to an element. Absent means untied. */
     elementKey?: string;
 }

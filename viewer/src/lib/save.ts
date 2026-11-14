@@ -13,7 +13,7 @@ import type { Annotation, AnnotationKind, Point, Reply } from './types';
 export const ANNOTATIONS_FILE = 'annotations.json';
 const NAME_PREFIX = 'ep-';
 const AUTHOR = 'Enhanced PDF Viewer';
-const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature'];
+const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
 
 type Rgb = readonly [number, number, number];
 const TIED: Rgb = [0.937, 0.267, 0.267];
@@ -266,7 +266,7 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         const stream = ctx.stream(content, { Type: 'XObject', Subtype: 'Form', BBox: rect, Resources: ctx.obj(resources as never) });
         const ap = ctx.register(stream);
 
-        const subtype = { line: 'Line', rect: 'Square', ellipse: 'Circle', pen: 'Ink', highlight: 'Highlight', text: 'FreeText', signature: 'FreeText', comment: 'Text' }[a.kind];
+        const subtype = { line: 'Line', rect: 'Square', ellipse: 'Circle', pen: 'Ink', highlight: 'Highlight', text: 'FreeText', signature: 'FreeText', comment: 'Text', cloud: 'Polygon' }[a.kind];
         const subject = describe(a);
         const color = a.kind === 'highlight' ? hexToRgb(a.color) : tied ? TIED : UNTIED;
         const entries: Record<string, unknown> = {
