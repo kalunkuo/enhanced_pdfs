@@ -8,9 +8,13 @@ export type DialogProps = {
   children?: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** False blocks Escape and backdrop dismissal, for blocking work such as a file load. */
+  dismissible?: boolean;
+  /** Type style for the title; defaults to `type-h1`. */
+  titleClassName?: string;
 };
 
-export function Dialog({ open, onClose, title, description, children, footer, className = '' }: DialogProps) {
+export function Dialog({ open, onClose, title, description, children, footer, className = '', dismissible = true, titleClassName = 'type-h1' }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -23,8 +27,8 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  return <dialog ref={ref} className={`ui-dialog ${className}`.trim()} aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onClose={() => { onClose(); returnFocus.current?.focus(); }}>
-    <div className="ui-dialog-content"><h2 id={titleId} className="type-h1">{title}</h2>{description && <p id={descriptionId} className="type-paragraph">{description}</p>}{children}</div>
+  return <dialog ref={ref} className={`ui-dialog ${className}`.trim()} aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onCancel={(event) => { if (!dismissible) event.preventDefault(); }} onClose={() => { onClose(); returnFocus.current?.focus(); }}>
+    <div className="ui-dialog-content"><h2 id={titleId} className={titleClassName}>{title}</h2>{description && <p id={descriptionId} className="type-paragraph">{description}</p>}{children}</div>
     {footer && <div className="ui-dialog-footer">{footer}</div>}
   </dialog>;
 }

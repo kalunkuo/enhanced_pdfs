@@ -7,20 +7,38 @@ import { NotesList } from './components/patterns/NotesList';
 import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patterns/PdfStage';
 import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
-import { Button } from './components/ui/Button';
+import { SegmentedControl } from './components/ui/SegmentedControl';
+import { Dialog } from './components/ui/Dialog';
+import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
-import { UploadIcon } from './components/ui/icons';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, hasActiveFilters, type FilterState } from './lib/filters';
 import { createNativeGeometryCapture, type NativeGeometry } from './lib/nativeGeometry';
-import { loadEnhancedPdf } from './lib/load';
+import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import type { Annotation, EnhancedPdf, PageData } from './lib/types';
 
 type Tab = 'properties' | 'elements' | 'notes';
+const TABS: readonly Tab[] = ['properties', 'elements', 'notes'];
 const KEYS: Record<string, Tool | 'draw'> = { v: 'select', c: 'comment', h: 'highlight', d: 'draw', t: 'text', s: 'signature' };
+const LOAD_STEPS: Record<LoadStage | 'download' | 'page', string> = {
+    download: 'Downloading demo drawing',
+    reading: 'Reading file',
+    parsing: 'Parsing PDF',
+    attachments: 'Extracting model data',
+    tables: 'Reading model tables',
+    page: 'Preparing first page',
+};
+// The loader covers most of the bar; the first page render finishes it.
+const LOADER_SHARE = 0.95;
+// `ceiling` is where the current step ends; the bar creeps toward it while reports stall.
+// `done`: work finished, bar finishing its fill. `revealing`: bar at 100%, dialog fading out.
+type Loading = { fileName: string; fraction: number; ceiling: number; step: string; done?: boolean; revealing?: boolean };
+// Matches --dialog-reveal-duration; the dialog unmounts after its fade.
+const REVEAL_MS = 1500;
+const stageCeiling = (stage: LoadStage) => LOAD_STAGE_SPAN[stage][1] * LOADER_SHARE;
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function App() {
@@ -30,6 +48,8 @@ export function App() {
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [loading, setLoading] = useState<Loading | null>(null);
+    const awaitingFirstPage = useRef<EnhancedPdf | null>(null);
     const [tool, setTool] = useState<Tool>('select');
     const [drawKind, setDrawKind] = useState<DrawKind>('pen');
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
@@ -57,9 +77,14 @@ export function App() {
     const open = useCallback(async (file: File) => {
         const request = ++openRequest.current;
         setError(null);
+        setLoading({ fileName: file.name, fraction: 0, ceiling: stageCeiling('reading'), step: LOAD_STEPS.reading });
         try {
-            const next = await loadEnhancedPdf(file);
+            const next = await loadEnhancedPdf(file, ({ stage, fraction }) => {
+                if (request === openRequest.current) setLoading({ fileName: file.name, fraction: fraction * LOADER_SHARE, ceiling: stageCeiling(stage), step: LOAD_STEPS[stage] });
+            });
             if (request !== openRequest.current) { await next.dispose?.(); return; }
+            awaitingFirstPage.current = next;
+            setLoading({ fileName: file.name, fraction: LOADER_SHARE, ceiling: 0.99, step: LOAD_STEPS.page });
             nextId.current = 1 + next.savedAnnotations.length;
             setDoc(next);
             setPage(1);
@@ -74,22 +99,46 @@ export function App() {
             setTab('properties');
             setStatus(next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null);
         } catch (e) {
-            if (request === openRequest.current) setError(`Could not open ${file.name}: ${errorText(e)}`);
+            if (request === openRequest.current) {
+                setLoading(null);
+                setError(`Could not open ${file.name}: ${errorText(e)}`);
+            }
         }
     }, []);
 
+    const revealViewer = useCallback(() => {
+        setLoading((current) => (current?.done && !current.revealing ? { ...current, revealing: true } : current));
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.setTimeout(() => setLoading((current) => (current?.revealing ? null : current)), reduced ? 0 : REVEAL_MS);
+    }, []);
+
     const openDemo = async () => {
-        const blob = await (await fetch('/demo/demo-enhanced.pdf')).blob();
-        await open(new File([blob], 'demo-enhanced.pdf', { type: 'application/pdf' }));
+        setLoading({ fileName: 'demo-enhanced.pdf', fraction: 0, ceiling: 0.05, step: LOAD_STEPS.download });
+        try {
+            const response = await fetch('/demo/demo-enhanced.pdf');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            await open(new File([await response.blob()], 'demo-enhanced.pdf', { type: 'application/pdf' }));
+        } catch (e) {
+            setLoading(null);
+            setError(`Could not open the demo drawing: ${errorText(e)}`);
+        }
     };
 
     // Page navigation clears the old interaction surface before this resolves.
     useEffect(() => {
         if (!doc) return;
         let cancelled = false;
+        // The open dialog stays up until the newly opened document's first page is ready.
+        const finishOpen = (ok: boolean) => {
+            if (awaitingFirstPage.current !== doc) return;
+            awaitingFirstPage.current = null;
+            if (!ok) return setLoading(null);
+            // The fade starts from the progress bar's onComplete, once its fill visibly reaches 100%.
+            setLoading((current) => current && { ...current, fraction: 1, ceiling: 1, step: 'Ready', done: true });
+        };
         doc.page(page).then(
-            (p) => !cancelled && setPageData(p),
-            (e) => !cancelled && setError(`Could not read page ${page}: ${errorText(e)}`),
+            (p) => { if (!cancelled) { setPageData(p); finishOpen(true); } },
+            (e) => { if (!cancelled) { setError(`Could not read page ${page}: ${errorText(e)}`); finishOpen(false); } },
         );
         return () => {
             cancelled = true;
@@ -238,13 +287,9 @@ export function App() {
         <div className="app">
             <header className="header">
                 <h1 className="type-h3">Enhanced PDF Viewer</h1>
-                <Button variant="primary" onClick={() => fileInput.current?.click()}>
-                    <UploadIcon /> Upload enhanced PDF
-                </Button>
                 <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
-                <Button variant="ghost" onClick={() => void openDemo()}>Open demo drawing</Button>
-                {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
                 {status && <span className="status" role="status">{status}</span>}
+                {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
             </header>
             <DocBar
                 disabled={!doc}
@@ -261,7 +306,12 @@ export function App() {
                 onZoomMode={setZoomMode}
                 onZoomIn={() => setZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => setZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
+                onUpload={() => fileInput.current?.click()}
+                onOpenDemo={() => void openDemo()}
             />
+            <Dialog open={loading !== null} onClose={() => undefined} dismissible={false} title="Opening drawing" titleClassName="type-h3" description={loading?.fileName} className={`load-dialog${loading?.revealing ? ' is-revealing' : ''}`}>
+                {loading && <ProgressBar label={`Opening ${loading.fileName}`} value={loading.fraction} ceiling={loading.ceiling} detail={loading.step} onComplete={revealViewer} />}
+            </Dialog>
             <div className="viewer-notices">
                 {error && <StatusMessage tone="error" variant="banner" title={error} />}
                 {doc?.warnings.map((w) => <StatusMessage tone="warning" variant="banner" title={w} key={w} />)}
@@ -282,6 +332,7 @@ export function App() {
                             highlightColor={highlightColor}
                             labelFor={labelFor}
                             onZoom={setZoom}
+                            onZoomMode={setZoomMode}
                             onHover={onHover}
                             onSelectElement={selectElement}
                             onSelectAnnotation={setSelectedAnnotationId}
@@ -317,20 +368,10 @@ export function App() {
                     />
                 </div>
                 <aside className="side">
-                    {doc && nativeSource && nativeSource.occurrences.length > 0 && (
-                        <div className="geometry-status" role="status">
-                            {geometry ? `${geometry.elementKeys.size.toLocaleString()} elements located on this page` : nativeSource.resolvedElementKeys.size ? 'Preparing native element geometry…' : 'No unambiguous element locations on this page'}
-                            {nativeSource.occurrences.some((occurrence) => occurrence.status === 'ambiguous') && ' · Some model identities are ambiguous'}
-                            {!!geometry?.unsupportedPaints && ' · Some graphics are unsupported'}
-                        </div>
-                    )}
-                    <div className="tabs" role="tablist">
-                        {(['properties', 'elements', 'notes'] as const).map((t) => (
-                            <button key={t} role="tab" className="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-                                {t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties'}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
+                        value: t,
+                        label: t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties',
+                    }))} />
                     <div className="panel" role="tabpanel">
                         {!doc ? (
                             <div className="panel-empty">Nothing loaded.</div>

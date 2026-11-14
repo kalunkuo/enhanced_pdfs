@@ -23,7 +23,7 @@ The default screen is the functional viewer in `src/App.tsx`. Keep PDF loading, 
 - `src/components/patterns/`: viewer compositions and interaction state. Use the shared tokens and controls here without replacing specialized PDF behavior with a generic demo control.
 - `docs/component-standards/`: anatomy, variants, states, accessibility, and interaction rules for each reusable control. `docs/screen-examples/` describes composition.
 
-Chrome is off-black with white Manrope text. Blue is primary, red secondary, and pink/green/yellow are contextual accents. The PDF raster retains its document colors. Compact icon buttons are 24px with a 6px radius, transparent/white at rest and white/off-black on hover. Button state transitions are 500ms; action buttons scale to 0.97 on press. Menus enter with ease-out scale/fade from the trigger focal point, rows reveal over 150ms with 30ms stagger, and exit is 400ms. Respect reduced motion. Treat the annotation ink palette as document data; changing it would alter saved PDF output.
+Chrome is off-black with white Manrope text. Blue is primary, red secondary, and pink/green/yellow are contextual accents. The PDF raster retains its document colors. Compact icon buttons are 24px with a 6px radius, transparent/white at rest and white/off-black on hover. Button state transitions are 500ms; action buttons scale to 0.97 on press. Segmented-control indicators slide between options over 300ms with an ease-in-out arc, never linear. Menus enter with ease-out scale/fade from the trigger focal point, rows reveal over 150ms with 30ms stagger, and exit is 400ms. Respect reduced motion. Treat the annotation ink palette as document data; changing it would alter saved PDF output.
 
 ## Data contract
 

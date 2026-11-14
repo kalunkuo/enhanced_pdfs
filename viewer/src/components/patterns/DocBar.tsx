@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconButton } from '../ui/Button';
-import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon } from '../ui/icons';
+import { Button, IconButton } from '../ui/Button';
+import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon, UploadIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -20,9 +20,11 @@ interface Props {
     onZoomMode: (m: ZoomMode) => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
+    onUpload: () => void;
+    onOpenDemo: () => void;
 }
 
-/** The document bar: save, print, pages, select and pan, zoom. Laid out like Acrobat's. */
+/** The document bar: save, print, pages, select and pan, zoom, then demo and upload at the far right. Laid out like Acrobat's. */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
@@ -39,6 +41,9 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom out" disabled={p.disabled} onClick={p.onZoomOut}><MinusIcon /></IconButton>
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
+            <span className="docbar-spacer" />
+            <Button variant="ghost" onClick={p.onOpenDemo}>Open demo drawing</Button>
+            <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
         </div>
     );
 }

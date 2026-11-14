@@ -7,19 +7,55 @@ import type { EnhancedPdf, PageData } from './types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-export async function loadEnhancedPdf(file: File): Promise<EnhancedPdf> {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+/** Loading stages, in order. `fraction` is overall progress from 0 to 1 across all stages. */
+export type LoadStage = 'reading' | 'parsing' | 'attachments' | 'tables';
+export type LoadProgress = { stage: LoadStage; fraction: number };
+
+// Share of overall progress each stage covers; reading the file is usually the longest.
+export const LOAD_STAGE_SPAN: Record<LoadStage, readonly [number, number]> = {
+    reading: [0, 0.4],
+    parsing: [0.4, 0.55],
+    attachments: [0.55, 0.75],
+    tables: [0.75, 1],
+};
+
+function readFile(file: File, onFraction: (f: number) => void): Promise<Uint8Array> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onprogress = (e) => { if (e.lengthComputable && e.total) onFraction(e.loaded / e.total); };
+        reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+        reader.onerror = () => reject(reader.error ?? new Error('Could not read the file'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+export async function loadEnhancedPdf(file: File, onProgress?: (progress: LoadProgress) => void): Promise<EnhancedPdf> {
+    const report = (stage: LoadStage, f: number) => {
+        const [from, to] = LOAD_STAGE_SPAN[stage];
+        onProgress?.({ stage, fraction: from + (to - from) * Math.min(1, Math.max(0, f)) });
+    };
+    report('reading', 0);
+    const bytes = await readFile(file, (f) => report('reading', f));
+    report('parsing', 0);
     // pdf.js may take over the buffer it is given, so it gets its own copy.
     // Parsing stays in the PDF worker; painting is observable by our native-path adapter.
     const loadingTask = pdfjs.getDocument({ data: bytes.slice(), disableWorkerRendering: true });
+    loadingTask.onProgress = ({ loaded, total }: { loaded: number; total: number }) => { if (total) report('parsing', loaded / total); };
     try {
         const pdf = await loadingTask.promise;
+        report('attachments', 0);
         // pdf.js lists attachments by name; the bytes are fetched one at a time.
         const names = [...((await pdf.getAttachments())?.keys() ?? [])];
+        let fetched = 0;
         const attachments: Attachments = new Map(
-            await Promise.all(names.map(async (n) => [n, (await pdf.getAttachmentContent(n)) as unknown as Uint8Array] as const)),
+            await Promise.all(names.map(async (n) => {
+                const content = (await pdf.getAttachmentContent(n)) as unknown as Uint8Array;
+                report('attachments', ++fetched / names.length);
+                return [n, content] as const;
+            })),
         );
-        const { tables, warnings } = await readTables(attachments);
+        report('tables', 0);
+        const { tables, warnings } = await readTables(attachments, (done, total) => report('tables', done / total));
 
         const elements = buildElements(tables.get('elements') ?? []);
         const parameters = buildParameters(tables.get('parameters') ?? []);

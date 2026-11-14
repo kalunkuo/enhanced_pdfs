@@ -41,10 +41,14 @@
   --primitive-line-height-tight: 1.2;
   --primitive-line-height-body: 1.5;
 
+  --primitive-duration-1500: 1500ms;
   --primitive-duration-500: 500ms;
   --primitive-duration-400: 400ms;
+  --primitive-duration-300: 300ms;
   --primitive-duration-150: 150ms;
   --primitive-duration-30: 30ms;
   --primitive-ease-standard: cubic-bezier(.2, .8, .2, 1);
   --primitive-ease-out: cubic-bezier(.16, 1, .3, 1);
+  /* Arc: accelerates from rest, then decelerates into place. */
+  --primitive-ease-in-out: cubic-bezier(.65, 0, .35, 1);
 }

@@ -8,6 +8,8 @@ export * from './Icon';
 export * from './IconButton';
 export * from './MetadataRows';
 export * from './PageNavigation';
+export * from './ProgressBar';
+export * from './SegmentedControl';
 export * from './Panel';
 export * from './StatusMessage';
 export * from './Tooltip';
