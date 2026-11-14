@@ -67,7 +67,7 @@ export function Toolbar(p: Props) {
 
             <div className="tool-slot">
                 <IconButton label="Highlight (H)" pressed={p.tool === 'highlight'} disabled={p.disabled} onClick={() => choose('highlight')}>
-                    <span style={{ color: p.tool === 'highlight' ? undefined : p.highlightColor }}><HighlightIcon /></span>
+                    <HighlightIcon />
                 </IconButton>
                 <button className="corner" aria-label="Highlight color" aria-expanded={menu === 'highlight'} disabled={p.disabled} onClick={() => setMenu(menu === 'highlight' ? null : 'highlight')} />
                 {menu === 'highlight' && (
