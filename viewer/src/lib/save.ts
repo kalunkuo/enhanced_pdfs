@@ -1,4 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
+import { calloutBounds, leaderSegment, textBox } from './callout';
 import { initials, pdfDate, safeImage } from './comments';
 import type { Annotation, AnnotationKind, Point, Reply } from './types';
 
@@ -102,7 +103,7 @@ function boundsOf(a: Annotation): Box {
             const pts = a.points?.length ? a.points : [a.from, a.to];
             return { x0: Math.min(...pts.map((p) => p[0])), y0: Math.min(...pts.map((p) => p[1])), x1: Math.max(...pts.map((p) => p[0])), y1: Math.max(...pts.map((p) => p[1])) };
         }
-        case 'text': return { x0: x0 - 4, y0: y0 - 14, x1: x0 - 4 + Math.max(30, text.length * 6.6 + 10), y1: y0 + 6 };
+        case 'text': return calloutBounds(a);
         case 'comment': return { x0, y0: y0 - DROP, x1: x0 + DROP + 6 + Math.max(40, Math.min(text.length, 40) * 6.2 + 12), y1: y0 };
         case 'signature': return { x0: x0 - 2, y0: y0 - 24, x1: x0 + Math.max(30, text.length * 11), y1: y0 + 8 };
         default: return { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
@@ -167,11 +168,27 @@ function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): 
             resources.ExtGState = { GS0: { Type: 'ExtGState', CA: 0.4, ca: 0.4 } };
             content = `/GS0 gs ${rgb(hexToRgb(a.color))} rg ${X(b.x0)} ${Y(b.y1)} ${f(b.x1 - b.x0)} ${f(b.y1 - b.y0)} re f`;
             break;
-        case 'text':
+        case 'text': {
+            // Box, then the leader and its dot when there is one. Untied boxes are gray, text included.
+            const box = textBox(a);
+            const seg = leaderSegment(a);
+            const ink = tied ? INK : UNTIED;
             resources.Font = { F1: fonts.sans.ref };
-            content = `${rgb(color)} RG 1 w ${dash}${X(b.x0)} ${Y(b.y1)} ${f(b.x1 - b.x0)} ${f(b.y1 - b.y0)} re S ` +
-                `BT ${rgb(INK)} rg /F1 12 Tf ${X(x0)} ${Y(y0)} Td ${encode(fonts.sans, text)} Tj ET`;
+            content = `${rgb(color)} RG 1 w ${dash}${X(box.x)} ${Y(box.y + box.h)} ${f(box.w)} ${f(box.h)} re S `;
+            if (seg) {
+                const [tx, ty] = seg[1];
+                const r = 3.5;
+                const k = 0.5523 * r;
+                content += `${rgb(color)} RG 1.5 w ${dash}${X(seg[0][0])} ${Y(seg[0][1])} m ${X(tx)} ${Y(ty)} l S ` +
+                    `${rgb(color)} rg ${X(tx + r)} ${Y(ty)} m ` +
+                    `${X(tx + r)} ${Y(ty + k)} ${X(tx + k)} ${Y(ty + r)} ${X(tx)} ${Y(ty + r)} c ` +
+                    `${X(tx - k)} ${Y(ty + r)} ${X(tx - r)} ${Y(ty + k)} ${X(tx - r)} ${Y(ty)} c ` +
+                    `${X(tx - r)} ${Y(ty - k)} ${X(tx - k)} ${Y(ty - r)} ${X(tx)} ${Y(ty - r)} c ` +
+                    `${X(tx + k)} ${Y(ty - r)} ${X(tx + r)} ${Y(ty - k)} ${X(tx + r)} ${Y(ty)} c f `;
+            }
+            content += `BT ${rgb(ink)} rg /F1 12 Tf ${X(x0)} ${Y(y0)} Td ${encode(fonts.sans, text)} Tj ET`;
             break;
+        }
         case 'comment': {
             // A teardrop whose tip (bottom-left) is the anchor, then the message in a pill beside it.
             const r = DROP / 2;
@@ -267,6 +284,14 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         if (a.kind === 'pen') entries.InkList = [(a.points?.length ? a.points : [a.from, a.to]).flatMap((p) => [PX(p[0]), PY(p[1])])];
         if (a.kind === 'highlight') entries.QuadPoints = [PX(b.x0), PY(b.y0), PX(b.x1), PY(b.y0), PX(b.x0), PY(b.y1), PX(b.x1), PY(b.y1)];
         if (a.kind === 'text' || a.kind === 'signature') entries.DA = PDFString.of('0 g /Helv 12 Tf');
+        if (a.kind === 'text') {
+            // A box with a leader is a standard callout: the line runs from the leader tip to the box.
+            const seg = leaderSegment(a);
+            if (seg) {
+                entries.IT = 'FreeTextCallout';
+                entries.CL = [PX(seg[1][0]), PY(seg[1][1]), PX(seg[0][0]), PY(seg[0][1])];
+            }
+        }
         if (a.kind === 'comment') entries.Name = 'Comment';
 
         const annotRef: PDFRef = ctx.register(ctx.obj(entries as never));

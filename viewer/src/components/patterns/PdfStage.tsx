@@ -32,6 +32,8 @@ interface Props {
     commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments' | 'pick'>;
     /** The comment tool was clicked at a page point. */
     onStartComment: (point: Point) => void;
+    /** A text box was dropped after a drag; the app re-ties it to whatever its leader tip is over. */
+    onMoveAnnotation: (id: string, patch: { from: Point; to: Point }) => void;
     pickElement?: ElementPicker;
     createCapture?: RenderCaptureFactory;
     onPresentation?: (presentation: PagePresentation) => void;
@@ -116,6 +118,10 @@ export function PdfStage(props: Props) {
                     }}
                     onElementLeave={() => props.onHover(null, { x: 0, y: 0 })}
                     onStartComment={props.onStartComment}
+                    pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null}
+                    // Comment pins and text boxes highlight their drop target the same way.
+                    onDragTarget={props.commentLayer.onDragTarget}
+                    onMoveAnnotation={props.onMoveAnnotation}
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} />
                 </MarkupLayer>

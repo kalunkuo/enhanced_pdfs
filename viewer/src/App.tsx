@@ -151,11 +151,14 @@ export function App() {
     };
 
     // Dropping a pin ties it to whatever is under its tip, or unties it on empty paper.
-    const moveComment = (id: string, at: Point) => {
-        setAnnotations((list) => list.map((a) => (a.id === id ? tieWithPicker({ ...a, from: at, to: at }, pickElement, 4 / zoom) : a)));
+    const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
         const moved = annotations.find((a) => a.id === id);
-        if (moved) setSelectedKey(tieWithPicker({ ...moved, from: at, to: at }, pickElement, 4 / zoom).elementKey ?? null);
+        if (!moved) return;
+        const retied = tieWithPicker({ ...moved, ...patch }, pickElement, 4 / zoom);
+        setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
+        setSelectedKey(retied.elementKey ?? null);
     };
+    const moveComment = (id: string, at: Point) => moveAnnotation(id, { from: at, to: at });
 
     const sendReply = useCallback((id: string, r: { text: string; name: string }) => {
         const reply: Reply = {
@@ -300,6 +303,7 @@ export function App() {
                                 if (id) setTab('notes');
                             }}
                             onAddAnnotation={addAnnotation}
+                            onMoveAnnotation={moveAnnotation}
                             onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
                             commentLayer={{
                                 selectedId: selectedAnnotationId,

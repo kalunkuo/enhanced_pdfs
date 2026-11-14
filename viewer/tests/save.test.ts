@@ -1,4 +1,4 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { annotatedName } from '../src/lib/print';
 import { ANNOTATIONS_FILE, buildAnnotatedPdf, parseAnnotations } from '../src/lib/save';
@@ -99,5 +99,38 @@ describe('annotatedName', () => {
         expect(annotatedName('plan.pdf')).toBe('plan-annotated.pdf');
         expect(annotatedName('plan-annotated.pdf')).toBe('plan-annotated.pdf');
         expect(annotatedName('Plan.PDF')).toBe('Plan-annotated.pdf');
+    });
+});
+
+describe('text box with a leader', () => {
+    const callout: Annotation = { id: 'c', page: 1, kind: 'text', from: [100, 100], to: [250, 180], text: 'Check this', elementKey: 'w1' };
+
+    it('is saved as a standard callout whose rectangle includes the leader tip', async () => {
+        const src = await PDFDocument.create();
+        src.addPage([400, 300]);
+        const out = await PDFDocument.load(await buildAnnotatedPdf(await src.save(), [callout], describe_));
+        const annot = out.getPage(0).node.Annots()!.lookup(0, PDFDict);
+        expect((annot.get(PDFName.of('Subtype')) as PDFName).decodeText()).toBe('FreeText');
+        expect((annot.get(PDFName.of('IT')) as PDFName).decodeText()).toBe('FreeTextCallout');
+        const cl = (annot.lookup(PDFName.of('CL')) as PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+        expect(cl).toEqual([250, 300 - 180, expect.any(Number), expect.any(Number)]); // tip first, in PDF space
+        const rect = (annot.lookup(PDFName.of('Rect')) as PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+        expect(rect[2]!).toBeGreaterThanOrEqual(250); // right edge reaches the tip
+        expect(rect[1]!).toBeLessThanOrEqual(300 - 180); // bottom edge reaches the tip
+    });
+
+    it('is a plain FreeText with no callout line when there is no leader', async () => {
+        const src = await PDFDocument.create();
+        src.addPage([400, 300]);
+        const plain: Annotation = { ...callout, to: callout.from };
+        const out = await PDFDocument.load(await buildAnnotatedPdf(await src.save(), [plain], describe_));
+        const annot = out.getPage(0).node.Annots()!.lookup(0, PDFDict);
+        expect(annot.has(PDFName.of('IT'))).toBe(false);
+        expect(annot.has(PDFName.of('CL'))).toBe(false);
+    });
+
+    it('survives a reload with the same box, tip and tie', async () => {
+        const [back] = parseAnnotations(new TextEncoder().encode(JSON.stringify({ annotations: [callout] })));
+        expect(back).toEqual(callout);
     });
 });
