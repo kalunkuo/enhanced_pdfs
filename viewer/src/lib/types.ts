@@ -75,7 +75,7 @@ export interface Annotation {
     /** 1-based page number. */
     page: number;
     kind: AnnotationKind;
-    /** Page coordinates. For line: start and end. For rect/ellipse: opposite corners. For text/comment: a single point. */
+    /** Page coordinates. For line: start and end. For rect/ellipse: opposite corners. For comment/signature: a single point. For text: `from` is the box, `to` the leader tip (equal when there is no leader). */
     from: Point;
     to: Point;
     /** Freehand path, for `pen`. */
