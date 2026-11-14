@@ -72,6 +72,12 @@ export interface Annotation {
     /** Highlight fill color. */
     color?: string;
     text?: string;
+    /** Who wrote a comment. `photo` is a small image data URL. */
+    author?: { name: string; photo?: string };
+    /** When a comment was written, ISO 8601. */
+    createdAt?: string;
+    /** An image attached to a comment, as a data URL. */
+    image?: string;
     /** Set when the annotation is tied to an element. Absent means untied. */
     elementKey?: string;
 }
