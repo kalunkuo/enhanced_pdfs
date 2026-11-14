@@ -32,3 +32,11 @@ export function elementLabel(e: Pick<ElementInfo, 'category' | 'name' | 'element
     const type = singularCategory(e.category);
     return type ? `${type} ${elementIdOf(e)}` : `${e.name} ${elementIdOf(e)}`.trim();
 }
+
+/**
+ * The short name drawn on the page: just the type ("Wall"). The ID is in the side panel, so the drawing stays
+ * uncluttered. Falls back to the element's name when it has no category.
+ */
+export function elementTypeLabel(e: Pick<ElementInfo, 'category' | 'name'>): string {
+    return singularCategory(e.category) || e.name;
+}

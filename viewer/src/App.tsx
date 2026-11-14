@@ -13,7 +13,7 @@ import { Dialog } from './components/ui/Dialog';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
-import { elementLabel } from './lib/elementLabel';
+import { elementLabel, elementTypeLabel } from './lib/elementLabel';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -187,7 +187,8 @@ export function App() {
     const labelFor = useCallback(
         (key: string) => {
             const e = doc?.elements.get(key);
-            return e ? elementLabel(e) : key;
+            // Drawn on the page, so just the type; the panel shows the ID (elementLabel).
+            return e ? elementTypeLabel(e) : key;
         },
         [doc],
     );

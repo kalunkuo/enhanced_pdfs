@@ -44,3 +44,16 @@ describe('elementLabel', () => {
         expect(elementLabel({ category: '', name: 'Thing', elementId: 3 })).toBe('Thing 3');
     });
 });
+
+import { elementTypeLabel } from '../src/lib/elementLabel';
+
+describe('elementTypeLabel', () => {
+    it('is the type alone, with no ID, for labels drawn on the page', () => {
+        expect(elementTypeLabel({ category: 'Walls', name: 'Basic Wall: Exterior' })).toBe('Wall');
+        expect(elementTypeLabel({ category: 'Windows', name: 'Fixed' })).toBe('Window');
+        expect(elementTypeLabel({ category: 'Doors', name: 'Single-Flush' })).toBe('Door');
+    });
+    it('falls back to the name when there is no category', () => {
+        expect(elementTypeLabel({ category: '', name: 'Thing' })).toBe('Thing');
+    });
+});
