@@ -1,0 +1,44 @@
+/* Reusable application typography. These classes set type, not layout spacing. */
+.type-title,
+.type-h1,
+.type-h2,
+.type-h3,
+.type-paragraph {
+  font-family: var(--font-ui);
+  color: var(--color-text);
+}
+
+.type-title {
+  font-size: var(--type-title-size);
+  font-weight: var(--type-title-weight);
+  line-height: var(--type-title-line-height);
+  letter-spacing: -.04em;
+}
+
+.type-h1 {
+  font-size: var(--type-h1-size);
+  font-weight: var(--type-h1-weight);
+  line-height: var(--type-h1-line-height);
+  letter-spacing: -.035em;
+}
+
+.type-h2 {
+  font-size: var(--type-h2-size);
+  font-weight: var(--type-h2-weight);
+  line-height: var(--type-h2-line-height);
+  letter-spacing: -.03em;
+}
+
+.type-h3 {
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  line-height: var(--type-h3-line-height);
+  letter-spacing: -.02em;
+}
+
+.type-paragraph {
+  font-size: var(--type-paragraph-size);
+  font-weight: var(--type-paragraph-weight);
+  line-height: var(--type-paragraph-line-height);
+  letter-spacing: 0;
+}
