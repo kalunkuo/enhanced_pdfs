@@ -10,10 +10,16 @@ param(
 )
 $ErrorActionPreference = "Stop"
 if (-not $User) {
-    $shell = Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | Select-Object -First 1
-    $owner = Invoke-CimMethod -InputObject $shell -MethodName GetOwner
+    # Only the desktop shell in THIS session; anything ambiguous must be stated explicitly with -User.
+    $session = (Get-Process -Id $PID).SessionId
+    $shells = @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe' AND SessionId=$session")
+    if ($shells.Count -ne 1) { throw "Found $($shells.Count) desktop shells in session $session; pass -User DOMAIN\name." }
+    $owner = Invoke-CimMethod -InputObject $shells[0] -MethodName GetOwner
     $User = "$($owner.Domain)\$($owner.User)"
 }
+Write-Host "Granting Modify on the two plug-in files to: $User"
+$answer = Read-Host "Continue? (y/n)"
+if ($answer -ne "y") { throw "Cancelled." }
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
