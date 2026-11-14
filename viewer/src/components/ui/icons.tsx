@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 const base = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 const icon = (path: ReactNode) => () => <svg {...base} aria-hidden="true">{path}</svg>;
 
-export const SelectIcon = icon(<path d="M6 3l12 9-5.5 1 3 6-2.5 1.2-3-6L6 18z" fill="currentColor" />);
+// A solid pointer reads larger than the outline icons around it, so it is drawn at 80% to match their size.
+export const SelectIcon = icon(<path d="M6 3l12 9-5.5 1 3 6-2.5 1.2-3-6L6 18z" fill="currentColor" transform="translate(12 12) scale(0.8) translate(-12 -12)" />);
 export const CommentIcon = icon(<><path d="M4 5h16v11H10l-4 3.5V16H4z" /><path d="M12 8v5M9.5 10.5h5" /></>);
 export const HighlightIcon = icon(<><path d="M14 4l6 6-8 8H7l-2 2H3v-2l2-2v-4z" /><path d="M3 21h8" strokeWidth={3} opacity={0.45} /></>);
 export const DrawIcon = icon(<path d="M4 15c3-9 8-10 8-6 0 5-6 7-3 9 4 2 9-6 11-4" />);
