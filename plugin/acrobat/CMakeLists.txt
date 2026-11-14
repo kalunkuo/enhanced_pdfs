@@ -4,11 +4,11 @@ if(NOT EXISTS "${SDK_HEADERS}/API/PIMain.c")
   message(FATAL_ERROR "ACROBAT_SDK does not look like the SDK 'Version 1' folder: ${ACROBAT_SDK}")
 endif()
 
-file(GLOB PLUGIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB PLUGIN_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${HOSTUI_DIR}/*.cpp")
 add_library(SmartMarkup SHARED ${PLUGIN_SOURCES} "${SDK_HEADERS}/API/PIMain.c")
 set_target_properties(SmartMarkup PROPERTIES SUFFIX ".api")
 target_include_directories(SmartMarkup PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src" "${HOSTUI_DIR}"
   "${SDK_HEADERS}" "${SDK_HEADERS}/SDK" "${SDK_HEADERS}/ADM" "${SDK_HEADERS}/API")
 # Same defines as the SDK samples (vcxproj + Samples/AcroDspOptions.rsp, x64).
 target_compile_definitions(SmartMarkup PRIVATE WIN_PLATFORM _WINDOWS WIN_ENV ACRO_SDK_LEVEL=0x000A0000

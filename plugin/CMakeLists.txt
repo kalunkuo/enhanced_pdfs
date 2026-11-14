@@ -34,8 +34,18 @@ add_custom_command(TARGET core_tests POST_BUILD
 enable_testing()
 add_test(NAME core_tests COMMAND core_tests)
 
+# Host-neutral Windows helpers shared by the adapters (log, inspect window).
+set(HOSTUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/hostui")
+
 # Acrobat adapter: only when the SDK path is given.
 set(ACROBAT_SDK "" CACHE PATH "Acrobat SDK 'Version 1' folder")
 if(ACROBAT_SDK)
   add_subdirectory(acrobat)
+endif()
+
+# PDF-XChange Editor adapter: types come from the installed Editor's type library.
+option(PDFXCHANGE "Build the PDF-XChange Editor adapter (SmartMarkup.pvp)" OFF)
+set(PDFXCHANGE_DIR "C:/Program Files/Tracker Software/PDF Editor" CACHE PATH "PDF-XChange Editor install folder")
+if(PDFXCHANGE)
+  add_subdirectory(pdfxchange)
 endif()
