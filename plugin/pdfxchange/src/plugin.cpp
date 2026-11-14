@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "events.h"
+#include "inspect.h"
 #include "log.h"
 #include "pxv.h"
 #include "selftest.h"
@@ -68,9 +69,11 @@ public:
         char probe[8] = {};
         if (GetEnvironmentVariableA("SMARTMARKUP_PROBE", probe, sizeof probe) > 0) SubscribeProbe(inst_);
         InitSelfTest(inst_);
+        RegisterInspect(inst_);
         return S_OK;
     }
     HRESULT __stdcall Unload() override {
+        UnregisterInspect();
         UnsubscribeAll();
         if (inst_) {
             inst_->Release();

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "PIHeaders.h"
+#include <windows.h>
 #include "smartmarkup/inspect_rows.h"
 
 // Shows (or refreshes) the window. `parent` may be null.
