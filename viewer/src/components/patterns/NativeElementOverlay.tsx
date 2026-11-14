@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { NativeGeometry, NativePaintPart } from '../../lib/nativeGeometry';
+import { matchesDrawingScope } from '../../lib/filters';
 
 export interface NativeElementOverlayProps {
     geometry: NativeGeometry | null;
@@ -10,10 +11,11 @@ export interface NativeElementOverlayProps {
     hoverKey: string | null;
     selectedKey: string | null;
     matchedKeys: ReadonlySet<string> | null;
+    drawingIds?: ReadonlySet<string> | null;
 }
 
 /** Native paint emphasis is independent of base rendering and markup hit targets. */
-export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys }: NativeElementOverlayProps) {
+export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, drawingIds = null }: NativeElementOverlayProps) {
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = ref.current;
@@ -34,6 +36,7 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             xScale * transform[0], yScale * transform[1], xScale * transform[2], yScale * transform[3], xScale * transform[4], yScale * transform[5],
         );
         for (const part of geometry.parts) {
+            if (!matchesDrawingScope(part.drawingId, drawingIds)) continue;
             const selected = part.elementKey === selectedKey;
             const hovered = part.elementKey === hoverKey;
             if (!selected && !hovered && !matchedKeys?.has(part.elementKey)) continue;
@@ -55,6 +58,6 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             else context.stroke(part.path);
             context.restore();
         }
-    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys]);
+    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, drawingIds]);
     return <canvas ref={ref} aria-hidden="true" style={{ pointerEvents: 'none' }} />;
 }

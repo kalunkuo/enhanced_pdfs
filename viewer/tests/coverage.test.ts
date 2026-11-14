@@ -21,4 +21,17 @@ describe('metadata location coverage', () => {
         expect(elementLocations(elements, source, null, []).get('unsupported')).toBe('mapping');
         expect(elementLocations(elements, undefined, null, []).get('ready')).toBe('metadata-only');
     });
+
+    it('does not locate schedule members using the same element ink from a different view', () => {
+        const scopedSource = { resolvedElementKeys: new Set(['ready']), occurrences: [{ status: 'resolved', elementKey: 'ready', drawingId: 'plan', candidateKeys: ['ready'] }] } as unknown as NativeTagIndex;
+        const scopedGeometry = { ...geometry, parts: [{ elementKey: 'ready', drawingId: 'plan' }] } as unknown as NativeGeometry;
+        expect(elementLocations(elements, scopedSource, scopedGeometry, [], new Set(['plan'])).get('ready')).toBe('ready');
+        expect(elementLocations(elements, scopedSource, scopedGeometry, [], new Set(['schedule'])).get('ready')).toBe('metadata-only');
+    });
+
+    it('keeps optional legacy attachment shapes scoped to their actual drawing', () => {
+        const shapes = [{ elementKey: 'legacy', drawingId: 'sheet', bbox: [0, 0, 1, 1] as const }];
+        expect(elementLocations(elements, undefined, null, shapes, new Set(['sheet'])).get('legacy')).toBe('legacy');
+        expect(elementLocations(elements, undefined, null, shapes, new Set(['other'])).get('legacy')).toBe('metadata-only');
+    });
 });

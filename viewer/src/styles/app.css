@@ -19,7 +19,7 @@ button, input { font: inherit; color: inherit; }
 .btn:hover:not(:disabled) { background: var(--color-surface-raised); }
 .btn svg { width: var(--button-icon-glyph-size); height: var(--button-icon-glyph-size); }
 .viewer-notices { display: grid; gap: var(--primitive-space-2); padding: var(--primitive-space-2) var(--space-panel-padding); background: var(--color-canvas); }
-.viewer-notices:empty { display: none; }
+.viewer-notices:empty { padding: 0; }
 
 /* Always the last (1fr) row, even when the notices row is hidden. */
 .main { grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; border-top: var(--primitive-border-1) solid var(--color-border); }
@@ -90,9 +90,9 @@ button, input { font: inherit; color: inherit; }
 .check.on { background: var(--color-primary); color: var(--color-canvas); opacity: 1; }
 
 .list { list-style: none; margin: 0; padding: 0; }
-.list button { display: block; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--color-border);
+.list button:not(.locate-result) { display: block; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--color-border);
     background: none; cursor: pointer; }
-.list button:hover { background: var(--color-surface-raised); }
+.list button:hover:not(.locate-result) { background: var(--color-surface-raised); }
 .list button[aria-current='true'] { background: var(--color-primary); color: var(--color-canvas); }
 .list button[aria-current='true'] .muted { color: var(--color-canvas); }
 .list strong { font-weight: 500; }
@@ -195,6 +195,9 @@ button, input { font: inherit; color: inherit; }
 .parameter-scope { display: inline-block; margin-left: 4px; color: var(--color-text-muted); font-size: var(--primitive-font-size-xs); opacity: .8; }
 .load-more { margin: 10px 14px; }
 .pick-status { position: absolute; left: 12px; bottom: 12px; pointer-events: none; padding: 7px 10px; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); font-size: var(--primitive-font-size-xs); box-shadow: var(--viewer-shadow-md); }
+.property-actions { padding: 10px 14px; border-bottom: 1px solid var(--color-border); }
+.list .locate-result { width: auto; margin: 0 14px 10px; }
+.filter-fit { justify-self: start; }
 
 @keyframes viewer-menu-in { from { opacity: 0; transform: scale(var(--menu-scale-closed)); } to { opacity: 1; transform: scale(1); } }
 @keyframes viewer-menu-row-in { from { opacity: 0; transform: translateY(var(--primitive-space-1)); } to { opacity: 1; transform: translateY(0); } }
