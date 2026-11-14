@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { avatarColor, formatTimeAgo } from '../../lib/comments';
+import { avatarColor, initials } from '../../lib/comments';
 import { imageToDataUrl, type Profile } from '../../lib/profile';
 import type { Annotation, PageData, Point } from '../../lib/types';
-import { Avatar } from '../ui/Avatar';
-import { TrashIcon } from '../ui/icons';
 
 export interface CommentLayerProps {
     page: Pick<PageData, 'number' | 'width' | 'height'>;
@@ -16,85 +14,126 @@ export interface CommentLayerProps {
     profile: Profile;
     onProfile: (profile: Profile) => void;
     labelFor: (elementKey: string) => string;
-    idFor: (elementKey: string) => number | undefined;
+    /** The element under a page point, or null for empty paper. Decides tied or untied while dragging. */
+    pick: (point: Point) => string | null;
     onSelect: (id: string | null) => void;
-    onSelectElement: (key: string | null) => void;
+    /** A pin was dropped at `at`; the caller re-ties it to whatever is there. */
+    onMove: (id: string, at: Point) => void;
+    /** The element a dragged pin is over, for highlighting. */
+    onDragTarget: (key: string | null, client: { x: number; y: number }) => void;
     /** `name` is the author's name as of this click, so a first-time name is not lost to stale state. */
     onSend: (comment: { text: string; image?: string; at: Point; name: string }) => void;
     onCancel: () => void;
-    onDelete: (id: string) => void;
 }
 
 const EMOJI = ['😀', '😂', '😊', '😍', '👍', '👎', '🙏', '🎉', '🔥', '✅', '❌', '⚠️', '❓', '👀', '💡', '🛠️'];
-const BUBBLE_WIDTH = 320;
-
-/** One minute-resolution clock, so "just now" turns into "1 min ago" without a reload. */
-function useNow(intervalMs = 30_000): number {
-    const [now, setNow] = useState(Date.now);
-    useEffect(() => {
-        const id = setInterval(() => setNow(Date.now()), intervalMs);
-        return () => clearInterval(id);
-    }, [intervalMs]);
-    return now;
-}
+/** Pixels of pointer travel before a press on a pin becomes a drag instead of a click. */
+const DRAG_THRESHOLD = 4;
+/** Room the pill needs to the right of a pin before it flips to the left. */
+const PILL_ROOM = 300;
 
 const stop = (event: ReactPointerEvent) => event.stopPropagation();
+const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
 
-/** HTML overlay for comments. Pins sit at page coordinates; cards are real DOM so text and images stay crisp at any zoom. */
+interface Drag {
+    id: string;
+    at: Point;
+    key: string | null;
+}
+
+/**
+ * HTML overlay for comments. A pin is a teardrop whose tip (bottom-left) is the comment's anchor point, plus a
+ * pill with the object and a message preview. Tied pins take the commenter's color; untied pins are gray.
+ * Drag a pin to move it: dropping it on an object ties it, dropping it on empty paper unties it.
+ */
 export function CommentLayer(props: CommentLayerProps) {
     const { page, zoom } = props;
-    const now = useNow();
-    const [hoverId, setHoverId] = useState<string | null>(null);
-    const flip = (x: number) => x * zoom + BUBBLE_WIDTH + 48 > page.width * zoom;
+    const [drag, setDrag] = useState<Drag | null>(null);
+    const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean } | null>(null);
+
+    // Escape puts a dragged pin back where it was.
+    useEffect(() => {
+        if (!drag) return;
+        const esc = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            press.current = null;
+            setDrag(null);
+            props.onDragTarget(null, { x: 0, y: 0 });
+        };
+        window.addEventListener('keydown', esc);
+        return () => window.removeEventListener('keydown', esc);
+    }, [drag, props]);
+
+    const begin = (event: ReactPointerEvent<HTMLDivElement>, comment: Annotation) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false };
+    };
+    const move = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const p = press.current;
+        if (!p) return;
+        const dx = event.clientX - p.x;
+        const dy = event.clientY - p.y;
+        if (!p.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        p.moved = true;
+        const at: Point = [clamp(p.start[0] + dx / zoom, page.width), clamp(p.start[1] + dy / zoom, page.height)];
+        const key = props.pick(at);
+        setDrag({ id: p.id, at, key });
+        props.onDragTarget(key, { x: event.clientX, y: event.clientY });
+    };
+    const end = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const p = press.current;
+        press.current = null;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (!p) return;
+        if (p.moved && drag) props.onMove(p.id, drag.at);
+        else props.onSelect(p.id);
+        setDrag(null);
+        props.onDragTarget(null, { x: 0, y: 0 });
+    };
+    const cancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+        press.current = null;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        setDrag(null);
+        props.onDragTarget(null, { x: 0, y: 0 });
+    };
 
     return (
         <div className="comment-layer">
             {props.comments.map((comment) => {
-                const open = comment.id === props.selectedId || comment.id === hoverId;
+                const dragging = drag?.id === comment.id;
+                const at = dragging ? drag.at : comment.from;
+                const key = dragging ? drag.key : (comment.elementKey ?? null);
                 const name = comment.author?.name ?? 'Unknown';
+                const selected = comment.id === props.selectedId;
+                const flip = at[0] * zoom + PILL_ROOM > page.width * zoom;
                 return (
                     <div
                         key={comment.id}
-                        className={`cpin ${open ? 'open' : ''}`}
-                        style={{ left: comment.from[0] * zoom, top: comment.from[1] * zoom, '--pin': avatarColor(name) } as CSSProperties}
-                        onPointerDown={stop}
-                        onMouseEnter={() => setHoverId(comment.id)}
-                        onMouseLeave={() => setHoverId(null)}
+                        className={`cpin ${key ? 'tied' : 'untied'} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''} ${flip ? 'flip' : ''}`}
+                        style={{ left: at[0] * zoom, top: at[1] * zoom, '--pin': avatarColor(name) } as CSSProperties}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Comment by ${name}${key ? `, on ${props.labelFor(key)}` : ', not tied to an object'}. Drag to move.`}
+                        aria-pressed={selected}
+                        onPointerDown={(e) => begin(e, comment)}
+                        onPointerMove={move}
+                        onPointerUp={end}
+                        onPointerCancel={cancel}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onSelect(comment.id); } }}
                     >
-                        <button className="cpin-btn" aria-label={`Comment by ${name}`} aria-expanded={open} onClick={() => props.onSelect(comment.id === props.selectedId ? null : comment.id)}>
-                            <Avatar name={name} photo={comment.author?.photo} size={32} />
-                        </button>
-                        {open && <Bubble comment={comment} now={now} flip={flip(comment.from[0])} {...props} />}
+                        <span className="cdrop" aria-hidden="true">
+                            {comment.author?.photo ? <img src={comment.author.photo} alt="" draggable={false} /> : initials(name)}
+                        </span>
+                        <span className="cpill" aria-hidden="true">
+                            <strong>{key ? props.labelFor(key) : 'No object'}</strong>
+                            <span className="cpill-msg">{comment.text}</span>
+                        </span>
                     </div>
                 );
             })}
-            {props.composerAt && <Composer key="composer" at={props.composerAt} flip={flip(props.composerAt[0])} {...props} />}
-        </div>
-    );
-}
-
-function Bubble({ comment, now, flip, labelFor, idFor, onSelectElement, onDelete }: { comment: Annotation; now: number; flip: boolean } & CommentLayerProps) {
-    const name = comment.author?.name ?? 'Unknown';
-    const tied = comment.elementKey;
-    return (
-        <div className={`cbubble ${flip ? 'left' : ''}`} role="dialog" aria-label={`Comment by ${name}`}>
-            <div className="chead">
-                <Avatar name={name} photo={comment.author?.photo} size={36} />
-                <div className="cwho">
-                    <strong>{name}</strong>
-                    <span className="muted" title={comment.createdAt}>{formatTimeAgo(comment.createdAt, now)}</span>
-                </div>
-                <button className="icon-btn cdel" aria-label="Delete comment" title="Delete comment" onClick={() => onDelete(comment.id)}><TrashIcon /></button>
-            </div>
-            <p className="cmsg">{comment.text}</p>
-            {comment.image && <img className="cimg" src={comment.image} alt="Attached to the comment" />}
-            <div className="cfoot">
-                {tied ? (
-                    <button className="chip tied linklike" onClick={() => onSelectElement(tied)}>↳ {labelFor(tied)}{idFor(tied) !== undefined ? ` · ID ${idFor(tied)}` : ''}</button>
-                ) : (
-                    <span className="chip untied">untied</span>
-                )}
-            </div>
+            {props.composerAt && <Composer key="composer" at={props.composerAt} flip={props.composerAt[0] * zoom + 368 > page.width * zoom} {...props} />}
         </div>
     );
 }

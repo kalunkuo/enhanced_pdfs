@@ -159,37 +159,42 @@ button, input { font: inherit; color: inherit; }
 .avatar { display: inline-grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; color: #fff; font-weight: 600; line-height: 1; user-select: none; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Comments: pins sit at page points; cards are plain DOM over the page */
+/* Comments: a teardrop whose tip (bottom-left corner) is the anchor point, plus a pill with the object and a message preview.
+   .cpin is a zero-size box at the anchor, so everything is placed relative to the tip. */
 .comment-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
-.cpin { position: absolute; width: 0; height: 0; pointer-events: none; }
-.cpin.open { z-index: 2; }
-/* One-color pin: the circle and its tail share the person's color. The tail's tip is the .cpin origin,
-   i.e. the exact page point being commented on. */
-.cpin-btn { position: absolute; left: -16px; top: -42px; z-index: 0; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border-radius: 50%;
-    border: 0; background: var(--pin); cursor: pointer; pointer-events: auto; transform-origin: 50% calc(100% + 10px);
-    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); transition: transform 0.12s; }
-.cpin-btn::after { content: ''; position: absolute; z-index: -1; left: 50%; bottom: -6px; width: 18px; height: 18px; background: var(--pin); border-radius: 0 0 4px 0;
-    transform: translateX(-50%) rotate(45deg); }
-.cpin.open .cpin-btn { transform: scale(1.15); filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45)); }
+.cpin { --drop: 32px; position: absolute; width: 0; height: 0; pointer-events: none; outline: none; }
+.cpin.selected, .cpin.dragging { z-index: 2; }
+.cdrop { position: absolute; left: 0; top: calc(-1 * var(--drop)); width: var(--drop); height: var(--drop); display: grid; place-items: center; overflow: hidden;
+    border-radius: 50% 50% 50% 0; background: var(--pin); color: #fff; font-size: 13px; font-weight: 600; line-height: 1;
+    pointer-events: auto; cursor: grab; touch-action: none; user-select: none; transform-origin: 0 100%;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); transition: transform 0.12s; }
+.cdrop img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+/* Untied: not attached to an object, so it is plain gray. */
+.cpin.untied .cdrop { background: hsl(240 4% 52%); filter: grayscale(1) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); }
+.cpin.selected .cdrop, .cpin.dragging .cdrop { transform: scale(1.14); }
+.cpin.dragging .cdrop { cursor: grabbing; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4)); }
+.cpin.untied.dragging .cdrop { filter: grayscale(1) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4)); }
+.cpin:focus-visible .cdrop { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.cpill { position: absolute; left: calc(var(--drop) + 6px); top: calc(-1 * var(--drop) + 3px); height: 26px; max-width: 260px; display: flex; align-items: center; gap: 6px;
+    padding: 0 11px; border-radius: 13px; background: #fff; color: #18181b; font-size: 12px; white-space: nowrap; overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--pin) 50%, #fff); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); pointer-events: auto; cursor: grab; user-select: none; }
+.cpin.untied .cpill { border-color: #d4d4d8; }
+.cpin.selected .cpill { border-color: var(--pin); box-shadow: 0 0 0 1px var(--pin), 0 2px 6px rgba(0, 0, 0, 0.25); }
+.cpin.untied.selected .cpill { border-color: #71717a; box-shadow: 0 0 0 1px #71717a, 0 2px 6px rgba(0, 0, 0, 0.25); }
+.cpill strong { flex: none; font-weight: 600; }
+.cpin.untied .cpill strong { color: #71717a; font-weight: 500; font-style: italic; }
+.cpill-msg { overflow: hidden; text-overflow: ellipsis; color: #52525b; }
+.cpin.dragging .cpill { cursor: grabbing; }
+.cpin.flip .cpill { left: auto; right: 6px; }
+
 .cbubble, .ccard { position: absolute; top: -46px; left: 30px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
     border-radius: 20px; box-shadow: var(--shadow-md); }
-.cbubble.left, .ccard.left { left: auto; right: 28px; }
-.cbubble { padding: 14px 18px 14px 14px; }
-.chead { display: flex; align-items: center; gap: 10px; }
-.cwho { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.25; }
-.cwho strong { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cwho .muted { color: #71717a; font-size: 13px; }
-.cdel { width: 30px; height: 30px; color: #71717a; opacity: 0; }
-.cbubble:hover .cdel, .cdel:focus-visible { opacity: 1; }
-.cmsg { margin: 10px 0 0 46px; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.cimg { display: block; margin: 8px 0 0 46px; max-width: calc(100% - 46px); max-height: 220px; border-radius: 10px; }
-.cfoot { margin: 8px 0 0 46px; }
-.chip.linklike { background: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; }
-
+.ccard.left { left: auto; right: 28px; }
 .ccomposer { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 4; }
-.cteardrop { position: absolute; left: 0; top: -34px; width: 34px; height: 34px; background: var(--comment); border-radius: 50% 50% 50% 0;
+.cteardrop { position: absolute; left: 0; top: -32px; width: 32px; height: 32px; background: var(--comment); border-radius: 50% 50% 50% 0;
     box-shadow: var(--shadow-md); pointer-events: none; }
-.ccard { top: -34px; left: 44px; border: 2px solid var(--comment); border-radius: 22px; overflow: visible; }
+.ccard { top: -32px; left: 42px; border: 2px solid var(--comment); border-radius: 22px; overflow: visible; }
 .ccard.left { right: 10px; }
 .ccard textarea { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: #18181b; font: inherit; font-size: 17px;
     padding: 16px 20px 8px; border-radius: 22px 22px 0 0; }
@@ -225,3 +230,25 @@ button, input { font: inherit; color: inherit; }
 /* Right side of the navigation bar: file name, upload, profile. */
 .docbar .trailing { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; padding-left: 12px; }
 .docbar .trailing .file-name { max-width: 28ch; }
+
+/* Thread in the Notes panel */
+.thread { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: grid; gap: 10px; }
+.tmsg { display: flex; gap: 10px; }
+.tbody { flex: 1; min-width: 0; }
+.thead { display: flex; align-items: baseline; gap: 8px; }
+.thead strong { font-weight: 600; }
+.thead .muted { font-size: 12px; }
+.tdel { width: 28px; height: 28px; align-self: center; color: var(--muted-foreground); }
+.ttext { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timg { display: block; margin-top: 6px; max-width: 100%; max-height: 200px; border-radius: calc(var(--radius) - 2px); }
+.tchips { margin-left: 42px; }
+.thread .tie-row { padding: 0 0 0 42px; border: 0; background: none; }
+.treplies { list-style: none; margin: 0; padding: 0 0 0 42px; display: grid; gap: 12px; }
+.treplies .avatar { width: 26px !important; height: 26px !important; font-size: 11px !important; }
+.treply { margin-left: 42px; display: grid; gap: 8px; }
+.treply textarea { width: 100%; resize: vertical; min-height: 56px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input);
+    background: var(--background); color: var(--foreground); font: inherit; }
+.treply .tname { width: 100%; margin: 0; }
+.tsend { justify-self: end; height: 32px; }
+.tsend:disabled { opacity: 0.5; cursor: default; }
+

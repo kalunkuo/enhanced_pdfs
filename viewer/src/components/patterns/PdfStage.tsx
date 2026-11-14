@@ -29,7 +29,7 @@ interface Props {
     onSelectAnnotation: (id: string | null) => void;
     onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
     /** Comment threads drawn over the page. `comments`, `page` and `zoom` come from the stage. */
-    commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments'>;
+    commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments' | 'pick'>;
     /** The comment tool was clicked at a page point. */
     onStartComment: (point: Point) => void;
     pickElement?: ElementPicker;
@@ -56,7 +56,9 @@ export function PdfStage(props: Props) {
         return clampZoom(zoomMode.value);
     }, [zoomMode, size, page.width, page.height]);
 
-    useEffect(() => onZoom(zoom), [zoom, onZoom]);
+    useEffect(() => {
+        onZoom(zoom);
+    }, [zoom, onZoom]);
     useEffect(() => {
         panRef.current = null;
         setPanning(false);
@@ -117,7 +119,7 @@ export function PdfStage(props: Props) {
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} />
                 </MarkupLayer>
-                <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} {...props.commentLayer} />
+                <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
             </div>
         </div>
     );

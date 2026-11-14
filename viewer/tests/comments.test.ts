@@ -87,3 +87,57 @@ describe('comments in a saved file', () => {
         expect(annot.lookup(PDFName.of('Contents'), PDFHexString).decodeText()).toBe('Check fire rating');
     });
 });
+
+describe('replies', () => {
+    const reply = { id: 'r1', author: { name: 'Carlos' }, createdAt: '2026-11-14T16:00:00Z', text: 'Agreed, will confirm.' };
+    const withReplies: Annotation = { ...comment, replies: [reply, { ...reply, id: 'r2', text: 'Done.' }] };
+
+    it('keep their order and content through save and reload', () => {
+        expect(parseAnnotations(enc({ annotations: [withReplies] }))).toEqual([withReplies]);
+    });
+
+    it('drop malformed replies but keep the comment and the good replies', () => {
+        const hostile = {
+            ...comment,
+            replies: [
+                reply,
+                { ...reply, id: 'bad1', text: '   ' },
+                { ...reply, id: 'bad2', author: { name: '' } },
+                { ...reply, id: 'bad3', createdAt: 'whenever' },
+                { ...reply, id: 'bad4', image: 'https://evil.example/x.png', text: 'has a bad image' },
+                'not an object',
+            ],
+        };
+        const [clean] = parseAnnotations(enc({ annotations: [hostile] }));
+        expect(clean!.replies!.map((r) => r.id)).toEqual(['r1', 'bad4']);
+        expect(clean!.replies![1]!.image).toBeUndefined();
+    });
+
+    it('caps how many replies a file can bring in', () => {
+        const many = Array.from({ length: 800 }, (_, i) => ({ ...reply, id: `r${i}` }));
+        const [clean] = parseAnnotations(enc({ annotations: [{ ...comment, replies: many }] }));
+        expect(clean!.replies).toHaveLength(500);
+    });
+
+    it('are written as standard reply annotations pointing at the comment, and are not duplicated on a second save', async () => {
+        const src = await PDFDocument.create();
+        src.addPage([300, 300]);
+        const first = await buildAnnotatedPdf(await src.save(), [withReplies], () => 'Tied to Wall 01');
+        const second = await buildAnnotatedPdf(first, [withReplies], () => 'Tied to Wall 01');
+
+        for (const bytes of [first, second]) {
+            const annots = (await PDFDocument.load(bytes)).getPage(0).node.Annots()!;
+            expect(annots.size()).toBe(3); // the comment and its two replies, never more
+            const dicts = annots.asArray().map((_, i) => annots.lookup(i, PDFDict));
+            const parentIndex = dicts.findIndex((d) => !d.has(PDFName.of('IRT')));
+            const replies = dicts.filter((d) => d.has(PDFName.of('IRT')));
+            expect(replies).toHaveLength(2);
+            for (const r of replies) {
+                expect(r.get(PDFName.of('IRT'))!.toString()).toBe(annots.get(parentIndex)!.toString());
+                expect((r.get(PDFName.of('RT')) as PDFName).decodeText()).toBe('R');
+                expect(r.lookup(PDFName.of('T'), PDFHexString).decodeText()).toBe('Carlos');
+            }
+            expect(replies.map((r) => r.lookup(PDFName.of('Contents'), PDFHexString).decodeText())).toEqual(['Agreed, will confirm.', 'Done.']);
+        }
+    });
+});

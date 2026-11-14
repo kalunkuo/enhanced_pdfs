@@ -14,7 +14,7 @@ import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import { useProfile } from './lib/profile';
-import type { Annotation, EnhancedPdf, PageData, Point } from './lib/types';
+import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 
 type Tab = 'properties' | 'elements' | 'notes';
 const KEYS: Record<string, Tool | 'draw'> = { v: 'select', c: 'comment', h: 'highlight', d: 'draw', t: 'text', s: 'signature' };
@@ -132,7 +132,9 @@ export function App() {
     };
 
     // A comment being written belongs to the comment tool and to one page.
-    useEffect(() => setComposerAt(null), [tool, pageData?.number]);
+    useEffect(() => {
+        setComposerAt(null);
+    }, [tool, pageData?.number]);
 
     const sendComment = (c: { text: string; image?: string; at: Point; name: string }) => {
         addAnnotation({
@@ -142,6 +144,21 @@ export function App() {
         });
         setComposerAt(null);
     };
+
+    // Dropping a pin ties it to whatever is under its tip, or unties it on empty paper.
+    const moveComment = (id: string, at: Point) => {
+        setAnnotations((list) => list.map((a) => (a.id === id ? tieWithPicker({ ...a, from: at, to: at }, pickElement, 4 / zoom) : a)));
+        const moved = annotations.find((a) => a.id === id);
+        if (moved) setSelectedKey(tieWithPicker({ ...moved, from: at, to: at }, pickElement, 4 / zoom).elementKey ?? null);
+    };
+
+    const sendReply = useCallback((id: string, r: { text: string; name: string }) => {
+        const reply: Reply = {
+            id: `r${nextId.current++}`, text: r.text, createdAt: new Date().toISOString(),
+            author: { name: r.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+        };
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
+    }, [profile.photo]);
 
     const deleteById = useCallback((id: string) => {
         setAnnotations((list) => list.filter((a) => a.id !== id));
@@ -282,12 +299,16 @@ export function App() {
                                 profile,
                                 onProfile: setProfile,
                                 labelFor,
-                                idFor: (key) => doc.elements.get(key)?.elementId,
-                                onSelect: (id) => { setSelectedAnnotationId(id); setComposerAt(null); const k = annotations.find((a) => a.id === id)?.elementKey ?? null; setSelectedKey(k); },
-                                onSelectElement: selectElement,
+                                onSelect: (id) => {
+                                    setSelectedAnnotationId(id);
+                                    setComposerAt(null);
+                                    setSelectedKey(annotations.find((a) => a.id === id)?.elementKey ?? null);
+                                    if (id) setTab('notes');
+                                },
+                                onMove: moveComment,
+                                onDragTarget: (key, client) => onHover(key, client),
                                 onSend: sendComment,
                                 onCancel: () => setComposerAt(null),
-                                onDelete: deleteById,
                             }}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
@@ -336,7 +357,11 @@ export function App() {
                                 annotations={annotations}
                                 elements={doc.elements}
                                 selectedId={selectedAnnotationId}
+                                profile={profile}
+                                onProfile={setProfile}
                                 onTie={tieAnnotation}
+                                onReply={sendReply}
+                                onDelete={deleteById}
                                 onSelect={(a) => { goToPage(a.page); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
                             />
                         )}
