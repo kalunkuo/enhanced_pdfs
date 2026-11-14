@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DocBar } from './components/patterns/DocBar';
 import { ElementList } from './components/patterns/ElementList';
+import { FilterPanel } from './components/patterns/FilterPanel';
 import { HoverCard } from './components/patterns/HoverCard';
 import { NotesList } from './components/patterns/NotesList';
 import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patterns/PdfStage';
@@ -9,6 +10,9 @@ import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/
 import { Button } from './components/ui/Button';
 import { UploadIcon } from './components/ui/icons';
 import { createShapePicker, tieWithPicker } from './lib/hit';
+import { elementLocations } from './lib/coverage';
+import { EMPTY_FILTERS, filterElements, hasActiveFilters, type FilterState } from './lib/filters';
+import { createNativeGeometryCapture, type NativeGeometry } from './lib/nativeGeometry';
 import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
@@ -35,19 +39,32 @@ export function App() {
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-    const pickElement = useMemo(() => createShapePicker(pageData?.shapes ?? []), [pageData]);
+    const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
+    const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+    const nativeSource = pageData?.nativeTags;
+    const geometry = nativeGeometry?.source === nativeSource ? nativeGeometry : null;
+    const createCapture = useMemo(() => nativeSource?.resolvedElementKeys.size ? createNativeGeometryCapture(nativeSource, setNativeGeometry) : undefined, [nativeSource]);
+    const pickElement = useMemo(() => geometry?.pick ?? createShapePicker(pageData?.shapes ?? []), [geometry, pageData]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
     const nextId = useRef(1);
+    const openRequest = useRef(0);
+
+    useEffect(() => () => { void doc?.dispose?.(); }, [doc]);
+    useEffect(() => () => { openRequest.current++; }, []);
 
     const open = useCallback(async (file: File) => {
+        const request = ++openRequest.current;
         setError(null);
         try {
             const next = await loadEnhancedPdf(file);
+            if (request !== openRequest.current) { await next.dispose?.(); return; }
             nextId.current = 1 + next.savedAnnotations.length;
             setDoc(next);
             setPage(1);
             setPageData(null);
+            setNativeGeometry(null);
+            setFilters(EMPTY_FILTERS);
             setAnnotations(next.savedAnnotations);
             setSelectedKey(null);
             setSelectedAnnotationId(null);
@@ -56,7 +73,7 @@ export function App() {
             setTab('properties');
             setStatus(next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null);
         } catch (e) {
-            setError(`Could not open ${file.name}: ${errorText(e)}`);
+            if (request === openRequest.current) setError(`Could not open ${file.name}: ${errorText(e)}`);
         }
     }, []);
 
@@ -65,7 +82,7 @@ export function App() {
         await open(new File([blob], 'demo-enhanced.pdf', { type: 'application/pdf' }));
     };
 
-    // Load the current page. The old page stays on screen until the new one is ready.
+    // Page navigation clears the old interaction surface before this resolves.
     useEffect(() => {
         if (!doc) return;
         let cancelled = false;
@@ -84,6 +101,8 @@ export function App() {
             const target = Math.min(doc.pageCount, Math.max(1, n));
             if (target === page) return;
             setPage(target);
+            setPageData(null);
+            setNativeGeometry(null);
             setHover(null);
             setSelectedKey(null);
             setSelectedAnnotationId(null);
@@ -102,15 +121,21 @@ export function App() {
     const describeTie = useCallback(
         (a: Annotation) => {
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
-            return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
+            return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementIdText ?? e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
         [doc],
     );
 
     const selectElement = useCallback((key: string | null) => {
         setSelectedKey(key);
-        if (key) setTab('properties');
-    }, []);
+        if (key) {
+            setTab('properties');
+            const drawingIds = new Set(doc?.appearances?.filter((appearance) => appearance.elementKey === key).map((appearance) => appearance.drawingId));
+            const drawings = doc?.drawings?.filter((drawing) => drawingIds.has(drawing.id)) ?? [];
+            const target = drawings.find((drawing) => drawing.page === page) ?? drawings[0];
+            if (target && target.page !== page) { setPage(target.page); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
+        }
+    }, [doc, page]);
 
     const onHover = useCallback((key: string | null, at: { x: number; y: number }) => {
         setHover((h) => (key ? { key, ...at } : h === null ? h : null));
@@ -197,6 +222,14 @@ export function App() {
     }, [doc, page, drawKind, deleteSelected, goToPage, save, print]);
 
     const elementList = useMemo(() => (doc ? [...doc.elements.values()] : []), [doc, pageData]);
+    const matchedElements = useMemo(() => filterElements(elementList, doc?.parameters ?? new Map(), filters), [elementList, doc, filters]);
+    const matchedKeys = useMemo(() => new Set(matchedElements.map((element) => element.key)), [matchedElements]);
+    const locations = useMemo(() => elementLocations(elementList, nativeSource, geometry, pageData?.shapes ?? []), [elementList, nativeSource, geometry, pageData]);
+    const locatableCount = useMemo(() => matchedElements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).length, [matchedElements, locations]);
+    const appearanceCount = useMemo(() => geometry
+        ? new Set(geometry.parts.filter((part) => matchedKeys.has(part.elementKey)).map((part) => part.appearanceId)).size
+        : new Set((pageData?.shapes ?? []).filter((shape) => matchedKeys.has(shape.elementKey)).map((shape) => shape.elementKey)).size,
+    [geometry, pageData, matchedKeys]);
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
 
@@ -254,6 +287,9 @@ export function App() {
                             onAddAnnotation={addAnnotation}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
+                            createCapture={createCapture}
+                            geometry={geometry}
+                            matchedKeys={hasActiveFilters(filters) ? matchedKeys : null}
                         />
                     ) : (
                         <div className="stage">
@@ -280,10 +316,17 @@ export function App() {
                     />
                 </div>
                 <aside className="side">
+                    {doc && nativeSource && nativeSource.occurrences.length > 0 && (
+                        <div className="geometry-status" role="status">
+                            {geometry ? `${geometry.elementKeys.size.toLocaleString()} elements located on this page` : nativeSource.resolvedElementKeys.size ? 'Preparing native element geometry…' : 'No unambiguous element locations on this page'}
+                            {nativeSource.occurrences.some((occurrence) => occurrence.status === 'ambiguous') && ' · Some model identities are ambiguous'}
+                            {!!geometry?.unsupportedPaints && ' · Some graphics are unsupported'}
+                        </div>
+                    )}
                     <div className="tabs" role="tablist">
                         {(['properties', 'elements', 'notes'] as const).map((t) => (
                             <button key={t} role="tab" className="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-                                {t === 'notes' ? `Notes (${annotations.length})` : t[0]!.toUpperCase() + t.slice(1)}
+                                {t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties'}
                             </button>
                         ))}
                     </div>
@@ -291,9 +334,12 @@ export function App() {
                         {!doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
-                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={(pageData?.shapes.length ?? 0) > 0} />
+                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} />
                         ) : tab === 'elements' ? (
-                            <ElementList elements={elementList} selectedKey={selectedKey} onSelect={selectElement} />
+                            <>
+                                <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={setFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} />
+                                <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} />
+                            </>
                         ) : (
                             <NotesList
                                 annotations={annotations}

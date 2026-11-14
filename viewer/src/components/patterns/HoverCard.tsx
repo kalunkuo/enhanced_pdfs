@@ -9,7 +9,7 @@ export function HoverCard({ element, at }: { element: ElementInfo; at: { x: numb
                 {element.level ? ` · ${element.level}` : ''}
             </div>
             {element.fireRating && <div>Fire Rating: {element.fireRating}</div>}
-            <div className="muted">ID {element.elementId} · click for all parameters</div>
+            <div className="muted">ID {element.elementIdText ?? element.elementId} · click for all parameters</div>
             {element.placeholder && <span className="chip untied">Placeholder data</span>}
         </div>
     );

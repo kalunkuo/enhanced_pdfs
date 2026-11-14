@@ -6,18 +6,18 @@ Build on `viewer-v1`. The viewer already uses React, strict TypeScript, Vite, Bu
 
 ## Shared baseline before branching
 
-**Codex owns the shared refactor and final integration.** The shared baseline is on `codex/viewer-layer-refactor`, with a PR targeting `viewer-v1`. Yam can branch from that baseline immediately, or from updated `viewer-v1` after the PR merges. She does not need to implement or repeat the shared refactor.
+**Codex owns the shared refactor and final integration.** The shared baseline merged into `viewer-v1` in PR #2. Yam branches from updated `viewer-v1`. Carlos's BIM work is isolated on `codex/carlos-bim-interaction`; Yam does not need to repeat the shared refactor or edit that branch.
 
 | ID | Owner | Status | Deliverable and acceptance |
 | --- | --- | --- | --- |
-| R0 | Codex | Implemented in this PR | Split `PdfStage` into a composition layer, `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Existing tools, save/reload, zoom/pan, and selection remain the baseline. Yam can branch from this PR; merge the shared baseline into `viewer-v1` before integrating feature branches. |
-| R1 | Codex | Implemented in this PR | Typed page presentation, coordinate conversions, abortable render-capture hooks, and one element-picker interface shared by click selection and annotation auto-ties. The existing saved annotation coordinate format is preserved. |
+| R0 | Codex | Merged in PR #2 | Split `PdfStage` into a composition layer, `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Existing tools, save/reload, zoom/pan, and selection remain the baseline. The shared baseline is available on `viewer-v1`. |
+| R1 | Codex | Merged in PR #2 | Typed page presentation, coordinate conversions, abortable render-capture hooks, and one element-picker interface shared by click selection and annotation auto-ties. The existing saved annotation coordinate format is preserved. |
 | R2 | Codex | After both tracks | Integrate Yam's branch; check real native-tag geometry, markups, attachment-preserving export, and page/zoom/rotation behavior together. |
 
-For a new checkout while the shared-baseline PR is open:
+For Yam's new checkout:
 
 ```sh
-gh repo clone AXELWOHLIN/enhanced_pdfs enhanced_pdfs-yam -- --branch codex/viewer-layer-refactor
+gh repo clone AXELWOHLIN/enhanced_pdfs enhanced_pdfs-yam -- --branch viewer-v1
 cd enhanced_pdfs-yam
 git switch -c yam/viewer-markups
 cd viewer
@@ -25,7 +25,7 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-After this PR merges, the clone command can use `--branch viewer-v1`. For an existing checkout, use the published refactor branch or update `viewer-v1` to the merged baseline before creating the feature branch. Do not branch from the removed `viewer-v2` branch or the older pre-refactor commit. Open Yam's eventual PR against `viewer-v1`; merge the baseline PR first.
+For an existing checkout, update `viewer-v1` to the merged baseline before creating the feature branch. Do not branch from removed `viewer-v2` or the pre-refactor commit. Both feature branches open PRs against `viewer-v1`.
 
 ## Yam: markup and review tools
 
@@ -54,11 +54,11 @@ This track runs in parallel with Yam's work after R0. The existing metadata read
 
 | ID | Priority | Status | Task and acceptance |
 | --- | --- | --- | --- |
-| C1 | P0 | Ready after R0 | Replace production **guessed-wall fallback** with native marked-content resolution. Join page/view context and native element IDs through drawing memberships to `ElementKey`. Do not use bare numeric IDs as globally unique or fabricate BIM properties. Report resolved, ambiguous, unsupported, and metadata-only elements separately. |
-| C2 | P0 | After C1 | Capture **actual painted paths**, transforms, styles, and clip context while executing the full PDF render. Preserve disconnected strokes and openings; do not manufacture filled wall polygons. Ignore the invisible metadata text as hit geometry. |
-| C3 | P0 | Alongside C1-C2 | Build **precise picking and selection**: spatial bounds for candidates, path/stroke tests for final hits, zoom-consistent pointer tolerance, hover, click, and overlap cycling. Reuse the same picker for annotation auto-ties. |
-| C4 | P0 | Metadata portion can start after R0 | Add **property filters and result highlights** for category, family, type, level, model, wall function, fire rating, and other exported parameters. OR within a field; AND across fields. Keep Unspecified separate from explicit values such as NR. Show matched element counts separately from locatable appearances. |
-| C5 | P0 | Alongside C4 | Extend **results and properties** with drawing/model context, instance/type provenance, and selection synchronization. Metadata-only elements remain inspectable without an invented highlight location. |
+| C1 | P0 | Implemented on Carlos's branch | Replace production **guessed-wall fallback** with native marked-content resolution. Join page/view context and native element IDs through drawing memberships to `ElementKey`. Do not use bare numeric IDs as globally unique or fabricate BIM properties. Report resolved, ambiguous, unsupported, and metadata-only elements separately. |
+| C2 | P0 | Implemented on Carlos's branch | Capture **actual painted paths**, transforms, styles, and clip context while executing the full PDF render. Preserve disconnected strokes and openings; do not manufacture filled wall polygons. Ignore the invisible metadata text as hit geometry. |
+| C3 | P0 | Implemented on Carlos's branch | Build **precise picking and selection**: spatial bounds for candidates, path/stroke tests for final hits, zoom-consistent pointer tolerance, hover, click, and overlap cycling. Reuse the same picker for annotation auto-ties. |
+| C4 | P0 | Implemented on Carlos's branch | Add **property filters and result highlights** for category, family, type, level, model, wall function, fire rating, and other exported parameters. OR within a field; AND across fields. Keep Unspecified separate from explicit values such as NR. Show matched element counts separately from locatable appearances. |
+| C5 | P0 | Implemented on Carlos's branch | Extend **results and properties** with drawing/model context, instance/type provenance, and selection synchronization. Metadata-only elements remain inspectable without an invented highlight location. |
 
 Codex owns:
 
@@ -90,4 +90,10 @@ bun run build
 
 Use browser checks for gestures and rendering, not only unit tests. Check the real Snowdon enhanced PDF without a geometry table, the synthetic enhanced demo, and an ordinary multi-page PDF. Cover zoom, page changes, cancellation, negative page origin, resizing, annotation selection and creation, save/reopen, and original attachment preservation. Report unsupported cases instead of marking them complete.
 
-The native-tag and filter features above are planned work. The shared structural refactor alone does not mean those features or Yam's new tools have been implemented.
+## BIM milestone validation
+
+Carlos's branch implements C1-C5 for supported native paths. The original Snowdon A101 enhanced PDF, without a geometry table, resolves 1,237 native groups into 1,099 elements and captures 18,123 painted path parts. Wall 676281 retains its eight disconnected strokes; its opening is not a wall hit.
+
+Browser checks on that actual file passed for picking, zoom/pan, overlap cycling, and Walls + Exterior + 2 HR filtering (16 matched, 16 locatable). Planting returns 117 metadata records with 13 locatable appearances; the remaining records stay inspectable without invented locations. A note tied to real wall 676281 survived PDF save/reopen, and all five original Parquet attachments remained byte-identical.
+
+Capture reports unsupported text/image or complex compositing paints instead of assigning guessed hit areas. This is native printed-path selection, not reconstructed solid wall footprints or a full composited-pixel mask. Rotation/crop transforms are unit-tested; broader PDF types and Yam's rotated-page export work remain integration checks. Yam's new markup features and R2 remain separate tasks.

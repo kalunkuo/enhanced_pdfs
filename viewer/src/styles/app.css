@@ -37,7 +37,7 @@ button, input { font: inherit; color: inherit; }
 @media (max-width: 860px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; } }
 
 .stage-wrap { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--muted); }
-.stage { overflow: auto; padding: 16px 88px 16px 16px; min-height: 0; flex: 1; position: relative; }
+.stage { overflow: auto; scrollbar-gutter: stable; padding: 16px 88px 16px 16px; min-height: 0; flex: 1; position: relative; }
 .empty { display: grid; place-items: center; height: 100%; text-align: center; color: var(--muted-foreground); }
 .empty p { margin: 4px 0; }
 .empty strong { color: var(--foreground); font-weight: 600; }
@@ -155,3 +155,29 @@ button, input { font: inherit; color: inherit; }
 .menu-sep { height: 1px; margin: 4px -4px; background: var(--border); }
 .tick { display: inline-grid; width: 16px; }
 .tick svg { width: 14px; height: 14px; color: var(--foreground); }
+
+/* BIM controls are independent of the PDF raster and markup tools. */
+.geometry-status { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); }
+.filter-panel { padding: 12px; border-bottom: 1px solid var(--border); display: grid; gap: 10px; }
+.filter-panel .search { width: 100%; margin: 0; }
+.filter-counts, .result-count, .parameter-scope-note { color: var(--muted-foreground); font-size: 12px; margin: 0; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.filter-chip, .filter-clear { border: 1px solid var(--border); border-radius: var(--radius); background: var(--secondary); color: var(--foreground); padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.filter-clear { justify-self: start; background: transparent; }
+.filter-fields { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; }
+.filter-fields summary { cursor: pointer; font-size: 13px; }
+.filter-fields[open] { display: grid; gap: 8px; }
+.filter-label { display: grid; gap: 5px; font-size: 12px; color: var(--muted-foreground); }
+.filter-label select { width: 100%; min-width: 0; color: var(--foreground); background: var(--background); border: 1px solid var(--border); padding: 7px; border-radius: var(--radius); }
+.filter-values { display: grid; gap: 2px; max-height: 220px; overflow: auto; }
+.filter-option { display: flex; align-items: center; gap: 7px; padding: 5px 2px; font-size: 12px; cursor: pointer; overflow-wrap: anywhere; }
+.filter-option input { accent-color: var(--element); }
+.filter-option span:last-child { color: var(--muted-foreground); margin-left: auto; }
+.result-count { padding: 10px 14px 0; }
+.element-context, .location-status { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 11px; }
+.location-ready, .location-partial { color: var(--element); }
+.property-location { padding: 10px 14px; margin: 0; border-bottom: 1px solid var(--border); }
+.parameter-scope-note { padding: 0 14px 8px; }
+.parameter-scope { display: inline-block; margin-left: 4px; color: var(--muted-foreground); font-size: 9px; opacity: .8; }
+.load-more { margin: 10px 14px; }
+.pick-status { position: absolute; left: 12px; bottom: 12px; pointer-events: none; padding: 7px 10px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); color: var(--foreground); font-size: 12px; box-shadow: var(--shadow-md); }
