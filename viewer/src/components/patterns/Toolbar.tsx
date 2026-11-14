@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnnotationKind } from '../../lib/types';
 import { IconButton } from '../ui/Button';
-import { CircleIcon, CommentIcon, DrawIcon, HighlightIcon, LineIcon, MoreIcon, RectIcon, SelectIcon, SignatureIcon, TextBoxIcon, TrashIcon } from '../ui/icons';
+import { CircleIcon, CloudIcon, CommentIcon, DrawIcon, HighlightIcon, LineIcon, MoreIcon, RectIcon, SelectIcon, SignatureIcon, TextBoxIcon, TrashIcon } from '../ui/icons';
 import type { Tool } from './PdfStage';
 
-export type DrawKind = Extract<AnnotationKind, 'pen' | 'line' | 'rect' | 'ellipse'>;
+export type DrawKind = Extract<AnnotationKind, 'pen' | 'line' | 'rect' | 'ellipse' | 'cloud'>;
 
 export const HIGHLIGHT_COLORS = [
     { name: 'Yellow', value: '#ffd43b' },
@@ -18,6 +18,7 @@ const DRAW_KINDS: { kind: DrawKind; label: string; Icon: () => React.JSX.Element
     { kind: 'line', label: 'Line', Icon: LineIcon },
     { kind: 'rect', label: 'Rectangle', Icon: RectIcon },
     { kind: 'ellipse', label: 'Circle', Icon: CircleIcon },
+    { kind: 'cloud', label: 'Revision cloud', Icon: CloudIcon },
 ];
 
 type Menu = 'draw' | 'highlight' | 'more' | null;

@@ -1,7 +1,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
 import { calloutBounds, leaderSegment, textBox } from './callout';
+import { cloudPolyline, cloudRect } from './cloud';
 import { initials, pdfDate, safeImage } from './comments';
-import type { Annotation, AnnotationKind, Point, Reply } from './types';
+import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
  * Save annotations into the PDF two ways:
@@ -72,8 +73,16 @@ function cleanReplies(value: unknown): Reply[] {
     return out;
 }
 
+function cleanContained(value: unknown): ContainedElement[] {
+    if (!Array.isArray(value)) return [];
+    return (value.slice(0, MAX_REPLIES) as Record<string, unknown>[])
+        .filter((c) => typeof c?.key === 'string' && c.key.length > 0 && c.key.length <= 200 && typeof c.fully === 'boolean')
+        .map((c) => ({ key: c.key as string, fully: c.fully as boolean }));
+}
+
 function cleanComment(a: Annotation): Annotation {
-    const { author, createdAt, image, replies, ...rest } = a as Annotation & Record<string, unknown>;
+    const { author, createdAt, image, replies, contained, ...rest } = a as Annotation & Record<string, unknown>;
+    const cleanedContained = cleanContained(contained);
     const cleanedReplies = cleanReplies(replies);
     const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
     const photo = safeImage(author?.photo);
@@ -85,6 +94,7 @@ function cleanComment(a: Annotation): Annotation {
         ...(when ? { createdAt: when } : {}),
         ...(picture ? { image: picture } : {}),
         ...(cleanedReplies.length ? { replies: cleanedReplies } : {}),
+        ...(cleanedContained.length ? { contained: cleanedContained } : {}),
     } as Annotation;
 }
 
@@ -104,6 +114,10 @@ function boundsOf(a: Annotation): Box {
             return { x0: Math.min(...pts.map((p) => p[0])), y0: Math.min(...pts.map((p) => p[1])), x1: Math.max(...pts.map((p) => p[0])), y1: Math.max(...pts.map((p) => p[1])) };
         }
         case 'text': return calloutBounds(a);
+        case 'cloud': {
+            const [cx0, cy0, cx1, cy1] = cloudRect(a);
+            return { x0: cx0 - 6, y0: cy0 - 6, x1: cx1 + 6, y1: cy1 + 6 }; // room for the scallops
+        }
         case 'comment': return { x0, y0: y0 - DROP, x1: x0 + DROP + 6 + Math.max(40, Math.min(text.length, 40) * 6.2 + 12), y1: y0 };
         case 'signature': return { x0: x0 - 2, y0: y0 - 24, x1: x0 + Math.max(30, text.length * 11), y1: y0 + 8 };
         default: return { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
@@ -162,6 +176,11 @@ function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): 
         case 'pen': {
             const pts = a.points?.length ? a.points : [a.from, a.to];
             content = `${stroke}${pts.map((p, i) => `${X(p[0])} ${Y(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ')} S`;
+            break;
+        }
+        case 'cloud': {
+            const ring = cloudPolyline(cloudRect(a));
+            content = `${stroke}${ring.map((p, i) => `${X(p[0])} ${Y(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ')} h S`;
             break;
         }
         case 'highlight':
@@ -284,6 +303,13 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         if (a.kind === 'pen') entries.InkList = [(a.points?.length ? a.points : [a.from, a.to]).flatMap((p) => [PX(p[0]), PY(p[1])])];
         if (a.kind === 'highlight') entries.QuadPoints = [PX(b.x0), PY(b.y0), PX(b.x1), PY(b.y0), PX(b.x0), PY(b.y1), PX(b.x1), PY(b.y1)];
         if (a.kind === 'text' || a.kind === 'signature') entries.DA = PDFString.of('0 g /Helv 12 Tf');
+        if (a.kind === 'cloud') {
+            // A cloudy polygon: the four corners and the cloud border effect, with our own appearance drawn on top.
+            const [cx0, cy0, cx1, cy1] = cloudRect(a);
+            entries.Vertices = [PX(cx0), PY(cy0), PX(cx1), PY(cy0), PX(cx1), PY(cy1), PX(cx0), PY(cy1)];
+            entries.IT = 'PolygonCloud';
+            entries.BE = { S: 'C', I: 1 };
+        }
         if (a.kind === 'text') {
             // A box with a leader is a standard callout: the line runs from the leader tip to the box.
             const seg = leaderSegment(a);

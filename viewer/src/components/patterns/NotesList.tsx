@@ -26,6 +26,38 @@ interface Props {
     onOpenElement: (elementKey: string) => void;
 }
 
+/** The objects a revision cloud covers, each opening that object's properties. */
+function CloudContents({ cloud, elements, onOpen }: { cloud: Annotation; elements: Map<string, ElementInfo>; onOpen: (key: string) => void }) {
+    const list = cloud.contained ?? [];
+    const whole = list.filter((c) => c.fully).length;
+    return (
+        <div className="cloud-contents">
+            <h4>Objects in this cloud ({list.length})</h4>
+            {list.length === 0 ? (
+                <p className="muted">No objects were found inside this cloud. Draw it over part of the drawing to list what it covers.</p>
+            ) : (
+                <>
+                    <ul className="cloud-list">
+                        {list.map((c) => {
+                            const e = elements.get(c.key);
+                            return (
+                                <li key={c.key}>
+                                    <button className="cloud-item" title="Show this object's properties" onClick={() => onOpen(c.key)}>
+                                        <strong>{e ? (e.mark ?? e.name) : c.key}</strong>
+                                        {e && <span className="muted"> {e.category} · ID {e.elementIdText ?? e.elementId}</span>}
+                                        {!c.fully && <span className="chip untied">partly inside</span>}
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    <p className="muted cloud-summary">{whole} fully inside, {list.length - whole} partly inside</p>
+                </>
+            )}
+        </div>
+    );
+}
+
 export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete, onOpenElement }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
@@ -68,7 +100,10 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
             {annotations.map((a) => {
                 const e = a.elementKey ? elements.get(a.elementKey) : undefined;
                 const selected = a.id === selectedId;
-                const chip = a.elementKey
+                const covered = a.contained?.length ?? 0;
+                const chip = a.kind === 'cloud'
+                    ? (covered ? <span className="chip tied">covers {covered} object{covered === 1 ? '' : 's'}</span> : <span className="chip untied">no objects</span>)
+                    : a.elementKey
                     ? <span className="chip tied">tied to {e ? `${e.mark ?? e.name} · ID ${e.elementId}` : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
                 return (
@@ -86,8 +121,14 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                                 </div>
                                 <div className="akind"><strong>{NAMES[a.kind]}</strong> <span className="muted">· page {a.page}</span></div>
                                 {a.text && <p className="ttext">{a.text}</p>}
-                                <div className="tchips">{tieChip(a)}</div>
-                                {tieSelect(a)}
+                                {a.kind === 'cloud' ? (
+                                    <CloudContents cloud={a} elements={elements} onOpen={onOpenElement} />
+                                ) : (
+                                    <>
+                                        <div className="tchips">{tieChip(a)}</div>
+                                        {tieSelect(a)}
+                                    </>
+                                )}
                             </section>
                         ) : (
                             <>

@@ -11,6 +11,7 @@ import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/
 import { Button } from './components/ui/Button';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { UploadIcon } from './components/ui/icons';
+import { tieCloud, type BoundsSource } from './lib/cloud';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -59,6 +60,12 @@ export function App() {
         if (!drawingScope) return geometry.pick;
         const appearances = new Set(geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId));
         return (point: Parameters<typeof geometry.pick>[0], tolerance: number) => geometry.pick(point, tolerance).filter((hit) => appearances.has(hit.occurrenceId ?? ''));
+    }, [geometry, pageData, drawingScope]);
+    // Page bounds of everything an element is drawn with, for finding what a revision cloud covers.
+    // It follows the same geometry source and drawing scope the picker uses.
+    const regionSources = useMemo<BoundsSource[]>(() => {
+        if (!geometry) return (pageData?.shapes ?? []).filter((shape) => matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => ({ elementKey: shape.elementKey, bounds: shape.bbox }));
+        return geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => ({ elementKey: part.elementKey, bounds: part.bounds }));
     }, [geometry, pageData, drawingScope]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -137,6 +144,14 @@ export function App() {
 
     const describeTie = useCallback(
         (a: Annotation) => {
+            if (a.kind === 'cloud') {
+                const names = (a.contained ?? []).map((c) => {
+                    const el = doc?.elements.get(c.key);
+                    return el ? `${el.mark ?? el.name} (ID ${el.elementIdText ?? el.elementId})` : c.key;
+                });
+                if (!names.length) return 'Untied: covers no objects';
+                return `Covers ${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
+            }
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
             return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementIdText ?? e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
@@ -166,7 +181,8 @@ export function App() {
             profile,
             new Date().toISOString(),
         );
-        const tied = tieWithPicker(draft, pickElement, 4 / zoom);
+        // A cloud ties to what it covers; everything else ties to the object under its anchor.
+        const tied = draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
         setSelectedKey(tied.elementKey ?? null);
@@ -192,7 +208,8 @@ export function App() {
     const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
         const moved = annotations.find((a) => a.id === id);
         if (!moved) return;
-        const retied = tieWithPicker({ ...moved, ...patch }, pickElement, 4 / zoom);
+        const next = { ...moved, ...patch };
+        const retied = next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
         setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
         setSelectedKey(retied.elementKey ?? null);
     };

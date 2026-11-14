@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { cloudRect, cloudSvgPath } from '../../lib/cloud';
 import { anchorHandle, defaultBoxOrigin, hasLeader, leaderSegment, textBox } from '../../lib/callout';
 import type { Tool } from '../../lib/presentation';
 import type { Annotation, PageData, Point } from '../../lib/types';
 
-type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen';
+type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen' | 'cloud';
 type NoteTool = 'text' | 'signature';
 type Draft = { kind: DrawingTool; from: Point; to: Point; points?: Point[] };
 /** `tip` is where a text box's leader points; without it the box has no leader. */
@@ -46,7 +47,7 @@ const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
 const INK = '#18181b';
 
 function isDrawingTool(tool: Tool): tool is DrawingTool {
-    return tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'highlight' || tool === 'pen';
+    return tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'highlight' || tool === 'pen' || tool === 'cloud';
 }
 
 function isNoteTool(tool: Tool): tool is NoteTool {
@@ -323,6 +324,10 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
         body = <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} {...common} />;
     } else if (a.kind === 'ellipse') {
         body = <ellipse cx={(x0 + x1) / 2} cy={(y0 + y1) / 2} rx={Math.abs(x1 - x0) / 2} ry={Math.abs(y1 - y0) / 2} {...common} />;
+    } else if (a.kind === 'cloud') {
+        const rect = cloudRect(a);
+        body = <path d={cloudSvgPath(rect)} {...common} strokeLinejoin="round" />;
+        chipAt = [rect[0], rect[1] - 10];
     } else if (a.kind === 'pen') {
         const points = a.points ?? [];
         body = <polyline points={points.map((point) => point.join(',')).join(' ')} {...common} strokeLinejoin="round" strokeLinecap="round" />;
@@ -362,7 +367,10 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
     } else {
         return null; // comments are drawn by the comment layer
     }
-    const chip = tied ? `↳ ${label ?? 'element'}` : 'untied';
+    const covered = a.contained?.length ?? 0;
+    const chip = a.kind === 'cloud'
+        ? (covered ? `${covered} object${covered === 1 ? '' : 's'}` : 'no objects')
+        : tied ? `↳ ${label ?? 'element'}` : 'untied';
     return (
         <g
             style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}

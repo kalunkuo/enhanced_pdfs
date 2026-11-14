@@ -134,3 +134,46 @@ describe('text box with a leader', () => {
         expect(back).toEqual(callout);
     });
 });
+
+describe('revision cloud', () => {
+    const contained = [{ key: 'w1', fully: true }, { key: 'w2', fully: false }];
+    const cloud: Annotation = { id: 'k', page: 1, kind: 'cloud', from: [100, 100], to: [260, 180], elementKey: 'w1', contained };
+
+    it('is saved as a cloudy polygon with its own appearance and a comment-list description', async () => {
+        const src = await PDFDocument.create();
+        src.addPage([400, 300]);
+        const out = await PDFDocument.load(await buildAnnotatedPdf(await src.save(), [cloud], () => 'Covers 2 objects: Wall 01, Wall 02'));
+        const annot = out.getPage(0).node.Annots()!.lookup(0, PDFDict);
+        expect((annot.get(PDFName.of('Subtype')) as PDFName).decodeText()).toBe('Polygon');
+        expect((annot.get(PDFName.of('IT')) as PDFName).decodeText()).toBe('PolygonCloud');
+        const be = annot.lookup(PDFName.of('BE'), PDFDict);
+        expect((be.get(PDFName.of('S')) as PDFName).decodeText()).toBe('C');
+        expect(annot.has(PDFName.of('AP'))).toBe(true);
+        const vertices = (annot.lookup(PDFName.of('Vertices')) as PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+        expect(vertices).toEqual([100, 300 - 100, 260, 300 - 100, 260, 300 - 180, 100, 300 - 180]);
+        const rect = (annot.lookup(PDFName.of('Rect')) as PDFArray).asArray().map((n) => (n as PDFNumber).asNumber());
+        expect(rect[0]!).toBeLessThan(100); // the rectangle leaves room for the scallops
+        expect(rect[2]!).toBeGreaterThan(260);
+        expect(annot.lookup(PDFName.of('Subj'), PDFHexString).decodeText()).toBe('Covers 2 objects: Wall 01, Wall 02');
+    });
+
+    it('keeps the list of covered objects when a file is reopened', () => {
+        const [back] = parseAnnotations(new TextEncoder().encode(JSON.stringify({ annotations: [cloud] })));
+        expect(back).toEqual(cloud);
+    });
+
+    it('drops malformed entries from the covered list without dropping the cloud', () => {
+        const hostile = { ...cloud, contained: [{ key: 'ok', fully: true }, { key: '', fully: true }, { key: 'x', fully: 'yes' }, 'str', null, { key: 'y'.repeat(300), fully: false }] };
+        const [clean] = parseAnnotations(new TextEncoder().encode(JSON.stringify({ annotations: [hostile] })));
+        expect(clean!.kind).toBe('cloud');
+        expect(clean!.contained).toEqual([{ key: 'ok', fully: true }]);
+    });
+
+    it('survives a second save without duplicating', async () => {
+        const src = await PDFDocument.create();
+        src.addPage([400, 300]);
+        const first = await buildAnnotatedPdf(await src.save(), [cloud], () => 'x');
+        const second = await buildAnnotatedPdf(first, [cloud], () => 'x');
+        expect((await PDFDocument.load(second)).getPage(0).node.Annots()!.size()).toBe(1);
+    });
+});
