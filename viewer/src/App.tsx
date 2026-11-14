@@ -223,18 +223,6 @@ export function App() {
 
     return (
         <div className="app">
-            <header className="header">
-                <h1>Enhanced PDF Viewer</h1>
-                <Button variant="primary" onClick={() => fileInput.current?.click()}>
-                    <UploadIcon /> Upload enhanced PDF
-                </Button>
-                <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
-                <Button variant="ghost" onClick={() => void openDemo()}>Open demo drawing</Button>
-                {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
-                {status && <span className="status" role="status">{status}</span>}
-                <span className="spacer" />
-                <ProfileMenu profile={profile} onChange={setProfile} />
-            </header>
             <DocBar
                 disabled={!doc}
                 saving={saving}
@@ -250,6 +238,18 @@ export function App() {
                 onZoomMode={setZoomMode}
                 onZoomIn={() => setZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => setZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
+                trailing={
+                    <>
+                        {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
+                        {status && <span className="status" role="status">{status}</span>}
+                        <Button variant="ghost" onClick={() => void openDemo()}>Open demo drawing</Button>
+                        <Button variant="primary" onClick={() => fileInput.current?.click()}>
+                            <UploadIcon /> Upload enhanced PDF
+                        </Button>
+                        <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
+                        <ProfileMenu profile={profile} onChange={setProfile} />
+                    </>
+                }
             />
             <div>
                 {error && <div className="banner" role="alert">{error}</div>}

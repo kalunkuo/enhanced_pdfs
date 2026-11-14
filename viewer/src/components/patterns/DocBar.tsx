@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconButton } from '../ui/Button';
 import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
@@ -20,6 +20,8 @@ interface Props {
     onZoomMode: (m: ZoomMode) => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
+    /** Right-aligned content on the same row: file name, upload, profile. */
+    trailing?: ReactNode;
 }
 
 /** The document bar: save, print, pages, select and pan, zoom. Laid out like Acrobat's. */
@@ -39,6 +41,7 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom out" disabled={p.disabled} onClick={p.onZoomOut}><MinusIcon /></IconButton>
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
+            {p.trailing && <div className="trailing">{p.trailing}</div>}
         </div>
     );
 }

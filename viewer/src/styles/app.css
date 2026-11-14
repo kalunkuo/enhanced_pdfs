@@ -4,10 +4,7 @@ body { background: var(--background); color: var(--foreground); font: 14px/1.43 
 button, input { font: inherit; color: inherit; }
 :focus-visible { outline: none; box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring); }
 
-.app { display: grid; grid-template-rows: auto auto auto 1fr; height: 100%; }
-.header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--background);
-    border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0 8px 0 0; }
+.app { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
 .file-name { color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 
 /* Button: default, outline, ghost */
@@ -224,3 +221,7 @@ button, input { font: inherit; color: inherit; }
 /* The composer card carries its own blue focus border, so the inner field shows no second ring. */
 .ccard textarea:focus-visible, .cname:focus-visible { box-shadow: none; }
 .cname:focus-visible { border-color: var(--comment); }
+
+/* Right side of the navigation bar: file name, upload, profile. */
+.docbar .trailing { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; padding-left: 12px; }
+.docbar .trailing .file-name { max-width: 28ch; }
