@@ -17,6 +17,10 @@ target_compile_options(SmartMarkupPxc PRIVATE /wd4192 /wd4278)
 target_link_libraries(SmartMarkupPxc PRIVATE smartmarkup_core comctl32)
 # The Editor finds plug-ins through this single export.
 target_link_options(SmartMarkupPxc PRIVATE /EXPORT:PXCE_GetPlugin)
+# The Editor does not search Plugins.x64 for a plug-in's imports: delay-load duckdb.dll and let
+# PXCE_GetPlugin load it from the plug-in's own folder first (plugin.cpp).
+target_link_options(SmartMarkupPxc PRIVATE /DELAYLOAD:duckdb.dll)
+target_link_libraries(SmartMarkupPxc PRIVATE delayimp)
 
 add_custom_command(TARGET SmartMarkupPxc POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DUCKDB_DIR}/duckdb.dll" "$<TARGET_FILE_DIR:SmartMarkupPxc>")
