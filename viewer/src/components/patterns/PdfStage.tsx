@@ -2,7 +2,8 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createShapePicker } from '../../lib/hit';
 import { clampZoom, type ElementPicker, type PagePresentation, type RenderCaptureFactory, type Tool, type ZoomMode } from '../../lib/presentation';
-import type { Annotation, PageData } from '../../lib/types';
+import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
+import { CommentLayer, type CommentLayerProps } from './CommentLayer';
 import { ElementOverlay } from './ElementOverlay';
 import { MarkupLayer } from './MarkupLayer';
 import { PdfCanvas } from './PdfCanvas';
@@ -30,6 +31,14 @@ interface Props {
     onSelectElement: (key: string | null) => void;
     onSelectAnnotation: (id: string | null) => void;
     onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
+    /** Comment threads drawn over the page. `comments`, `page` and `zoom` come from the stage. */
+    commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments' | 'pick'>;
+    /** The comment tool was clicked at a page point. */
+    onStartComment: (point: Point) => void;
+    /** A text box was dropped after a drag; the app re-ties it to whatever its leader tip is over. */
+    onMoveAnnotation: (id: string, patch: { from: Point; to: Point }) => void;
+    /** The elements a revision cloud with these corners would cover. */
+    coverOf: (a: Pick<Annotation, 'from' | 'to'>) => ContainedElement[];
     pickElement?: ElementPicker;
     createCapture?: RenderCaptureFactory;
     onPresentation?: (presentation: PagePresentation) => void;
@@ -65,7 +74,9 @@ export function PdfStage(props: Props) {
         return clampZoom(zoomMode.value);
     }, [zoomMode, size, page.width, page.height]);
 
-    useEffect(() => onZoom(zoom), [zoom, onZoom]);
+    useEffect(() => {
+        onZoom(zoom);
+    }, [zoom, onZoom]);
 
     // Two-finger scroll (and pinch, which browsers report as ctrl+wheel) zooms around the cursor.
     const zoomRef = useRef(zoom);
@@ -208,9 +219,16 @@ export function PdfStage(props: Props) {
                         props.onSelectAnnotation(null);
                     }}
                     onElementLeave={() => props.onHover(null, { x: 0, y: 0 })}
+                    onStartComment={props.onStartComment}
+                    pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null}
+                    // Comment pins and text boxes highlight their drop target the same way.
+                    onDragTarget={props.commentLayer.onDragTarget}
+                    onMoveAnnotation={props.onMoveAnnotation}
+                    coverOf={props.coverOf}
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} drawingIds={props.drawingIds} />
                 </MarkupLayer>
+                <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {pickNotice && <div className="pick-status" role="status">{pickNotice}</div>}
             </div>
         </div>

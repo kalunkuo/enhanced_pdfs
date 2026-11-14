@@ -98,14 +98,31 @@ export interface EnhancedPdf {
     page: (n: number) => Promise<PageData>;
 }
 
-export type AnnotationKind = 'line' | 'rect' | 'ellipse' | 'pen' | 'highlight' | 'text' | 'comment' | 'signature';
+export type AnnotationKind = 'line' | 'rect' | 'ellipse' | 'pen' | 'highlight' | 'text' | 'comment' | 'signature' | 'cloud';
+
+/** An element a revision cloud covers. `fully` is false when the element only overlaps the cloud. */
+export interface ContainedElement {
+    key: string;
+    fully: boolean;
+}
+
+/** A reply in a comment thread. */
+export interface Reply {
+    id: string;
+    author: { name: string; photo?: string };
+    /** ISO 8601. */
+    createdAt: string;
+    text: string;
+    /** An image attached to the reply, as a data URL. */
+    image?: string;
+}
 
 export interface Annotation {
     id: string;
     /** 1-based page number. */
     page: number;
     kind: AnnotationKind;
-    /** Page coordinates. For line: start and end. For rect/ellipse: opposite corners. For text/comment: a single point. */
+    /** Page coordinates. For line: start and end. For rect/ellipse: opposite corners. For comment/signature: a single point. For text: `from` is the box, `to` the leader tip (equal when there is no leader). */
     from: Point;
     to: Point;
     /** Freehand path, for `pen`. */
@@ -113,6 +130,16 @@ export interface Annotation {
     /** Highlight fill color. */
     color?: string;
     text?: string;
+    /** Who wrote a comment. `photo` is a small image data URL. */
+    author?: { name: string; photo?: string };
+    /** When a comment was written, ISO 8601. */
+    createdAt?: string;
+    /** An image attached to a comment, as a data URL. */
+    image?: string;
+    /** Replies to a comment, oldest first. */
+    replies?: Reply[];
+    /** For a revision cloud: the elements it covered when it was drawn or moved, fully inside ones first. */
+    contained?: ContainedElement[];
     /** Set when the annotation is tied to an element. Absent means untied. */
     elementKey?: string;
 }

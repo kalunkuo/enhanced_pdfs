@@ -1,5 +1,8 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
-import type { Annotation, AnnotationKind, Point } from './types';
+import { calloutBounds, leaderSegment, textBox } from './callout';
+import { cloudPolyline, cloudRect } from './cloud';
+import { initials, pdfDate, safeImage } from './comments';
+import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
  * Save annotations into the PDF two ways:
@@ -11,7 +14,7 @@ import type { Annotation, AnnotationKind, Point } from './types';
 export const ANNOTATIONS_FILE = 'annotations.json';
 const NAME_PREFIX = 'ep-';
 const AUTHOR = 'Enhanced PDF Viewer';
-const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature'];
+const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
 
 type Rgb = readonly [number, number, number];
 const TIED: Rgb = [0.937, 0.267, 0.267];
@@ -38,11 +41,65 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
     const list = (raw as { annotations?: unknown })?.annotations;
     if (!Array.isArray(list)) return [];
     const isPoint = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
-    return list.filter((a): a is Annotation =>
-        typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
-        (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
-    );
+    return list
+        .filter((a): a is Annotation =>
+            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
+            (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
+        )
+        .map(cleanComment);
 }
+
+/** Keep comment fields only when they are well formed; a saved PDF is untrusted input. */
+const MAX_REPLIES = 500;
+const MAX_TEXT = 10_000;
+
+function cleanAuthor(author: unknown): { name: string; photo?: string } | undefined {
+    const a = author as { name?: unknown; photo?: unknown } | undefined;
+    const name = typeof a?.name === 'string' ? a.name.trim().slice(0, 80) : '';
+    const photo = safeImage(a?.photo);
+    return name ? { name, ...(photo ? { photo } : {}) } : undefined;
+}
+
+function cleanReplies(value: unknown): Reply[] {
+    if (!Array.isArray(value)) return [];
+    const out: Reply[] = [];
+    for (const r of value.slice(0, MAX_REPLIES) as Record<string, unknown>[]) {
+        const author = cleanAuthor(r?.author);
+        const text = typeof r?.text === 'string' ? r.text.slice(0, MAX_TEXT) : '';
+        if (typeof r?.id !== 'string' || !author || !text.trim() || typeof r.createdAt !== 'string' || !Number.isFinite(Date.parse(r.createdAt))) continue;
+        const image = safeImage(r.image);
+        out.push({ id: r.id, author, createdAt: r.createdAt, text, ...(image ? { image } : {}) });
+    }
+    return out;
+}
+
+function cleanContained(value: unknown): ContainedElement[] {
+    if (!Array.isArray(value)) return [];
+    return (value.slice(0, MAX_REPLIES) as Record<string, unknown>[])
+        .filter((c) => typeof c?.key === 'string' && c.key.length > 0 && c.key.length <= 200 && typeof c.fully === 'boolean')
+        .map((c) => ({ key: c.key as string, fully: c.fully as boolean }));
+}
+
+function cleanComment(a: Annotation): Annotation {
+    const { author, createdAt, image, replies, contained, ...rest } = a as Annotation & Record<string, unknown>;
+    const cleanedContained = cleanContained(contained);
+    const cleanedReplies = cleanReplies(replies);
+    const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
+    const photo = safeImage(author?.photo);
+    const when = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? createdAt : undefined;
+    const picture = safeImage(image);
+    return {
+        ...rest,
+        ...(name ? { author: { name, ...(photo ? { photo } : {}) } } : {}),
+        ...(when ? { createdAt: when } : {}),
+        ...(picture ? { image: picture } : {}),
+        ...(cleanedReplies.length ? { replies: cleanedReplies } : {}),
+        ...(cleanedContained.length ? { contained: cleanedContained } : {}),
+    } as Annotation;
+}
+
+/** Side of the comment teardrop, in page points. Its tip is the comment's anchor point. */
+const DROP = 22;
 
 interface Box { x0: number; y0: number; x1: number; y1: number }
 
@@ -56,8 +113,12 @@ function boundsOf(a: Annotation): Box {
             const pts = a.points?.length ? a.points : [a.from, a.to];
             return { x0: Math.min(...pts.map((p) => p[0])), y0: Math.min(...pts.map((p) => p[1])), x1: Math.max(...pts.map((p) => p[0])), y1: Math.max(...pts.map((p) => p[1])) };
         }
-        case 'text': return { x0: x0 - 4, y0: y0 - 14, x1: x0 - 4 + Math.max(30, text.length * 6.6 + 10), y1: y0 + 6 };
-        case 'comment': return { x0: x0 - 5, y0: y0 - 10, x1: x0 + 8 + Math.max(40, text.length * 6.2 + 12), y1: y0 + 10 };
+        case 'text': return calloutBounds(a);
+        case 'cloud': {
+            const [cx0, cy0, cx1, cy1] = cloudRect(a);
+            return { x0: cx0 - 6, y0: cy0 - 6, x1: cx1 + 6, y1: cy1 + 6 }; // room for the scallops
+        }
+        case 'comment': return { x0, y0: y0 - DROP, x1: x0 + DROP + 6 + Math.max(40, Math.min(text.length, 40) * 6.2 + 12), y1: y0 };
         case 'signature': return { x0: x0 - 2, y0: y0 - 24, x1: x0 + Math.max(30, text.length * 11), y1: y0 + 8 };
         default: return { x0: Math.min(x0, x1), y0: Math.min(y0, y1), x1: Math.max(x0, x1), y1: Math.max(y0, y1) };
     }
@@ -117,22 +178,52 @@ function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): 
             content = `${stroke}${pts.map((p, i) => `${X(p[0])} ${Y(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ')} S`;
             break;
         }
+        case 'cloud': {
+            const ring = cloudPolyline(cloudRect(a));
+            content = `${stroke}${ring.map((p, i) => `${X(p[0])} ${Y(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ')} h S`;
+            break;
+        }
         case 'highlight':
             resources.ExtGState = { GS0: { Type: 'ExtGState', CA: 0.4, ca: 0.4 } };
             content = `/GS0 gs ${rgb(hexToRgb(a.color))} rg ${X(b.x0)} ${Y(b.y1)} ${f(b.x1 - b.x0)} ${f(b.y1 - b.y0)} re f`;
             break;
-        case 'text':
+        case 'text': {
+            // Box, then the leader and its dot when there is one. Untied boxes are gray, text included.
+            const box = textBox(a);
+            const seg = leaderSegment(a);
+            const ink = tied ? INK : UNTIED;
             resources.Font = { F1: fonts.sans.ref };
-            content = `${rgb(color)} RG 1 w ${dash}${X(b.x0)} ${Y(b.y1)} ${f(b.x1 - b.x0)} ${f(b.y1 - b.y0)} re S ` +
-                `BT ${rgb(INK)} rg /F1 12 Tf ${X(x0)} ${Y(y0)} Td ${encode(fonts.sans, text)} Tj ET`;
+            content = `${rgb(color)} RG 1 w ${dash}${X(box.x)} ${Y(box.y + box.h)} ${f(box.w)} ${f(box.h)} re S `;
+            if (seg) {
+                const [tx, ty] = seg[1];
+                const r = 3.5;
+                const k = 0.5523 * r;
+                content += `${rgb(color)} RG 1.5 w ${dash}${X(seg[0][0])} ${Y(seg[0][1])} m ${X(tx)} ${Y(ty)} l S ` +
+                    `${rgb(color)} rg ${X(tx + r)} ${Y(ty)} m ` +
+                    `${X(tx + r)} ${Y(ty + k)} ${X(tx + k)} ${Y(ty + r)} ${X(tx)} ${Y(ty + r)} c ` +
+                    `${X(tx - k)} ${Y(ty + r)} ${X(tx - r)} ${Y(ty + k)} ${X(tx - r)} ${Y(ty)} c ` +
+                    `${X(tx - r)} ${Y(ty - k)} ${X(tx - k)} ${Y(ty - r)} ${X(tx)} ${Y(ty - r)} c ` +
+                    `${X(tx + k)} ${Y(ty - r)} ${X(tx + r)} ${Y(ty - k)} ${X(tx + r)} ${Y(ty)} c f `;
+            }
+            content += `BT ${rgb(ink)} rg /F1 12 Tf ${X(x0)} ${Y(y0)} Td ${encode(fonts.sans, text)} Tj ET`;
             break;
-        case 'comment':
+        }
+        case 'comment': {
+            // A teardrop whose tip (bottom-left) is the anchor, then the message in a pill beside it.
+            const r = DROP / 2;
+            const k = 0.5523 * r;
+            const preview = text.length > 40 ? `${text.slice(0, 39)}…` : text;
+            const initial = initials(a.author?.name ?? '?')[0] ?? '?';
             resources.Font = { F1: fonts.sans.ref };
-            content = `${rgb(color)} rg ${X(x0 + 5)} ${Y(y0)} m ${X(x0 + 5)} ${Y(y0 + 5)} ${X(x0)} ${Y(y0 + 5)} ${X(x0 - 5)} ${Y(y0)} c ` +
-                `${X(x0 - 5)} ${Y(y0 - 5)} ${X(x0)} ${Y(y0 - 5)} ${X(x0 + 5)} ${Y(y0)} c f ` +
-                `1 g ${rgb(color)} RG 1 w ${dash}${X(x0 + 8)} ${Y(y0 + 10)} ${f(b.x1 - x0 - 8)} 20 re B ` +
-                `BT ${rgb(INK)} rg /F1 11 Tf ${X(x0 + 14)} ${Y(y0 + 4)} Td ${encode(fonts.sans, text)} Tj ET`;
+            content = `${rgb(color)} rg ${X(x0)} ${Y(y0)} m ${X(x0)} ${Y(y0 - r)} l ` +
+                `${X(x0)} ${Y(y0 - r - k)} ${X(x0 + r - k)} ${Y(y0 - DROP)} ${X(x0 + r)} ${Y(y0 - DROP)} c ` +
+                `${X(x0 + r + k)} ${Y(y0 - DROP)} ${X(x0 + DROP)} ${Y(y0 - r - k)} ${X(x0 + DROP)} ${Y(y0 - r)} c ` +
+                `${X(x0 + DROP)} ${Y(y0 - r + k)} ${X(x0 + r + k)} ${Y(y0)} ${X(x0 + r)} ${Y(y0)} c h f ` +
+                `BT 1 g /F1 11 Tf ${X(x0 + r - 3.5)} ${Y(y0 - r + 4)} Td ${encode(fonts.sans, initial)} Tj ET ` +
+                `1 g ${rgb(color)} RG 1 w ${dash}${X(x0 + DROP + 6)} ${Y(y0)} ${f(b.x1 - x0 - DROP - 6)} ${f(DROP)} re B ` +
+                `BT ${rgb(INK)} rg /F1 11 Tf ${X(x0 + DROP + 12)} ${Y(y0 - r + 4)} Td ${encode(fonts.sans, preview)} Tj ET`;
             break;
+        }
         case 'signature':
             resources.Font = { F1: fonts.script.ref };
             content = `BT ${rgb(INK)} rg /F1 24 Tf ${X(x0)} ${Y(y0)} Td ${encode(fonts.script, text)} Tj ET`;
@@ -194,14 +285,16 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         const stream = ctx.stream(content, { Type: 'XObject', Subtype: 'Form', BBox: rect, Resources: ctx.obj(resources as never) });
         const ap = ctx.register(stream);
 
-        const subtype = { line: 'Line', rect: 'Square', ellipse: 'Circle', pen: 'Ink', highlight: 'Highlight', text: 'FreeText', signature: 'FreeText', comment: 'Text' }[a.kind];
+        const subtype = { line: 'Line', rect: 'Square', ellipse: 'Circle', pen: 'Ink', highlight: 'Highlight', text: 'FreeText', signature: 'FreeText', comment: 'Text', cloud: 'Polygon' }[a.kind];
         const subject = describe(a);
         const color = a.kind === 'highlight' ? hexToRgb(a.color) : tied ? TIED : UNTIED;
         const entries: Record<string, unknown> = {
             Type: 'Annot', Subtype: subtype, Rect: rect, F: 4, C: [...color],
-            NM: PDFString.of(`${NAME_PREFIX}${a.id}`), T: PDFHexString.fromText(AUTHOR), Subj: PDFHexString.fromText(subject),
+            NM: PDFString.of(`${NAME_PREFIX}${a.id}`), T: PDFHexString.fromText(a.author?.name || AUTHOR), Subj: PDFHexString.fromText(subject),
             Contents: PDFHexString.fromText(a.text ?? subject), AP: { N: ap },
         };
+        const created = a.createdAt ? pdfDate(a.createdAt) : undefined;
+        if (created) Object.assign(entries, { CreationDate: PDFString.of(created), M: PDFString.of(created) });
         const [x0, y0] = a.from;
         const [x1, y1] = a.to;
         const PX = (x: number) => frame.cropX + x;
@@ -210,10 +303,39 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         if (a.kind === 'pen') entries.InkList = [(a.points?.length ? a.points : [a.from, a.to]).flatMap((p) => [PX(p[0]), PY(p[1])])];
         if (a.kind === 'highlight') entries.QuadPoints = [PX(b.x0), PY(b.y0), PX(b.x1), PY(b.y0), PX(b.x0), PY(b.y1), PX(b.x1), PY(b.y1)];
         if (a.kind === 'text' || a.kind === 'signature') entries.DA = PDFString.of('0 g /Helv 12 Tf');
+        if (a.kind === 'cloud') {
+            // A cloudy polygon: the four corners and the cloud border effect, with our own appearance drawn on top.
+            const [cx0, cy0, cx1, cy1] = cloudRect(a);
+            entries.Vertices = [PX(cx0), PY(cy0), PX(cx1), PY(cy0), PX(cx1), PY(cy1), PX(cx0), PY(cy1)];
+            entries.IT = 'PolygonCloud';
+            entries.BE = { S: 'C', I: 1 };
+        }
+        if (a.kind === 'text') {
+            // A box with a leader is a standard callout: the line runs from the leader tip to the box.
+            const seg = leaderSegment(a);
+            if (seg) {
+                entries.IT = 'FreeTextCallout';
+                entries.CL = [PX(seg[1][0]), PY(seg[1][1]), PX(seg[0][0]), PY(seg[0][1])];
+            }
+        }
         if (a.kind === 'comment') entries.Name = 'Comment';
 
         const annotRef: PDFRef = ctx.register(ctx.obj(entries as never));
         page.node.addAnnot(annotRef);
+
+        // Replies are standard reply annotations (IRT) with an empty appearance, so they list in a viewer's
+        // comment panel without drawing anything extra on the page.
+        for (const reply of a.replies ?? []) {
+            const blank = ctx.register(ctx.stream('', { Type: 'XObject', Subtype: 'Form', BBox: rect }));
+            const when = pdfDate(reply.createdAt);
+            const replyEntries: Record<string, unknown> = {
+                Type: 'Annot', Subtype: 'Text', Rect: rect, F: 4, Name: 'Comment', IRT: annotRef, RT: 'R',
+                NM: PDFString.of(`${NAME_PREFIX}${a.id}-r-${reply.id}`), T: PDFHexString.fromText(reply.author.name),
+                Contents: PDFHexString.fromText(reply.text), AP: { N: blank },
+                ...(when ? { CreationDate: PDFString.of(when), M: PDFString.of(when) } : {}),
+            };
+            page.node.addAnnot(ctx.register(ctx.obj(replyEntries as never)));
+        }
     }
 
     const json = JSON.stringify({ app: 'enhanced-pdf-viewer', version: 1, annotations }, null, 1);

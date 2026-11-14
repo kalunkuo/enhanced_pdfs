@@ -6,6 +6,7 @@ import './styles/typography.css';
 import './components/ui/icon-button.css';
 import './components/ui/kit.css';
 import './styles/app.css';
+import './styles/review.css';
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>

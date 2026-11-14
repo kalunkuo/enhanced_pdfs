@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AnnotationKind } from '../../lib/types';
 import { IconButton } from '../ui/Button';
-import { CircleIcon, CommentIcon, DrawIcon, HighlightIcon, LineIcon, MoreIcon, RectIcon, SelectIcon, SignatureIcon, TextBoxIcon, TrashIcon } from '../ui/icons';
+import { CircleIcon, CloudIcon, CommentIcon, DrawIcon, HighlightIcon, LineIcon, MoreIcon, RectIcon, SelectIcon, SignatureIcon, TextBoxIcon, TrashIcon } from '../ui/icons';
 import type { Tool } from './PdfStage';
 
-export type DrawKind = Extract<AnnotationKind, 'pen' | 'line' | 'rect' | 'ellipse'>;
+export type DrawKind = Extract<AnnotationKind, 'pen' | 'line' | 'rect' | 'ellipse' | 'cloud'>;
 
 export const HIGHLIGHT_COLORS = [
     { name: 'Yellow', value: '#ffd43b' },
@@ -18,6 +18,7 @@ const DRAW_KINDS: { kind: DrawKind; label: string; Icon: () => React.JSX.Element
     { kind: 'line', label: 'Line', Icon: LineIcon },
     { kind: 'rect', label: 'Rectangle', Icon: RectIcon },
     { kind: 'ellipse', label: 'Circle', Icon: CircleIcon },
+    { kind: 'cloud', label: 'Revision cloud', Icon: CloudIcon },
 ];
 
 type Menu = 'draw' | 'highlight' | 'more' | null;
@@ -67,7 +68,7 @@ export function Toolbar(p: Props) {
 
             <div className="tool-slot">
                 <IconButton label="Highlight (H)" pressed={p.tool === 'highlight'} disabled={p.disabled} onClick={() => choose('highlight')}>
-                    <span style={{ color: p.tool === 'highlight' ? undefined : p.highlightColor }}><HighlightIcon /></span>
+                    <HighlightIcon />
                 </IconButton>
                 <button className="corner" aria-label="Highlight color" aria-expanded={menu === 'highlight'} disabled={p.disabled} onClick={() => setMenu(menu === 'highlight' ? null : 'highlight')} />
                 {menu === 'highlight' && (

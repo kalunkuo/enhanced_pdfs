@@ -4,6 +4,7 @@ import { ElementList } from './components/patterns/ElementList';
 import { FilterPanel } from './components/patterns/FilterPanel';
 import { HoverCard } from './components/patterns/HoverCard';
 import { NotesList } from './components/patterns/NotesList';
+import { ProfileMenu } from './components/patterns/ProfileMenu';
 import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patterns/PdfStage';
 import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
@@ -11,6 +12,7 @@ import { SegmentedControl } from './components/ui/SegmentedControl';
 import { Dialog } from './components/ui/Dialog';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
+import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -19,7 +21,9 @@ import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import type { FocusRequest } from './lib/navigation';
-import type { Annotation, EnhancedPdf, PageData } from './lib/types';
+import { withAuthorship } from './lib/comments';
+import { useProfile } from './lib/profile';
+import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 
 type Tab = 'properties' | 'elements' | 'notes';
 const TABS: readonly Tab[] = ['properties', 'elements', 'notes'];
@@ -52,6 +56,8 @@ export function App() {
     const [loading, setLoading] = useState<Loading | null>(null);
     const awaitingFirstPage = useRef<EnhancedPdf | null>(null);
     const [tool, setTool] = useState<Tool>('select');
+    const [profile, setProfile] = useProfile();
+    const [composerAt, setComposerAt] = useState<Point | null>(null);
     const [drawKind, setDrawKind] = useState<DrawKind>('pen');
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
@@ -74,6 +80,12 @@ export function App() {
         if (!drawingScope) return geometry.pick;
         const appearances = new Set(geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId));
         return (point: Parameters<typeof geometry.pick>[0], tolerance: number) => geometry.pick(point, tolerance).filter((hit) => appearances.has(hit.occurrenceId ?? ''));
+    }, [geometry, pageData, drawingScope]);
+    // Page bounds of everything an element is drawn with, for finding what a revision cloud covers.
+    // It follows the same geometry source and drawing scope the picker uses.
+    const regionSources = useMemo<BoundsSource[]>(() => {
+        if (!geometry) return (pageData?.shapes ?? []).filter((shape) => matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => ({ elementKey: shape.elementKey, bounds: shape.bbox }));
+        return geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => ({ elementKey: part.elementKey, bounds: part.bounds }));
     }, [geometry, pageData, drawingScope]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -181,6 +193,14 @@ export function App() {
 
     const describeTie = useCallback(
         (a: Annotation) => {
+            if (a.kind === 'cloud') {
+                const names = (a.contained ?? []).map((c) => {
+                    const el = doc?.elements.get(c.key);
+                    return el ? `${el.mark ?? el.name} (ID ${el.elementIdText ?? el.elementId})` : c.key;
+                });
+                if (!names.length) return 'Untied: covers no objects';
+                return `Covers ${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
+            }
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
             return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementIdText ?? e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
@@ -205,14 +225,57 @@ export function App() {
 
     const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => {
         if (!pageData) return;
-        const draft: Annotation = { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) };
-        const tied = tieWithPicker(draft, pickElement, 4 / zoom);
+        const draft: Annotation = withAuthorship(
+            { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) },
+            profile,
+            new Date().toISOString(),
+        );
+        // A cloud ties to what it covers; everything else ties to the object under its anchor.
+        const tied = draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
         setSelectedKey(tied.elementKey ?? null);
         setTab('notes');
         setTool('select');
     };
+
+    // A comment being written belongs to the comment tool and to one page.
+    useEffect(() => {
+        setComposerAt(null);
+    }, [tool, pageData?.number]);
+
+    const sendComment = (c: { text: string; image?: string; at: Point; name: string }) => {
+        addAnnotation({
+            kind: 'comment', from: c.at, to: c.at, text: c.text, createdAt: new Date().toISOString(),
+            author: { name: c.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+            ...(c.image ? { image: c.image } : {}),
+        });
+        setComposerAt(null);
+    };
+
+    // Dropping a pin ties it to whatever is under its tip, or unties it on empty paper.
+    const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
+        const moved = annotations.find((a) => a.id === id);
+        if (!moved) return;
+        const next = { ...moved, ...patch };
+        const retied = next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
+        setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
+        setSelectedKey(retied.elementKey ?? null);
+    };
+    const moveComment = (id: string, at: Point) => moveAnnotation(id, { from: at, to: at });
+
+    const sendReply = useCallback((id: string, r: { text: string; name: string }) => {
+        const reply: Reply = {
+            id: `r${nextId.current++}`, text: r.text, createdAt: new Date().toISOString(),
+            author: { name: r.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+        };
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
+    }, [profile.photo]);
+
+    const deleteById = useCallback((id: string) => {
+        setAnnotations((list) => list.filter((a) => a.id !== id));
+        setSelectedAnnotationId((current) => (current === id ? null : current));
+    }, []);
 
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
         setAnnotations((list) =>
@@ -320,12 +383,7 @@ export function App() {
 
     return (
         <div className="app">
-            <header className="header">
-                <h1 className="type-h3">Enhanced PDF Viewer</h1>
-                <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
-                {status && <span className="status" role="status">{status}</span>}
-                {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
-            </header>
+            <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
             <DocBar
                 disabled={!doc}
                 saving={saving}
@@ -343,6 +401,13 @@ export function App() {
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
                 onUpload={() => fileInput.current?.click()}
                 onOpenDemo={() => void openDemo()}
+                info={
+                    <>
+                        {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
+                        {status && <span className="status" role="status">{status}</span>}
+                    </>
+                }
+                account={<ProfileMenu profile={profile} onChange={setProfile} />}
             />
             <Dialog open={loading !== null} onClose={() => undefined} dismissible={false} title="Opening drawing" titleClassName="type-h3" description={loading?.fileName} className={`load-dialog${loading?.revealing ? ' is-revealing' : ''}`}>
                 {loading && <ProgressBar label={`Opening ${loading.fileName}`} value={loading.fraction} ceiling={loading.ceiling} detail={loading.step} onComplete={revealViewer} />}
@@ -370,8 +435,31 @@ export function App() {
                             onZoomMode={setZoomMode}
                             onHover={onHover}
                             onSelectElement={selectElement}
-                            onSelectAnnotation={setSelectedAnnotationId}
+                            onSelectAnnotation={(id) => {
+                                setSelectedAnnotationId(id);
+                                if (id) setTab('notes');
+                            }}
                             onAddAnnotation={addAnnotation}
+                            onMoveAnnotation={moveAnnotation}
+                            coverOf={(cloud) => elementsInCloud(cloud, regionSources)}
+                            onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
+                            commentLayer={{
+                                selectedId: selectedAnnotationId,
+                                composerAt,
+                                profile,
+                                onProfile: setProfile,
+                                labelFor,
+                                onSelect: (id) => {
+                                    setSelectedAnnotationId(id);
+                                    setComposerAt(null);
+                                    setSelectedKey(annotations.find((a) => a.id === id)?.elementKey ?? null);
+                                    if (id) setTab('notes');
+                                },
+                                onMove: moveComment,
+                                onDragTarget: (key, client) => onHover(key, client),
+                                onSend: sendComment,
+                                onCancel: () => setComposerAt(null),
+                            }}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
                             createCapture={createCapture}
@@ -426,7 +514,12 @@ export function App() {
                                 annotations={annotations}
                                 elements={doc.elements}
                                 selectedId={selectedAnnotationId}
+                                profile={profile}
+                                onProfile={setProfile}
                                 onTie={tieAnnotation}
+                                onReply={sendReply}
+                                onDelete={deleteById}
+                                onOpenElement={selectElement}
                                 onSelect={(a) => { goToPage(a.page); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
                             />
                         )}
