@@ -166,10 +166,14 @@ button, input { font: inherit; color: inherit; }
 .comment-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .cpin { position: absolute; width: 0; height: 0; pointer-events: none; }
 .cpin.open { z-index: 2; }
-.cpin-btn { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; padding: 0; display: grid; place-items: center; border-radius: 50%;
-    border: 2px solid #fff; background: #fff; box-shadow: var(--shadow-md); cursor: pointer; pointer-events: auto; }
-.cpin.open .cpin-btn { box-shadow: 0 0 0 2px var(--comment), var(--shadow-md); }
-.cbubble, .ccard { position: absolute; top: -18px; left: 28px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
+/* The pin's tip is the .cpin origin, i.e. the exact page point being commented on. */
+.cpin-btn { position: absolute; left: -18px; top: -50px; z-index: 0; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 50%;
+    border: 3px solid #fff; background: #fff; cursor: pointer; pointer-events: auto; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+.cpin-btn::after { content: ''; position: absolute; z-index: -1; left: 50%; bottom: -9px; width: 16px; height: 16px; background: #fff; border-radius: 0 0 4px 0;
+    transform: translateX(-50%) rotate(45deg); }
+.cpin.open .cpin-btn { box-shadow: 0 0 0 2px var(--comment); }
+.cpin.open .cpin-btn::after { background: var(--comment); }
+.cbubble, .ccard { position: absolute; top: -52px; left: 32px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
     border-radius: 20px; box-shadow: var(--shadow-md); }
 .cbubble.left, .ccard.left { left: auto; right: 28px; }
 .cbubble { padding: 14px 18px 14px 14px; }
