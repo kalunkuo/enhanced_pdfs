@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RevitPath Condition="'$(RevitPath)' == ''">$(ProgramW6432)\Autodesk\Revit 2025</RevitPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Using Include="System.IO" />
+    <Reference Include="RevitAPI" HintPath="$(RevitPath)/RevitAPI.dll" Private="false" />
+    <Reference Include="RevitAPIUI" HintPath="$(RevitPath)/RevitAPIUI.dll" Private="false" />
+    <PackageReference Include="Parquet.Net" Version="6.1.0" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
+  </ItemGroup>
+  <Target Name="CheckRevitReferences" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(RevitPath)/RevitAPI.dll') Or !Exists('$(RevitPath)/RevitAPIUI.dll')"
+           Text="Set RevitPath to the Revit 2025 installation or to a directory containing its RevitAPI.dll and RevitAPIUI.dll." />
+  </Target>
+</Project>
