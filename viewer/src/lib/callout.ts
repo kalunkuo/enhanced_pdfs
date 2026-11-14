@@ -56,3 +56,23 @@ export function calloutBounds(a: TextBoxLike): { x0: number; y0: number; x1: num
         x1: Math.max(b.x + b.w, a.to[0]), y1: Math.max(b.y + b.h, a.to[1]),
     };
 }
+
+const BOX_OFFSET_X = 48;
+const BOX_OFFSET_Y = 36;
+
+/**
+ * Where to put a new text box when the user clicks `tip` without dragging: beside the click, so there is always
+ * a leader. The box sits up and to the right, flipping left near the right edge and down near the top.
+ */
+export function defaultBoxOrigin(tip: Point, pageWidth: number, pageHeight: number): Point {
+    const dx = tip[0] > pageWidth - 220 ? -110 : BOX_OFFSET_X;
+    const dy = tip[1] < 50 ? BOX_OFFSET_Y + 8 : -BOX_OFFSET_Y;
+    return [Math.min(pageWidth - 10, Math.max(10, tip[0] + dx)), Math.min(pageHeight - 4, Math.max(18, tip[1] + dy))];
+}
+
+/** Where the draggable anchor dot sits: the leader tip, or the box's bottom-left corner when there is no leader yet. */
+export function anchorHandle(a: TextBoxLike): Point {
+    if (hasLeader(a)) return a.to;
+    const b = textBox(a);
+    return [b.x, b.y + b.h];
+}

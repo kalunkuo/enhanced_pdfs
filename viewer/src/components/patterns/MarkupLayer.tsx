@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { hasLeader, leaderSegment, textBox } from '../../lib/callout';
+import { anchorHandle, defaultBoxOrigin, hasLeader, leaderSegment, textBox } from '../../lib/callout';
 import type { Tool } from '../../lib/presentation';
 import type { Annotation, PageData, Point } from '../../lib/types';
 
@@ -156,11 +156,11 @@ export function MarkupLayer(props: MarkupLayerProps) {
         if (event.button !== 0) return;
         const point = toPage(event);
         if (isDrawingTool(tool)) {
-            event.currentTarget.setPointerCapture?.(event.pointerId);
+            try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
             updateDraft({ kind: tool, from: point, to: point, ...(tool === 'pen' ? { points: [point] } : {}) });
         } else if (tool === 'text') {
             // Press on the object, drag out to where the text should sit. A plain click makes a box with no leader.
-            event.currentTarget.setPointerCapture?.(event.pointerId);
+            try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
             textPress.current = { tip: point, moved: false };
         } else if (tool === 'select') {
             props.onElementSelect(point);
@@ -172,7 +172,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
         event.stopPropagation();
         try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         const leaderless = !hasLeader(a);
-        movePress.current = { id: a.id, part: leaderless ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
+        movePress.current = { id: a.id, part: leaderless && part === 'box' ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
     };
 
     // Opening on click avoids the trailing pointer-down focus change closing
@@ -184,7 +184,11 @@ export function MarkupLayer(props: MarkupLayerProps) {
         if (tool === 'comment') props.onStartComment(toPage(event));
         else if (tool === 'text') {
             // Dragged: the box sits where the pointer was released and the leader points back at the press.
-            updateEditor({ kind: 'text', at: toPage(event), value: '', ...(press?.moved ? { tip: press.tip } : {}) });
+            // Clicked: the anchor is the click and the box goes beside it, so a text box always has a leader to move.
+            const clicked = toPage(event);
+            updateEditor(press?.moved
+                ? { kind: 'text', at: clicked, tip: press.tip, value: '' }
+                : { kind: 'text', at: defaultBoxOrigin(clicked, page.width, page.height), tip: clicked, value: '' });
         } else if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
     };
 
@@ -342,12 +346,16 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
                 <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" stroke={color} strokeWidth={selected ? 2 : 1} strokeDasharray={dash} vectorEffect="non-scaling-stroke"
                     style={grab} onPointerDown={(event) => onPart?.(event, 'box')} />
                 <text x={x0} y={y0} fontSize={12} fill={tied || a.id === 'draft' ? INK : UNTIED_INK} fontWeight={500} pointerEvents="none">{a.text}</text>
-                {hasLeader(a) && (
-                    <>
-                        <circle cx={x1} cy={y1} r={3.5} fill={color} pointerEvents="none" />
-                        <circle cx={x1} cy={y1} r={9} fill="transparent" style={grab} onPointerDown={(event) => onPart?.(event, 'tip')} />
-                    </>
-                )}
+                {(() => {
+                    // The anchor: the leader tip, or the box corner on an old box that has no leader yet. Drag it to move the tie.
+                    const [ax, ay] = anchorHandle(a);
+                    return (
+                        <>
+                            <circle cx={ax} cy={ay} r={selected ? 4.5 : 3.5} fill={color} stroke="#fff" strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+                            <circle cx={ax} cy={ay} r={10} fill="transparent" style={grab} onPointerDown={(event) => onPart?.(event, 'tip')} />
+                        </>
+                    );
+                })()}
             </g>
         );
         chipAt = [box.x, box.y - 4];
@@ -363,7 +371,14 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
         >
             {body}
             {a.id !== 'draft' && (
-                <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'}>{chip}</text>
+                <>
+                    {/* The label belongs to the text box, so pressing it drags the box too. */}
+                    {a.kind === 'text' && interactive && (
+                        <rect x={chipAt[0] - 3} y={chipAt[1] - 11} width={chip.length * 5.2 + 8} height={15} fill="transparent"
+                            style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, 'box')} />
+                    )}
+                    <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'} pointerEvents={a.kind === 'text' ? 'none' : undefined}>{chip}</text>
+                </>
             )}
         </g>
     );

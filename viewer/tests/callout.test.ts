@@ -58,3 +58,33 @@ describe('tying a text box', () => {
         expect(tieWithPicker({ ...text([100, 100], [100, 100]), elementKey: 'wall' }, picker, 0).elementKey).toBeUndefined();
     });
 });
+
+import { anchorHandle, defaultBoxOrigin } from '../src/lib/callout';
+
+describe('placing a new text box', () => {
+    it('puts the box up and to the right of the click, so there is always a leader', () => {
+        const tip: Point = [300, 300];
+        const box = defaultBoxOrigin(tip, 792, 612);
+        expect(box[0]).toBeGreaterThan(tip[0]);
+        expect(box[1]).toBeLessThan(tip[1]);
+        expect(hasLeader({ from: box, to: tip })).toBe(true);
+    });
+    it('flips left near the right edge and down near the top, and stays on the page', () => {
+        const right = defaultBoxOrigin([780, 300], 792, 612);
+        expect(right[0]).toBeLessThan(780);
+        const top = defaultBoxOrigin([300, 10], 792, 612);
+        expect(top[1]).toBeGreaterThan(10);
+        const corner = defaultBoxOrigin([0, 0], 792, 612);
+        expect(corner[0]).toBeGreaterThanOrEqual(10);
+        expect(corner[1]).toBeGreaterThanOrEqual(18);
+    });
+});
+
+describe('anchor handle', () => {
+    it('is the leader tip, or the box corner for a box without a leader', () => {
+        expect(anchorHandle(text([100, 100], [300, 50]))).toEqual([300, 50]);
+        const plain = text([100, 100], [100, 100], 'abc');
+        const box = textBox(plain);
+        expect(anchorHandle(plain)).toEqual([box.x, box.y + box.h]);
+    });
+});
