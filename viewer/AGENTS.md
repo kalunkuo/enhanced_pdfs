@@ -50,7 +50,7 @@ Native capture supports bounded Path2D fills/strokes and explicit clips on the b
 
 ## Layers and parallel ownership
 
-Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from its published shared baseline for annotation/review tools. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
+Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` after `viewer-v1` merged in PR #6). Feature branches, including Yam's annotation/review tools, start from `viewer-v2` and open PRs against it. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
 - `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
