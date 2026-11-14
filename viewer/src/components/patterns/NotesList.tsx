@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { formatTimeAgo } from '../../lib/comments';
+import { elementLabel } from '../../lib/elementLabel';
 import type { Profile } from '../../lib/profile';
 import { useNow } from '../../lib/useNow';
 import type { Annotation, ElementInfo } from '../../lib/types';
@@ -43,8 +44,7 @@ function CloudContents({ cloud, elements, onOpen }: { cloud: Annotation; element
                             return (
                                 <li key={c.key}>
                                     <button className="cloud-item" title="Show this object's properties" onClick={() => onOpen(c.key)}>
-                                        <strong>{e ? (e.mark ?? e.name) : c.key}</strong>
-                                        {e && <span className="muted"> {e.category} · ID {e.elementIdText ?? e.elementId}</span>}
+                                        <strong>{e ? elementLabel(e) : c.key}</strong>
                                         {!c.fully && <span className="chip untied">partly inside</span>}
                                     </button>
                                 </li>
@@ -77,7 +77,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                 <option value={UNTIED}>Untied</option>
                 {options.map((o) => (
                     <option key={o.key} value={o.key}>
-                        {(o.mark ?? o.name)} · ID {o.elementId}{o.placeholder ? ' (placeholder)' : ''}
+                        {elementLabel(o)}{o.placeholder ? ' (placeholder)' : ''}
                     </option>
                 ))}
             </select>
@@ -88,7 +88,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
         const e = a.elementKey ? elements.get(a.elementKey) : undefined;
         return a.elementKey ? (
             <button className="chip tied linklike" title="Show this object's properties" onClick={() => onOpenElement(a.elementKey!)}>
-                ↳ {e ? `${e.mark ?? e.name} · ID ${e.elementId}` : a.elementKey}
+                ↳ {e ? elementLabel(e) : a.elementKey}
             </button>
         ) : (
             <span className="chip untied">untied</span>
@@ -104,7 +104,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                 const chip = a.kind === 'cloud'
                     ? (covered ? <span className="chip tied">covers {covered} object{covered === 1 ? '' : 's'}</span> : <span className="chip untied">no objects</span>)
                     : a.elementKey
-                    ? <span className="chip tied">tied to {e ? `${e.mark ?? e.name} · ID ${e.elementId}` : a.elementKey}</span>
+                    ? <span className="chip tied">tied to {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
                 return (
                     <li key={a.id} ref={selected ? selectedRef : undefined}>
