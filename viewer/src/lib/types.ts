@@ -59,6 +59,17 @@ export interface EnhancedPdf {
 
 export type AnnotationKind = 'line' | 'rect' | 'ellipse' | 'pen' | 'highlight' | 'text' | 'comment' | 'signature';
 
+/** A reply in a comment thread. */
+export interface Reply {
+    id: string;
+    author: { name: string; photo?: string };
+    /** ISO 8601. */
+    createdAt: string;
+    text: string;
+    /** An image attached to the reply, as a data URL. */
+    image?: string;
+}
+
 export interface Annotation {
     id: string;
     /** 1-based page number. */
@@ -78,6 +89,8 @@ export interface Annotation {
     createdAt?: string;
     /** An image attached to a comment, as a data URL. */
     image?: string;
+    /** Replies to a comment, oldest first. */
+    replies?: Reply[];
     /** Set when the annotation is tied to an element. Absent means untied. */
     elementKey?: string;
 }
