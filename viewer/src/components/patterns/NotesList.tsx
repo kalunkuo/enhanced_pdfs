@@ -1,4 +1,6 @@
+import { formatTimeAgo } from '../../lib/comments';
 import type { Annotation, ElementInfo } from '../../lib/types';
+import { Avatar } from '../ui/Avatar';
 
 const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature' } as const;
 const UNTIED = '';
@@ -22,7 +24,10 @@ export function NotesList({ annotations, elements, selectedId, onSelect, onTie }
                 return (
                     <li key={a.id}>
                         <button aria-current={a.id === selectedId} onClick={() => onSelect(a)}>
-                            <strong>{NAMES[a.kind]}</strong> <span className="muted">p. {a.page}</span> {a.text && <span>“{a.text}”</span>}
+                            <strong>{NAMES[a.kind]}</strong> <span className="muted">p. {a.page}</span>
+                            {a.kind === 'comment' && (
+                                <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'} <span className="muted">{formatTimeAgo(a.createdAt)}</span></span>
+                            )} {a.text && <span>“{a.text}”</span>}
                             <div>
                                 {a.elementKey ? (
                                     <span className="chip tied">tied to {e ? `${e.mark ?? e.name} · ID ${e.elementId}` : a.elementKey}</span>

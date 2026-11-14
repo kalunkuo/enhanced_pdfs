@@ -1,4 +1,5 @@
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
+import { pdfDate, safeImage } from './comments';
 import type { Annotation, AnnotationKind, Point } from './types';
 
 /**
@@ -38,10 +39,27 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
     const list = (raw as { annotations?: unknown })?.annotations;
     if (!Array.isArray(list)) return [];
     const isPoint = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
-    return list.filter((a): a is Annotation =>
-        typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
-        (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
-    );
+    return list
+        .filter((a): a is Annotation =>
+            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
+            (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
+        )
+        .map(cleanComment);
+}
+
+/** Keep comment fields only when they are well formed; a saved PDF is untrusted input. */
+function cleanComment(a: Annotation): Annotation {
+    const { author, createdAt, image, ...rest } = a as Annotation & Record<string, unknown>;
+    const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
+    const photo = safeImage(author?.photo);
+    const when = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? createdAt : undefined;
+    const picture = safeImage(image);
+    return {
+        ...rest,
+        ...(name ? { author: { name, ...(photo ? { photo } : {}) } } : {}),
+        ...(when ? { createdAt: when } : {}),
+        ...(picture ? { image: picture } : {}),
+    } as Annotation;
 }
 
 interface Box { x0: number; y0: number; x1: number; y1: number }
@@ -199,9 +217,11 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         const color = a.kind === 'highlight' ? hexToRgb(a.color) : tied ? TIED : UNTIED;
         const entries: Record<string, unknown> = {
             Type: 'Annot', Subtype: subtype, Rect: rect, F: 4, C: [...color],
-            NM: PDFString.of(`${NAME_PREFIX}${a.id}`), T: PDFHexString.fromText(AUTHOR), Subj: PDFHexString.fromText(subject),
+            NM: PDFString.of(`${NAME_PREFIX}${a.id}`), T: PDFHexString.fromText(a.author?.name || AUTHOR), Subj: PDFHexString.fromText(subject),
             Contents: PDFHexString.fromText(a.text ?? subject), AP: { N: ap },
         };
+        const created = a.createdAt ? pdfDate(a.createdAt) : undefined;
+        if (created) Object.assign(entries, { CreationDate: PDFString.of(created), M: PDFString.of(created) });
         const [x0, y0] = a.from;
         const [x1, y1] = a.to;
         const PX = (x: number) => frame.cropX + x;
