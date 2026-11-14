@@ -85,9 +85,9 @@ button, input { font: inherit; color: inherit; }
 .check.on { background: var(--primary); color: var(--primary-foreground); opacity: 1; }
 
 .list { list-style: none; margin: 0; padding: 0; }
-.list button { display: block; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--border);
+.list > li > button { display: block; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-bottom: 1px solid var(--border);
     background: none; cursor: pointer; }
-.list button:hover, .list button[aria-current='true'] { background: var(--accent); }
+.list > li > button:hover, .list > li > button[aria-current='true'] { background: var(--accent); }
 .list strong { font-weight: 500; }
 /* Badge (outline) */
 .chip { display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: calc(var(--radius) - 2px); font-size: 12px; font-weight: 500; border: 1px solid currentColor; }
@@ -254,3 +254,13 @@ button, input { font: inherit; color: inherit; }
 
 
 .logo { flex: none; display: block; margin: 0 2px 0 -2px; border-radius: 8px; user-select: none; }
+
+/* Details card for a selected markup (same card as a comment thread) */
+.byline { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.byline-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.byline-text strong { font-weight: 600; }
+.byline-text .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adetails-head { display: flex; align-items: center; gap: 8px; }
+.akind { margin-left: 42px; }
+.adetails .ttext { margin: 0 0 0 42px; }
+.adetails .tchips { margin-left: 42px; }

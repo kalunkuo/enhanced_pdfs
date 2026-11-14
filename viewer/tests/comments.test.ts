@@ -141,3 +141,30 @@ describe('replies', () => {
         }
     });
 });
+
+import { formatExactDate, withAuthorship } from '../src/lib/comments';
+
+describe('formatExactDate', () => {
+    it('gives a readable date and time, and nothing for bad input', () => {
+        expect(formatExactDate('2026-11-14T15:30:00Z', 'en-US')).toMatch(/Nov 14, 2026/);
+        expect(formatExactDate('nope')).toBe('');
+        expect(formatExactDate(undefined)).toBe('');
+    });
+});
+
+describe('withAuthorship', () => {
+    const NOW_ISO = '2026-11-14T15:30:00Z';
+    it('stamps a new markup with the profile name, photo and time', () => {
+        const out = withAuthorship({ id: 'a' } as { id: string; author?: { name: string; photo?: string }; createdAt?: string }, { name: ' Yam ', photo: 'data:image/png;base64,AA==' }, NOW_ISO);
+        expect(out).toEqual({ id: 'a', createdAt: NOW_ISO, author: { name: 'Yam', photo: 'data:image/png;base64,AA==' } });
+    });
+    it('records the time but no author when the profile has no name yet', () => {
+        const out = withAuthorship({ id: 'a' } as { id: string; author?: { name: string }; createdAt?: string }, { name: '  ' }, NOW_ISO);
+        expect(out).toEqual({ id: 'a', createdAt: NOW_ISO });
+        expect('author' in out).toBe(false);
+    });
+    it('never overwrites an author or time that is already there', () => {
+        const out = withAuthorship({ author: { name: 'Carlos' }, createdAt: '2020-01-01T00:00:00Z' }, { name: 'Yam' }, NOW_ISO);
+        expect(out).toEqual({ author: { name: 'Carlos' }, createdAt: '2020-01-01T00:00:00Z' });
+    });
+});

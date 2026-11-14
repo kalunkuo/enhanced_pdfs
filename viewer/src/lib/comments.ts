@@ -44,3 +44,24 @@ export function pdfDate(iso: string): string | undefined {
     const p = (n: number, w = 2) => String(n).padStart(w, '0');
     return `D:${p(d.getUTCFullYear(), 4)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
 }
+
+/** "Nov 14, 2026, 3:30 PM". Pass a locale to make output deterministic. */
+export function formatExactDate(iso: string | undefined, locale?: string): string {
+    const t = iso ? Date.parse(iso) : NaN;
+    if (!Number.isFinite(t)) return '';
+    return new Date(t).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/**
+ * Give a new markup its author and creation time, unless it already has them (comments do).
+ * Without a profile name there is no author; the details card then says "Unknown author".
+ */
+export function withAuthorship<T extends { author?: { name: string; photo?: string } | undefined; createdAt?: string | undefined }>(
+    annotation: T,
+    profile: { name: string; photo?: string | undefined },
+    nowIso: string,
+): T & { createdAt: string } {
+    const name = profile.name.trim();
+    const author = annotation.author ?? (name ? { name, ...(profile.photo ? { photo: profile.photo } : {}) } : undefined);
+    return { ...annotation, createdAt: annotation.createdAt ?? nowIso, ...(author ? { author } : {}) };
+}

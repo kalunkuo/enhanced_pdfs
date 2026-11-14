@@ -13,6 +13,7 @@ import { createShapePicker, tieWithPicker } from './lib/hit';
 import { loadEnhancedPdf } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
+import { withAuthorship } from './lib/comments';
 import { useProfile } from './lib/profile';
 import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 
@@ -122,7 +123,11 @@ export function App() {
 
     const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => {
         if (!pageData) return;
-        const draft: Annotation = { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) };
+        const draft: Annotation = withAuthorship(
+            { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) },
+            profile,
+            new Date().toISOString(),
+        );
         const tied = tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
@@ -290,7 +295,10 @@ export function App() {
                             onZoom={setZoom}
                             onHover={onHover}
                             onSelectElement={selectElement}
-                            onSelectAnnotation={setSelectedAnnotationId}
+                            onSelectAnnotation={(id) => {
+                                setSelectedAnnotationId(id);
+                                if (id) setTab('notes');
+                            }}
                             onAddAnnotation={addAnnotation}
                             onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
                             commentLayer={{
@@ -362,6 +370,7 @@ export function App() {
                                 onTie={tieAnnotation}
                                 onReply={sendReply}
                                 onDelete={deleteById}
+                                onOpenElement={selectElement}
                                 onSelect={(a) => { goToPage(a.page); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
                             />
                         )}

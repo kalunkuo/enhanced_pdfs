@@ -4,6 +4,8 @@ import type { Profile } from '../../lib/profile';
 import { useNow } from '../../lib/useNow';
 import type { Annotation, ElementInfo } from '../../lib/types';
 import { Avatar } from '../ui/Avatar';
+import { Byline } from '../ui/Byline';
+import { TrashIcon } from '../ui/icons';
 import { CommentThread } from './CommentThread';
 
 const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature' } as const;
@@ -20,9 +22,11 @@ interface Props {
     onTie: (annotationId: string, elementKey: string | null) => void;
     onReply: (annotationId: string, reply: { text: string; name: string }) => void;
     onDelete: (annotationId: string) => void;
+    /** Show an object's properties, from the tie chip. */
+    onOpenElement: (elementKey: string) => void;
 }
 
-export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete }: Props) {
+export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete, onOpenElement }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
     // Selecting a pin on the page brings its note into view.
@@ -48,6 +52,17 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
         </label>
     );
 
+    const tieChip = (a: Annotation) => {
+        const e = a.elementKey ? elements.get(a.elementKey) : undefined;
+        return a.elementKey ? (
+            <button className="chip tied linklike" title="Show this object's properties" onClick={() => onOpenElement(a.elementKey!)}>
+                ↳ {e ? `${e.mark ?? e.name} · ID ${e.elementId}` : a.elementKey}
+            </button>
+        ) : (
+            <span className="chip untied">untied</span>
+        );
+    };
+
     return (
         <ul className="list">
             {annotations.map((a) => {
@@ -60,9 +75,20 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     <li key={a.id} ref={selected ? selectedRef : undefined}>
                         {selected && a.kind === 'comment' ? (
                             <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onDelete={onDelete}>
-                                <div className="tchips">{chip}</div>
+                                <div className="tchips">{tieChip(a)}</div>
                                 {tieSelect(a)}
                             </CommentThread>
+                        ) : selected ? (
+                            <section className="thread adetails" aria-label={`${NAMES[a.kind]} details`}>
+                                <div className="adetails-head">
+                                    <Byline author={a.author} createdAt={a.createdAt} now={now} />
+                                    <button className="icon-btn tdel" aria-label={`Delete ${NAMES[a.kind].toLowerCase()}`} title={`Delete ${NAMES[a.kind].toLowerCase()}`} onClick={() => onDelete(a.id)}><TrashIcon /></button>
+                                </div>
+                                <div className="akind"><strong>{NAMES[a.kind]}</strong> <span className="muted">· page {a.page}</span></div>
+                                {a.text && <p className="ttext">{a.text}</p>}
+                                <div className="tchips">{tieChip(a)}</div>
+                                {tieSelect(a)}
+                            </section>
                         ) : (
                             <>
                                 <button aria-current={selected} onClick={() => onSelect(a)}>
@@ -74,7 +100,6 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                                     {a.kind === 'comment' && (a.replies?.length ?? 0) > 0 && <span className="muted"> · {a.replies!.length} {a.replies!.length === 1 ? 'reply' : 'replies'}</span>}
                                     <div>{chip}</div>
                                 </button>
-                                {selected && tieSelect(a)}
                             </>
                         )}
                     </li>

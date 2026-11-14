@@ -152,8 +152,9 @@ export function MarkupLayer(props: MarkupLayerProps) {
                         interactive={tool === 'select'}
                         label={annotation.elementKey ? props.labelFor(annotation.elementKey) : undefined}
                         onClick={() => {
-                            props.onSelectAnnotation(annotation.id);
+                            // Object first, then the markup: the last selection decides which panel opens.
                             props.onSelectElement(annotation.elementKey ?? null);
+                            props.onSelectAnnotation(annotation.id);
                         }}
                     />
                 ))}
