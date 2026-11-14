@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconButton } from '../ui/Button';
+import { Logo } from '../ui/Logo';
 import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
@@ -28,6 +29,8 @@ interface Props {
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
+            <Logo />
+            <span className="sep" />
             <IconButton label={p.saving ? 'Saving…' : 'Save with annotations (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><SaveIcon /></IconButton>
             <IconButton label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
             <span className="sep" />
@@ -48,7 +51,9 @@ export function DocBar(p: Props) {
 
 function PageInput({ page, pageCount, disabled, onPage }: { page: number; pageCount: number; disabled: boolean; onPage: (n: number) => void }) {
     const [text, setText] = useState(String(page));
-    useEffect(() => setText(String(page)), [page]);
+    useEffect(() => {
+        setText(String(page));
+    }, [page]);
     const commit = () => {
         const n = Math.round(Number(text));
         if (Number.isFinite(n) && n >= 1) onPage(Math.min(pageCount, n));

@@ -252,3 +252,5 @@ button, input { font: inherit; color: inherit; }
 .tsend { justify-self: end; height: 32px; }
 .tsend:disabled { opacity: 0.5; cursor: default; }
 
+
+.logo { flex: none; display: block; margin: 0 2px 0 -2px; border-radius: 8px; user-select: none; }
