@@ -134,7 +134,7 @@ describe('API transport and local source authority', () => {
     it('reads connection status without receiving any key', async () => {
         const fetchMock = vi.fn(async () => json({ configured: true, provider: 'openai', model: 'configured-model' }));
         vi.stubGlobal('fetch', fetchMock);
-        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'openai', model: 'configured-model' });
+        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'openai', model: 'configured-model', missing: [] });
         expect(fetchMock).toHaveBeenCalledWith('/api/agent/status', { cache: 'no-store', signal: undefined });
     });
 
@@ -146,12 +146,17 @@ describe('API transport and local source authority', () => {
     it('accepts Bedrock model and inference profile identifiers without receiving credentials', async () => {
         const model = `arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/${'profile-'.repeat(20)}`;
         vi.stubGlobal('fetch', vi.fn(async () => json({ configured: true, provider: 'bedrock', model })));
-        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'bedrock', model });
+        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'bedrock', model, missing: [] });
     });
 
     it('accepts an unconfigured Bedrock service before a model has been selected', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => json({ configured: false, provider: 'bedrock', model: '' })));
-        expect(await getAgentApiStatus()).toEqual({ configured: false, provider: 'bedrock', model: '' });
+        expect(await getAgentApiStatus()).toEqual({ configured: false, provider: 'bedrock', model: '', missing: [] });
+    });
+
+    it('reports which server settings are missing, by name only', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => json({ configured: false, provider: 'bedrock', model: '', missing: ['AWS_REGION', 'BEDROCK_MODEL_ID'] })));
+        expect(await getAgentApiStatus()).toEqual({ configured: false, provider: 'bedrock', model: '', missing: ['AWS_REGION', 'BEDROCK_MODEL_ID'] });
     });
 
     it.each([
@@ -160,6 +165,9 @@ describe('API transport and local source authority', () => {
         { configured: true, provider: 'openai', model: 'x'.repeat(101) },
         { configured: true, provider: 'unknown', model: 'model' },
         { configured: false, provider: 'bedrock', model: '', token: 'private-token' },
+        { configured: false, provider: 'bedrock', model: '', missing: 'AWS_REGION' },
+        { configured: false, provider: 'bedrock', model: '', missing: ['AWS_REGION=us-east-1'] },
+        { configured: false, provider: 'bedrock', model: '', missing: Array.from({ length: 9 }, () => 'AWS_REGION') },
     ])('rejects malformed or secret-bearing connection metadata %#', async (status) => {
         vi.stubGlobal('fetch', vi.fn(async () => json(status)));
         await expect(getAgentApiStatus()).rejects.toThrow('unsupported response');

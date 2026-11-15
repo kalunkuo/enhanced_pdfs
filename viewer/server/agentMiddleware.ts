@@ -4,7 +4,7 @@ import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, ty
 import { AgentProviderError } from './agentProviderError.ts';
 import { planAgentRequest } from './agentProvider.ts';
 import { openAiKeyAccepted } from './openaiAgent.ts';
-import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig.ts';
+import { agentConfigured, agentProvider, missingAgentSettings, type AgentServerConfig } from './agentConfig.ts';
 export type { AgentServerConfig } from './agentConfig.ts';
 
 type Next = (error?: unknown) => void;
@@ -143,13 +143,11 @@ export function createAgentMiddleware(config: AgentServerConfig, options: AgentM
                     catch { /* inconclusive: leave the configuration as it is */ }
                     finally { clearTimeout(timer); }
                 }
-                json(response, 200, { configured, provider: agentProvider(config), model: config.model });
+                json(response, 200, { configured, provider: agentProvider(config), model: config.model, missing: missingAgentSettings(config) });
             })();
             return;
         }
-        if (!agentConfigured(config)) return json(response, 503, { error: agentProvider(config) === 'bedrock'
-            ? 'Configure AWS_BEARER_TOKEN_BEDROCK, AWS_REGION, and BEDROCK_MODEL_ID on the server, or use Local demo.'
-            : 'Configure OPENAI_API_KEY and OPENAI_MODEL on the server, or use Local demo.' });
+        if (!agentConfigured(config)) return json(response, 503, { error: `Configure ${missingAgentSettings(config).join(', ')} on the server, or use Local demo.` });
         if (inFlight >= 2) return json(response, 429, { error: 'The drawing agent is busy. Wait for the current request to finish.' });
         inFlight++;
         const controller = new AbortController();
