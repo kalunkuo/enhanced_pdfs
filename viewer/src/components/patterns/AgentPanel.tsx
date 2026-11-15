@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { executeDrawingAgent, type AgentContext, type AgentHighlight, type DrawingComment } from '../../lib/drawingAgent';
 import { getAgentApiStatus, requestAgent, type AgentApiStatus } from '../../lib/agentApi';
+import type { AgentHostAction, AgentHostCallback } from '../../lib/agentWorkspace';
 import { ActionButton } from '../ui/ActionButton';
 import { Button, IconButton } from '../ui/Button';
 import '../../styles/agent.css';
@@ -34,9 +35,10 @@ export interface AgentPanelProps {
     sessionKey: string;
     active?: boolean;
     activeHighlight: AgentHighlight | null;
-    onHighlight: (highlight: AgentHighlight | null) => void;
+    onHighlight: (highlight: AgentHighlight | null, preserveSelection?: boolean) => void;
     onSelectComment: (comment: DrawingComment) => void;
     onFitHighlights: () => void;
+    onAction?: AgentHostCallback;
 }
 
 const STARTERS = [
@@ -66,7 +68,7 @@ function commentDate(comment: DrawingComment): string {
 }
 
 /** Conversation state survives inspector tab changes; API credentials stay on the server. */
-export function AgentPanel({ context, sessionKey, active = true, activeHighlight, onHighlight, onSelectComment, onFitHighlights }: AgentPanelProps) {
+export function AgentPanel({ context, sessionKey, active = true, activeHighlight, onHighlight, onSelectComment, onFitHighlights, onAction }: AgentPanelProps) {
     const [draft, setDraft] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [listening, setListening] = useState(false);
@@ -85,11 +87,13 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
     const end = useRef<HTMLDivElement>(null);
     const input = useRef<HTMLTextAreaElement>(null);
     const explicitMode = useRef(false);
-    const request = useRef<{ controller: AbortController; prompt: string; userId: number } | null>(null);
+    const request = useRef<{ controller: AbortController; prompt: string; userId: number; writeStarted: boolean; completedWrites: string[] } | null>(null);
     const scope = useMemo(() => `${sessionKey}:${context?.pageNumber ?? ''}:${context && 'scopeKey' in context && typeof context.scopeKey === 'string' ? context.scopeKey : context?.elements.map((element) => element.key).sort().join('\n') ?? ''}`, [sessionKey, context]);
     const currentScope = useRef(scope);
     const isActive = useRef(active);
     const latestContext = useRef(context);
+    const hostAction = useRef(onAction);
+    hostAction.current = onAction;
     currentScope.current = scope;
     isActive.current = active;
     latestContext.current = context;
@@ -102,9 +106,12 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
         request.current = null;
         previous.controller.abort();
         setPending(false);
-        setDraft((value) => value || previous.prompt);
+        setDraft((value) => previous.writeStarted ? '' : value || previous.prompt);
         setMessages((current) => current.map((message) => message.id === previous.userId ? { ...message, state: 'canceled' } : message));
-        if (reason) setNotice(reason);
+        if (previous.writeStarted) setNotice(previous.completedWrites.length
+            ? `Request stopped. ${previous.completedWrites.join(' ')} These changes are kept.`
+            : 'Request stopped after an edit or download started. Check the drawing before sending that edit again.');
+        else if (reason) setNotice(reason);
     }, []);
 
     useEffect(() => {
@@ -180,16 +187,24 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
         const last = messages.at(-1);
         const reuseLast = last?.role === 'user' && last.text === prompt && (last.state === 'failed' || last.state === 'canceled');
         const userId = reuseLast ? last.id : ++sequence.current;
-        const currentRequest = { controller, prompt, userId };
+        const currentRequest = { controller, prompt, userId, writeStarted: false, completedWrites: [] as string[] };
         request.current = currentRequest;
         if (mode === 'api') {
             setPending(true);
             setMessages((current) => reuseLast ? current.map((message) => message.id === userId ? { ...message, state: 'pending' } : message)
                 : [...current, { id: userId, role: 'user', text: prompt, page: context.pageNumber, state: 'pending' }]);
         }
+        let effects: readonly AgentHostAction[] = [];
         try {
             const result = mode === 'api'
-                ? await requestAgent(prompt, messages.filter((message) => !message.state).map((message) => ({ role: message.role, content: message.text })), context, controller.signal, () => latestContext.current ?? context)
+                ? await requestAgent(prompt, messages.filter((message) => !message.state).map((message) => ({ role: message.role, content: message.text })), context, controller.signal, () => latestContext.current ?? context, async (action: AgentHostAction) => {
+                    if (!hostAction.current) throw new Error('Viewer actions are unavailable. Reopen the drawing and try again.');
+                    const writes = action.type === 'add_comment' || action.type === 'reply_comment' || action.type === 'viewer_action' && action.action === 'download_pdf';
+                    if (writes) currentRequest.writeStarted = true;
+                    const result = await hostAction.current(action);
+                    if (writes) currentRequest.completedWrites.push(result.message);
+                    return result;
+                })
                 : executeDrawingAgent(prompt, context, previousPrompt.current);
             if (request.current !== currentRequest || controller.signal.aborted) return;
             if (currentScope.current !== capturedScope || !isActive.current) {
@@ -201,7 +216,8 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                 : [...current, { id: userId, role: 'user' as const, text: prompt, page: context.pageNumber }]),
                 { id: assistantId, role: 'assistant', text: result.message, page: context.pageNumber, comments: result.comments },
             ]);
-            if (result.highlight !== undefined) onHighlight(result.highlight);
+            if (result.highlight !== undefined) onHighlight(result.highlight, result.preserveSelection);
+            effects = result.effects ?? [];
             // Retain the action domain through chained follow-ups such as “and 42?” then “48”.
             previousPrompt.current = result.highlight?.title.startsWith('Door widths') ? `${prompt} doors`
                 : result.highlight?.title === 'Walls by fire rating' ? `${prompt} walls` : prompt;
@@ -221,6 +237,11 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                 request.current = null;
                 setPending(false);
             }
+        }
+        // Navigation ends this turn before it changes the page or inspector scope.
+        for (const effect of effects) {
+            try { await hostAction.current?.(effect); }
+            catch (cause) { setError(cause instanceof Error ? cause.message : 'The viewer action could not be completed.'); }
         }
     };
 
@@ -306,7 +327,7 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                     <div className="agent-welcome">
                         {!context && <p className="agent-load-hint">Open an enhanced PDF to start.</p>}
                         <h2 className="agent-welcome-title">Talk to your drawing.</h2>
-                        <p>Check fire ratings, compare door widths, and highlight the results on your drawing.</p>
+                        <p>Find elements, explore their properties, color your results, and work with drawing comments.</p>
                         <div className="agent-starters">
                             {STARTERS.map((starter) => <ActionButton variant="secondary" className="agent-starter" key={starter.icon} disabled={!context || pending || checkingConnection} onClick={() => void send(starter.prompt)}>
                                 <span className="agent-starter-icon"><StarterGlyph kind={starter.icon} /></span>
@@ -346,7 +367,7 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                     <IconButton className="agent-send" label="Send request" type="submit" disabled={!context || !draft.trim() || pending || checkingConnection}><Glyph><path d="M12 19V5M6 11l6-6 6 6" /></Glyph></IconButton>
                 </div></div>
             </form>
-            <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and drawing counts go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : context ? 'Start with a drawing check above, or type a request.' : 'Open an enhanced PDF to get started.')}</p>
+            <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and requested drawing data go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : context ? 'Start with a drawing check above, or type a request.' : 'Open an enhanced PDF to get started.')}</p>
         </section>
     );
 }

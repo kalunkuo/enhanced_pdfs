@@ -1,4 +1,6 @@
-import type { ElementInfo, ParameterInfo } from './types';
+import type { AgentHostAction } from './agentWorkspace';
+import { singularCategory } from './elementLabel';
+import type { Annotation, ElementInfo, ParameterInfo } from './types';
 
 export interface DrawingComment {
     id: string;
@@ -20,7 +22,11 @@ export interface AgentContext {
     elements: readonly ElementInfo[];
     parameters: ReadonlyMap<string, ParameterInfo[]>;
     comments: readonly DrawingComment[];
+    /** Current review records for local queries and comment actions. */
+    annotations?: readonly Annotation[];
+    selectedKeys?: ReadonlySet<string>;
     pageNumber: number;
+    pageCount?: number;
     locatableKeys: ReadonlySet<string>;
     commentsStatus?: 'loading' | 'ready' | 'error';
 }
@@ -34,9 +40,13 @@ export interface AgentHighlight {
 
 export interface AgentResult {
     message: string;
+    /** A composed selection should survive applying the same turn's color overlay. */
+    preserveSelection?: boolean;
     /** Absent keeps the current overlay; null clears it. */
     highlight?: AgentHighlight | null;
     comments?: DrawingComment[];
+    /** Navigation effects are deferred until the current agent request finishes. */
+    effects?: readonly AgentHostAction[];
 }
 
 const COLORS = {
@@ -45,6 +55,16 @@ const COLORS = {
     equal: 'var(--color-agent-equal)',
     unknown: 'var(--color-agent-unknown)',
 };
+const CATEGORY_COLORS = { red: '#ef4444', green: '#22c55e', blue: '#3b82f6', yellow: '#eab308', orange: '#f97316', purple: '#a855f7', pink: '#ec4899' } as const;
+export type AgentCategoryColor = keyof typeof CATEGORY_COLORS;
+export interface AgentElementGroup { label: string; elementKeys: ReadonlySet<string> }
+export interface AgentHighlightOptions {
+    title?: string;
+    color?: AgentCategoryColor | null;
+    groups?: readonly AgentElementGroup[];
+}
+const categoryIdentity = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const categoryAlias = (value: string) => categoryIdentity(singularCategory(value));
 const normalized = (value: string) => value.trim().toLowerCase().replace(/[ _-]+/g, ' ');
 const categoryIs = (element: ElementInfo, category: string) => normalized(element.category).replace(/^ost /, '').replace(/s$/, '') === category;
 const numberText = (value: number) => Number(value.toFixed(3)).toString();
@@ -117,6 +137,118 @@ function ratingIdentity(value: string): string {
 function coverage(elements: readonly ElementInfo[], context: AgentContext): string {
     const located = elements.filter((element) => context.locatableKeys.has(element.key)).length;
     return `${elements.length} matching element${elements.length === 1 ? '' : 's'} on page ${context.pageNumber}; ${located} can be highlighted${located < elements.length ? `, ${elements.length - located} have no mapped geometry in this drawing` : ''}.`;
+}
+
+function stableCategoryColor(identity: string): string {
+    let hash = 2166136261;
+    for (const character of identity) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    return Object.values(CATEGORY_COLORS)[(hash >>> 0) % Object.keys(CATEGORY_COLORS).length]!;
+}
+
+/** Turn local query results into an overlay without expanding their identities or inventing geometry. */
+export function highlightElementKeys(context: AgentContext, keys: readonly string[], options: AgentHighlightOptions = {}): AgentResult {
+    const color = options.color ?? null;
+    if (color !== null && !Object.hasOwn(CATEGORY_COLORS, color)) throw new Error('Unsupported category highlight color.');
+    const available = new Map(context.elements.map((element) => [element.key, element]));
+    const matches = [...new Set(keys)].map((key) => available.get(key)).filter((element): element is ElementInfo => !!element);
+    if (!matches.length) return { message: `No matching element records were found on page ${context.pageNumber}.`, highlight: null };
+    const groups = new Map<string, { label: string; keys: Set<string> }>();
+    const supplied = options.groups?.length ? options.groups : undefined;
+    const memberships = new Map<string, Set<string>>();
+    if (supplied) {
+        const matched = new Set(matches.map((element) => element.key));
+        for (const group of supplied) for (const key of group.elementKeys) {
+            if (!matched.has(key)) continue;
+            const labels = memberships.get(key) ?? new Set<string>();
+            labels.add(group.label.trim() || 'Unspecified');
+            memberships.set(key, labels);
+        }
+    }
+    let overlapping = 0;
+    for (const element of matches) {
+        const labels = supplied ? [...(memberships.get(element.key) ?? [])] : [element.category.trim().replace(/\s+/g, ' ') || 'Uncategorized'];
+        if (labels.length > 1) overlapping++;
+        const label = labels.length > 1 ? 'Multiple groups' : labels[0] ?? 'Other matches';
+        // A distinct identity avoids combining a real property value with the fallback labels.
+        const identity = JSON.stringify([labels.length > 1 ? 'overlap' : labels.length === 0 ? 'ungrouped' : 'value', label]);
+        const group = groups.get(identity) ?? { label, keys: new Set<string>() };
+        group.keys.add(element.key);
+        groups.set(identity, group);
+    }
+    const colors = new Map<string, string>();
+    const legend: AgentHighlight['legend'] = [];
+    for (const [, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+        const located = [...group.keys].filter((key) => context.locatableKeys.has(key));
+        if (!located.length) continue;
+        const fill = color === null ? stableCategoryColor(categoryIdentity(group.label)) : CATEGORY_COLORS[color];
+        for (const key of located) colors.set(key, fill);
+        legend.push({ label: group.label, color: fill, count: located.length });
+    }
+    return { message: `Highlighting matching exported elements${color ? ` in ${color}` : ''}. ${coverage(matches, context)}${overlapping ? ` ${overlapping} matching element${overlapping === 1 ? ' belongs' : 's belong'} to multiple supplied result groups and ${overlapping === 1 ? 'is' : 'are'} displayed in “Multiple groups”.` : ''}`,
+        highlight: { title: options.title?.trim() || 'Matching elements', colors, legend, elementKeys: new Set(colors.keys()) } };
+}
+
+/** Highlight actual scoped category members; metadata without mapped geometry never enters the overlay. */
+export function highlightElementsByCategory(context: AgentContext, categories: readonly string[], color: AgentCategoryColor | null = null): AgentResult {
+    if (color !== null && !Object.hasOwn(CATEGORY_COLORS, color)) throw new Error('Unsupported category highlight color.');
+    const requested = new Set(categories.map(categoryAlias).filter(Boolean));
+    const matches = [...new Map(context.elements.filter((element) => requested.has(categoryAlias(element.category))).map((element) => [element.key, element])).values()];
+    if (!matches.length) return { message: `No matching category records were found on page ${context.pageNumber}.`, highlight: null };
+    const groups = new Map<string, { label: string; keys: string[] }>();
+    for (const element of matches) {
+        if (!context.locatableKeys.has(element.key)) continue;
+        const identity = categoryIdentity(element.category);
+        const group = groups.get(identity) ?? { label: element.category.trim().replace(/\s+/g, ' '), keys: [] };
+        group.keys.push(element.key);
+        groups.set(identity, group);
+    }
+    const colors = new Map<string, string>();
+    const legend: AgentHighlight['legend'] = [];
+    for (const [identity, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+        const fill = color === null ? stableCategoryColor(identity) : CATEGORY_COLORS[color];
+        for (const key of group.keys) colors.set(key, fill);
+        legend.push({ label: group.label, color: fill, count: group.keys.length });
+    }
+    return { message: `Highlighting matching exported categories${color ? ` in ${color}` : ''}. ${coverage(matches, context)}`,
+        highlight: { title: color ? `Categories · ${color}` : 'Elements by category', colors, legend, elementKeys: new Set(colors.keys()) } };
+}
+
+const categoryWords = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Resolve phrases against this drawing's catalog; a broad noun includes its qualified categories. */
+function mentionedCategories(prompt: string, elements: readonly ElementInfo[]): string[] {
+    const text = categoryWords(prompt);
+    const catalog = [...new Map(elements.filter((element) => element.category.trim()).map((element) => [categoryIdentity(element.category), element.category])).values()];
+    const mentions: { category: string; start: number; end: number }[] = [];
+    for (const category of catalog) {
+        const full = categoryWords(category), singular = categoryWords(singularCategory(category));
+        const aliases = new Set([full, singular, full.split(' ').at(-1)!, singular.split(' ').at(-1)!]);
+        for (const alias of aliases) {
+            if (!alias) continue;
+            const expression = new RegExp(`(?:^| )(${escapeRegex(alias)})(?= |$)`, 'gu');
+            for (const match of text.matchAll(expression)) {
+                const start = match.index + (match[0].startsWith(' ') ? 1 : 0);
+                mentions.push({ category, start, end: start + alias.length });
+            }
+        }
+    }
+    return [...new Set(mentions.filter((mention) => !mentions.some((other) => other.start <= mention.start && other.end >= mention.end && other.end - other.start > mention.end - mention.start)).map((mention) => mention.category))];
+}
+
+function categoryRequest(prompt: string, context: AgentContext): AgentResult | undefined {
+    if (!/\b(?:highlight|colou?r|show|display|select)(?:s|ing)?\b/i.test(prompt)) return undefined;
+    const categories = mentionedCategories(prompt, context.elements);
+    if (!categories.length) return undefined;
+    const colors = [...new Set((prompt.toLowerCase().match(/\b(?:red|green|blue|yellow|orange|purple|pink)\b/g) ?? []) as AgentCategoryColor[])];
+    const filterText = prompt.replace(/\b(?:in|with)(?:\s+(?:the\s+)?colou?r)?\s+(?:red|green|blue|yellow|orange|purple|pink)\b/gi, '');
+    if (/\b(?:wider|narrower|taller|shorter|longer|higher|lower|thicker|thinner|width|height|length|diameter|size|rating|rated|material|level|type|family|mark|parameter|where|whose|with|without|having|greater|less|over|under|above|below|equal|except|excluding|not|largest|smallest|nearest)\b|\b(?:at least|at most|that are|made of)\b|[<>≤≥=]|\b\d+(?:\.\d+)?\s*(?:inches|inch|in|feet|foot|ft|mm|cm|meters?|metres?|m|h|hr|hrs|hours?|["″′'])/i.test(filterText)) {
+        return { message: 'Category highlighting accepts categories and an optional color. Ask for a category without the property or size filter; door widths and wall fire ratings have separate drawing actions.' };
+    }
+    if (colors.length > 1) return { message: 'Use one highlight color per request, or ask to color the matching elements by category.' };
+    // Keep the existing fire-rating shortcut for an unqualified wall request.
+    if (!colors.length && categories.every((category) => categoryAlias(category) === 'wall') && !/\b(?:all|category|categories)\b/i.test(prompt)) return undefined;
+    return highlightElementsByCategory(context, categories, colors[0] ?? null);
 }
 
 function colorWalls(prompt: string, context: AgentContext): AgentResult {
@@ -219,12 +351,20 @@ export function latestComments(context: AgentContext): AgentResult {
 /** Local demo action router: no network, inferred dimensions, or invented comments. */
 export function executeDrawingAgent(prompt: string, context: AgentContext, previousPrompt?: string): AgentResult {
     const text = prompt.trim();
-    if (!text) return { message: 'Ask me to color walls by fire rating, compare door widths, or show the latest drawing comments.' };
+    if (!text) return { message: 'Ask me to highlight a drawing category, color walls by fire rating, compare door widths, or show the latest drawing comments.' };
     if (/\b(?:clear|reset|remove|hide)\b.*\b(?:highlight|color|colour|overlay)s?\b/i.test(text) || /^(?:clear|reset)(?:\s+(?:it|that|them))?[.!]?$/i.test(text)) return { message: 'Agent highlights cleared.', highlight: null };
     if (/\b(?:comments?|notes?|feedback|discussion|reviews?)\b/i.test(text)) return latestComments(context);
+    const requestedCategories = mentionedCategories(text, context.elements);
+    const onlyWalls = requestedCategories.every((category) => categoryAlias(category) === 'wall');
+    const onlyDoors = requestedCategories.every((category) => categoryAlias(category) === 'door');
+    if (onlyWalls && (/\bfire\s*(?:rating|rated|resistance)\b/i.test(text) || /\bwalls?\b/i.test(text) && /\b\d+(?:\.\d+)?\s*(?:h|hr|hrs|hours?)\b/i.test(text))) return colorWalls(text, context);
+    if (onlyDoors && /\bdoors?\b/i.test(text) && !/\b(?:taller|shorter|higher|height|length|diameter|thicker|thinner)\b/i.test(text) &&
+        (/\b(?:width|widths|wide|wider|narrow|narrower|threshold|than|over|under|above|below)\b/i.test(text) || thresholdFrom(text) !== null)) return compareDoors(text, context);
+    const categoryResult = categoryRequest(text, context);
+    if (categoryResult) return categoryResult;
     if (/\bdoors?\b/i.test(text)) return compareDoors(text, context);
-    if (/\bwalls?\b/i.test(text) || /\bfire\s*(?:rating|rated|resistance)\b/i.test(text)) return colorWalls(text, context);
+    if (/\bwalls?\b/i.test(text)) return colorWalls(text, context);
     if (previousPrompt && /\bdoors?\b/i.test(previousPrompt) && thresholdFrom(text) !== null) return compareDoors(text, context);
     if (previousPrompt && /\bwalls?\b/i.test(previousPrompt) && /\b(?:only|just)\b.*\d+\s*(?:h|hr|hrs|hours?)\b/i.test(text)) return colorWalls(text, context);
-    return { message: 'I can work with this drawing’s exported data. Try “Color walls by fire rating,” “Compare door widths at 36 inches,” or “Show the latest comments.”' };
+    return { message: 'I can work with this drawing’s exported data. Try highlighting an exported category with an optional color, “Color walls by fire rating,” “Compare door widths at 36 inches,” or “Show the latest comments.”' };
 }

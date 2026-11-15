@@ -19,12 +19,18 @@ The right sidebar opens on **Agent**. Upload `public/demo/demo-enhanced.pdf`, th
 - `Highlight and color code walls based on fire rating`
 - `Compare door widths at 36 inches: green below and red above`
 - `Give me context of the latest comments on this drawing`
+- `Highlight all columns, including structural columns`
+- `Color the columns by type, select them, and zoom to the results`
+- `Find columns on Level 1 and show their exported properties`
+- `Add a comment to the selected elements saying "Verify the column layout"`
 
 After a door comparison, try `What about 42 inches?` and then `48`. The legend shows each group and its element count; **Fit highlighted elements** frames the available drawing geometry. **Clear colors** removes the overlay. Clicking a PDF element switches to **Properties**. Click **Agent** to resume the conversation; clicking empty drawing space also returns to Agent. Opening a different file or page starts a new conversation.
 
 Element actions use the current page and the active **Drawing / view** scope from Elements. Results distinguish matching records from elements with mapped drawing geometry. Fire-rating **Unspecified** means the export contains no rating; it remains separate from explicit values such as **NR**. Door widths use exported instance/type parameters with known units. Missing, conflicting, or unrecognized widths are **Width unknown**, and doors exactly at the requested threshold form a separate group. Agent colors are temporary display overlays.
 
 Comment context reads actual review comments on the current page and current viewer notes. Available creation/modification timestamps establish order; undated comments remain explicitly undated. Comment citations open their context in **Notes**. Comments are scoped by page rather than inferred element/view membership.
+
+API mode uses a tool loop that can inspect the drawing catalog, query any exported category and property, group results, inspect elements and comments, highlight/select/focus results, adjust the view, navigate pages, add comments/replies, open a thread, and download the reviewed PDF. Result membership stays local behind handles, so a query can act on all matching objects while returning only bounded rows to the model. Queries use the current page and drawing/view scope. Numeric filters require compatible units or declared unitless data; missing or conflicting values are reported. Review writes and downloads require an explicit user request. Imported-comment upgrades retain their separate **Accept upgrade** review action.
 
 ## Upgrade existing PDF markups
 
@@ -75,9 +81,9 @@ It uses the [OpenAI Responses API with strict function tools](https://developers
 
 ### API boundary
 
-Credentials are read only by the local Vite server. Never put them in `VITE_*` variables, browser storage, or source files. `GET /api/agent/status` returns only configuration state, provider, and model. `POST /api/agent` plans supported wall, door, comment, and clear-highlight actions. The browser executes them against current drawing data, so highlights, counts, and comment citations come from local code rather than model prose.
+Credentials are read only by the local Vite server. Never put them in `VITE_*` variables, browser storage, or source files. `GET /api/agent/status` returns only configuration state, provider, and model. `POST /api/agent` plans validated drawing queries and viewer actions. The browser executes them against current drawing data and returns bounded tool observations for the model's next step.
 
-API requests contain your prompt, up to 12 recent conversation turns, and bounded page/category/comment counts. PDF bytes, element records, parameter tables, and comment bodies are not uploaded by the context builder. Text you type is sent to the selected provider in API mode. OpenAI requests use `store: false`. The API is restricted to the local viewer and has bounded inputs, cancellation, and sanitized errors. Requests time out after 60 seconds for Bedrock or 30 seconds for OpenAI. Provider modules live in `server/`; the browser contract and tool executor are `src/lib/agentApi.ts`.
+API requests begin with your prompt, up to 12 recent conversation turns, and bounded page/category/comment counts. Requested query observations can include element identities, exported property values and provenance, and comment text. Those bounded results go to the selected provider so it can reason about the drawing; PDF bytes and complete parameter tables stay in the browser. OpenAI requests use `store: false`. The loop is bounded to eight model rounds with limits on observations and action counts, cancellation, duplicate-write protection, and sanitized errors. Each model request times out after 60 seconds for Bedrock or 30 seconds for OpenAI. The API remains restricted to the local viewer. Provider modules live in `server/`; the browser contract and tool executor are `src/lib/agentApi.ts`.
 
 For a local production-build preview, run `bun run build` then `bun run preview`; it exposes the same local API. Serving `dist/` as static files alone runs Local demo without an API server. Hosted multi-user deployment needs a separate authenticated backend; the included proxy is for the local hackathon demo.
 

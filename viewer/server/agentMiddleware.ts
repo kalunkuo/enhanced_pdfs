@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import type { AgentApiRequest, AgentChatTurn, AgentModelContext } from '../src/lib/agentApi';
+import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi';
 import { AgentProviderError } from './agentProviderError';
 import { planAgentRequest } from './agentProvider';
 import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig';
@@ -27,7 +27,7 @@ function count(value: unknown): value is number {
 
 /** Only bounded conversation text and a small drawing summary cross the API boundary. */
 export function parseAgentRequest(value: unknown): AgentApiRequest {
-    if (!record(value) || !exactKeys(value, ['prompt', 'history', 'context']) ||
+    if (!record(value) || !exactKeys(value, ['prompt', 'history', 'context', ...(Object.hasOwn(value, 'observations') ? ['observations'] : [])]) ||
         typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 4000 ||
         !Array.isArray(value.history) || value.history.length > MAX_HISTORY) {
         throw new RequestError(400, 'Invalid agent request. Shorten your message and try again.');
@@ -49,7 +49,12 @@ export function parseAgentRequest(value: unknown): AgentApiRequest {
             typeof entry.name === 'string' && entry.name.length > 0 && entry.name.length <= 160 && count(entry.count))) {
         throw new RequestError(400, 'Invalid drawing context. Reopen the drawing and try again.');
     }
-    return { prompt: value.prompt.trim(), history, context: context as unknown as AgentModelContext };
+    let observations: AgentApiRequest['observations'];
+    if (Object.hasOwn(value, 'observations')) {
+        try { observations = validateAgentObservations(value.observations); }
+        catch { throw new RequestError(400, 'Invalid or oversized drawing tool results. Start a new request.'); }
+    }
+    return { prompt: value.prompt.trim(), history, context: context as unknown as AgentModelContext, ...(observations ? { observations } : {}) };
 }
 
 function json(response: ServerResponse, status: number, value: unknown) {

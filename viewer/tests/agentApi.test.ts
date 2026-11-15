@@ -40,6 +40,67 @@ describe('API-selected drawing actions', () => {
         expect(() => parseAgentApiResponse({ message: 'ok', actions: [], apiKey: 'secret' })).toThrow();
     });
 
+    it('normalizes category highlighting while preserving the first category spelling and explicit color', () => {
+        const categories = [' Columns ', 'Structural Columns', 'columns', ' STRUCTURAL COLUMNS '];
+        expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories, color: 'red' } })).toEqual({
+            name: 'highlight_elements', arguments: { categories: ['Columns', 'Structural Columns'], color: 'red' },
+        });
+        expect(categories).toEqual([' Columns ', 'Structural Columns', 'columns', ' STRUCTURAL COLUMNS ']);
+        expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns'], color: null } })).toEqual({
+            name: 'highlight_elements', arguments: { categories: ['Columns'], color: null },
+        });
+    });
+
+    it('accepts the category and palette boundaries without accepting arbitrary CSS colors', () => {
+        const categories = Array.from({ length: 20 }, (_, index) => `${index}${'x'.repeat(158)}`);
+        for (const color of ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink', null]) {
+            expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories, color } })).toMatchObject({
+                name: 'highlight_elements', arguments: { categories, color },
+            });
+        }
+    });
+
+    it('rejects malformed or oversized category highlighting requests before exposing an action', () => {
+        for (const args of [
+            {}, { categories: ['Columns'] }, { color: 'red' },
+            { categories: [], color: 'red' },
+            { categories: Array.from({ length: 21 }, () => 'Columns'), color: 'red' },
+            { categories: 'Columns', color: 'red' },
+            { categories: [7], color: 'red' },
+            { categories: ['Columns', null], color: 'red' },
+            { categories: ['  '], color: 'red' },
+            { categories: ['x'.repeat(161)], color: 'red' },
+            { categories: ['Columns'], color: 'RED' },
+            { categories: ['Columns'], color: '#ff0000' },
+            { categories: ['Columns'], color: 7 },
+            { categories: ['Columns'], color: 'red', elementKeys: ['invented-column'] },
+        ]) expect(() => parseAgentAction({ name: 'highlight_elements', arguments: args })).toThrow('unsupported response');
+        expect(() => parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns'], color: 'red' }, code: 'run me' })).toThrow('unsupported response');
+    });
+
+    it('highlights both column categories from local records while distinguishing unmapped geometry', () => {
+        const c = context({
+            elements: [...context().elements,
+                { key: 'column-architectural', elementId: 91, category: 'Columns', name: 'Round column' },
+                { key: 'column-structural', elementId: 92, category: 'Structural Columns', name: 'Steel column' },
+                { key: 'column-metadata-only', elementId: 93, category: 'Structural Columns', name: 'Undrawn column' },
+                { key: 'furniture-not-column', elementId: 94, category: 'Furniture', name: 'Columns display' },
+            ],
+            locatableKeys: new Set(['private-wall-key', 'column-architectural', 'column-structural']),
+        });
+        const action = parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns', 'Structural Columns'], color: 'red' } });
+        const result = executeAgentAction(action, c);
+        expect(result.highlight?.elementKeys).toEqual(new Set(['column-architectural', 'column-structural']));
+        expect(result.highlight?.colors.has('column-metadata-only')).toBe(false);
+        expect(result.highlight?.colors.has('furniture-not-column')).toBe(false);
+        expect(result.highlight?.colors.has('private-wall-key')).toBe(false);
+        expect([...result.highlight!.colors.values()]).toEqual(['#ef4444', '#ef4444']);
+        expect(result.highlight?.legend.reduce((count, entry) => count + entry.count, 0)).toBe(2);
+        expect(result.message).toContain('3 matching elements');
+        expect(result.message).toContain('2 can be highlighted');
+        expect(result.message).toContain('no mapped geometry');
+    });
+
     it('uses typed local execution for NR/unspecified ratings, numeric widths, notes and clear', () => {
         const c = context({ elements: [...context().elements, { key: 'wall-unknown', elementId: 88, category: 'Walls', name: 'Wall' }] });
         expect([...executeAgentAction({ name: 'color_walls_by_fire_rating', arguments: { rating: 'NR' } }, c).highlight!.elementKeys]).toEqual(['private-wall-key']);

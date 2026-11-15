@@ -1,10 +1,34 @@
-import { colorWallsByFireRating, compareDoorWidths, latestComments, type AgentContext, type AgentResult } from './drawingAgent';
+import { colorWallsByFireRating, compareDoorWidths, highlightElementsByCategory, latestComments, type AgentContext, type AgentResult } from './drawingAgent';
+import type { DrawingQuery } from './drawingQuery';
+import { parseAgentObservations, type AgentObservation } from './agentObservations';
+import { runAgentToolLoop } from './agentToolLoop';
+import type { AgentHostCallback } from './agentWorkspace';
+export type { AgentHostAction, AgentHostResult, AgentHostCallback } from './agentWorkspace';
+export type { AgentObservation } from './agentObservations';
+
+const CATEGORY_COLORS = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink'] as const;
+type CategoryColor = typeof CATEGORY_COLORS[number];
+const QUERY_OPERATORS = ['equals', 'not_equals', 'contains', 'gt', 'gte', 'lt', 'lte', 'exists', 'missing'] as const;
+const VIEWER_ACTIONS = ['clear_selection', 'fit_page', 'fit_width', 'zoom_in', 'zoom_out', 'go_to_page', 'download_pdf'] as const;
+export const AGENT_ACTION_NAMES = ['color_walls_by_fire_rating', 'compare_door_widths', 'highlight_elements', 'latest_comments', 'clear_highlights',
+    'inspect_drawing', 'query_elements', 'inspect_elements', 'inspect_comments', 'show_elements', 'viewer_action', 'add_comment', 'reply_comment', 'open_comment'] as const;
+const ACTION_NAMES = new Set<string>(AGENT_ACTION_NAMES);
 
 export type AgentAction =
     | { name: 'color_walls_by_fire_rating'; arguments: { rating: string | null } }
     | { name: 'compare_door_widths'; arguments: { thresholdInches: number } }
+    | { name: 'highlight_elements'; arguments: { categories: string[]; color: CategoryColor | null } }
     | { name: 'latest_comments'; arguments: Record<string, never> }
-    | { name: 'clear_highlights'; arguments: Record<string, never> };
+    | { name: 'clear_highlights'; arguments: Record<string, never> }
+    | { name: 'inspect_drawing'; arguments: Record<string, never> }
+    | { name: 'query_elements'; arguments: DrawingQuery }
+    | { name: 'inspect_elements'; arguments: { elementKeys: string[]; properties: string[] } }
+    | { name: 'inspect_comments'; arguments: { limit: number } }
+    | { name: 'show_elements'; arguments: { resultId: string; mode: 'highlight' | 'select' | 'focus'; color: CategoryColor | null } }
+    | { name: 'viewer_action'; arguments: { action: typeof VIEWER_ACTIONS[number]; page: number | null } }
+    | { name: 'add_comment'; arguments: { text: string; resultId: string | null } }
+    | { name: 'reply_comment'; arguments: { commentId: string; text: string } }
+    | { name: 'open_comment'; arguments: { commentId: string } };
 
 export interface AgentChatTurn { role: 'user' | 'assistant'; content: string }
 export interface AgentModelContext {
@@ -15,7 +39,7 @@ export interface AgentModelContext {
     commentCount: number;
     commentsStatus: 'loading' | 'ready' | 'error';
 }
-export interface AgentApiRequest { prompt: string; history: AgentChatTurn[]; context: AgentModelContext }
+export interface AgentApiRequest { prompt: string; history: AgentChatTurn[]; context: AgentModelContext; observations?: AgentObservation[] }
 export interface AgentApiResponse { message: string; actions: AgentAction[] }
 export interface AgentApiStatus { configured: boolean; provider: 'openai' | 'bedrock'; model: string }
 
@@ -30,6 +54,31 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boo
     return Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function text(value: unknown, max: number, empty = false): string {
+    if (typeof value !== 'string' || value.trim().length > max || (!empty && !value.trim())) throw invalid();
+    return value.trim();
+}
+function nullableText(value: unknown, max: number): string | null { return value === null ? null : text(value, max, true); }
+function names(value: unknown, min: number, max: number, length = 160, folded = true): string[] {
+    if (!Array.isArray(value) || value.length < min || value.length > max) throw invalid();
+    const result: string[] = [], seen = new Set<string>();
+    for (const item of value) {
+        const name = text(item, length), key = folded ? name.toLowerCase() : name;
+        if (!seen.has(key)) { result.push(name); seen.add(key); }
+    }
+    return result;
+}
+function color(value: unknown): CategoryColor | null {
+    if (value !== null && !CATEGORY_COLORS.includes(value as CategoryColor)) throw invalid();
+    return value as CategoryColor | null;
+}
+function resultId(value: unknown): string {
+    const id = text(value, 20);
+    if (id !== 'selection' && !/^r[1-9]\d{0,2}$/.test(id)) throw invalid();
+    return id;
+}
+export function validateAgentObservations(value: unknown): AgentObservation[] { return parseAgentObservations(value, ACTION_NAMES); }
+
 /** Validate every provider-selected action before any local drawing change. */
 export function parseAgentAction(value: unknown): AgentAction {
     const action = record(value);
@@ -43,10 +92,59 @@ export function parseAgentAction(value: unknown): AgentAction {
         case 'compare_door_widths':
             if (!exactKeys(args, ['thresholdInches']) || typeof args.thresholdInches !== 'number' || !Number.isFinite(args.thresholdInches) || args.thresholdInches <= 0 || args.thresholdInches > 10_000) throw invalid();
             return { name: action.name, arguments: { thresholdInches: args.thresholdInches } };
+        case 'highlight_elements': {
+            if (!exactKeys(args, ['categories', 'color']) || !Array.isArray(args.categories) || args.categories.length < 1 || args.categories.length > 20 ||
+                (args.color !== null && !CATEGORY_COLORS.includes(args.color as CategoryColor))) throw invalid();
+            const categories: string[] = [];
+            const seen = new Set<string>();
+            for (const value of args.categories) {
+                if (typeof value !== 'string' || !value.trim() || value.trim().length > 160) throw invalid();
+                const category = value.trim();
+                const identity = category.toLowerCase();
+                if (!seen.has(identity)) { seen.add(identity); categories.push(category); }
+            }
+            return { name: action.name, arguments: { categories, color: args.color as CategoryColor | null } };
+        }
         case 'latest_comments':
         case 'clear_highlights':
+        case 'inspect_drawing':
             if (!exactKeys(args, [])) throw invalid();
             return { name: action.name, arguments: {} };
+        case 'query_elements': {
+            if (!exactKeys(args, ['categories', 'search', 'filters', 'properties', 'groupBy', 'offset', 'limit']) ||
+                !Array.isArray(args.filters) || args.filters.length > 12 || !Number.isInteger(args.offset) || Number(args.offset) < 0 || Number(args.offset) > 1_000_000 ||
+                !Number.isInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 25) throw invalid();
+            const filters = args.filters.map((value) => {
+                const filter = record(value);
+                if (!exactKeys(filter, ['property', 'operator', 'value']) || !QUERY_OPERATORS.includes(filter.operator as typeof QUERY_OPERATORS[number])) throw invalid();
+                return { property: text(filter.property, 160), operator: filter.operator as typeof QUERY_OPERATORS[number], value: nullableText(filter.value, 500) };
+            });
+            return { name: action.name, arguments: { categories: names(args.categories, 0, 20), search: nullableText(args.search, 300), filters,
+                properties: names(args.properties, 0, 12), groupBy: nullableText(args.groupBy, 160), offset: Number(args.offset), limit: Number(args.limit) } };
+        }
+        case 'inspect_elements':
+            if (!exactKeys(args, ['elementKeys', 'properties'])) throw invalid();
+            return { name: action.name, arguments: { elementKeys: names(args.elementKeys, 1, 50, 2000, false), properties: names(args.properties, 0, 12) } };
+        case 'inspect_comments':
+            if (!exactKeys(args, ['limit']) || !Number.isInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 20) throw invalid();
+            return { name: action.name, arguments: { limit: Number(args.limit) } };
+        case 'show_elements':
+            if (!exactKeys(args, ['resultId', 'mode', 'color']) || !['highlight', 'select', 'focus'].includes(String(args.mode))) throw invalid();
+            return { name: action.name, arguments: { resultId: resultId(args.resultId), mode: args.mode as 'highlight' | 'select' | 'focus', color: color(args.color) } };
+        case 'viewer_action':
+            if (!exactKeys(args, ['action', 'page']) || !VIEWER_ACTIONS.includes(args.action as typeof VIEWER_ACTIONS[number]) ||
+                (args.page !== null && (!Number.isInteger(args.page) || Number(args.page) < 1 || Number(args.page) > 1_000_000)) ||
+                (args.action === 'go_to_page' ? args.page === null : args.page !== null)) throw invalid();
+            return { name: action.name, arguments: { action: args.action as typeof VIEWER_ACTIONS[number], page: args.page as number | null } };
+        case 'add_comment':
+            if (!exactKeys(args, ['text', 'resultId'])) throw invalid();
+            return { name: action.name, arguments: { text: text(args.text, 4000), resultId: args.resultId === null ? null : resultId(args.resultId) } };
+        case 'reply_comment':
+            if (!exactKeys(args, ['commentId', 'text'])) throw invalid();
+            return { name: action.name, arguments: { commentId: text(args.commentId, 2000), text: text(args.text, 4000) } };
+        case 'open_comment':
+            if (!exactKeys(args, ['commentId'])) throw invalid();
+            return { name: action.name, arguments: { commentId: text(args.commentId, 2000) } };
         default: throw invalid();
     }
 }
@@ -79,8 +177,10 @@ export function executeAgentAction(action: AgentAction, context: AgentContext): 
     switch (valid.name) {
         case 'color_walls_by_fire_rating': return colorWallsByFireRating(context, valid.arguments.rating);
         case 'compare_door_widths': return compareDoorWidths(context, valid.arguments.thresholdInches);
+        case 'highlight_elements': return highlightElementsByCategory(context, valid.arguments.categories, valid.arguments.color);
         case 'latest_comments': return latestComments(context);
         case 'clear_highlights': return { message: 'Agent highlights cleared.', highlight: null };
+        default: throw new Error('This action requires the drawing workspace tool loop.');
     }
 }
 
@@ -119,26 +219,13 @@ export async function getAgentApiStatus(signal?: AbortSignal): Promise<AgentApiS
     return { configured: value.configured, provider: value.provider as AgentApiStatus['provider'], model: value.model.trim() };
 }
 
-export async function requestAgent(prompt: string, history: AgentChatTurn[], context: AgentContext, signal?: AbortSignal, getCurrentContext?: () => AgentContext): Promise<AgentResult> {
+export async function requestAgent(prompt: string, history: AgentChatTurn[], context: AgentContext, signal?: AbortSignal, getCurrentContext?: () => AgentContext, onHostAction?: AgentHostCallback): Promise<AgentResult> {
     const text = prompt.trim();
     if (!text || text.length > 4_000) throw new Error('Use a drawing request between 1 and 4,000 characters.');
-    const request: AgentApiRequest = {
-        prompt: text,
-        history: history.slice(-12).map((turn) => ({ role: turn.role, content: turn.content.slice(0, 4_000) })),
-        context: buildAgentModelContext(context),
-    };
-    const response = parseAgentApiResponse(await fetchJson('/api/agent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
-    }));
-    if (signal?.aborted) throw signal.reason ?? new DOMException('Request cancelled.', 'AbortError');
-    if (!response.actions.length) return { message: response.message };
-    // Validate the whole response before executing anything. The last highlight action wins.
-    const currentContext = getCurrentContext?.() ?? context;
-    const results = response.actions.map((action) => executeAgentAction(action, currentContext));
-    const result: AgentResult = { message: results.map((entry) => entry.message).join('\n\n') };
-    for (const entry of results) {
-        if (entry.highlight !== undefined) result.highlight = entry.highlight;
-        if (entry.comments !== undefined) result.comments = entry.comments;
-    }
-    return result;
+    return runAgentToolLoop(text, history, context, {
+        signal, getCurrentContext, onHostAction, buildContext: buildAgentModelContext, execute: executeAgentAction,
+        plan: async (request) => parseAgentApiResponse(await fetchJson('/api/agent', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request), signal,
+        })),
+    });
 }

@@ -36,6 +36,7 @@ import { readPdfComments, viewerComments } from './lib/drawingComments';
 import { upgradePageAnnotations } from './lib/upgradeAnnotations';
 import { recoverReviewAnnotations } from './lib/reviewRecovery';
 import { upgradeDocumentAnnotations } from './lib/upgradeDocumentAnnotations';
+import type { AgentHostAction, AgentHostResult } from './lib/agentWorkspace';
 import './styles/imported-annotations.css';
 
 type Tab = 'agent' | 'properties' | 'elements' | 'notes';
@@ -414,7 +415,7 @@ export function App() {
     }, []);
 
     /** `links` ties the annotation to those objects instead of to the object under its anchor. */
-    const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>, links?: readonly string[]) => {
+    const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>, links?: readonly string[], keepAgentOpen = false) => {
         if (!pageData) return;
         const draft: Annotation = withAuthorship(
             { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) },
@@ -422,12 +423,13 @@ export function App() {
             new Date().toISOString(),
         );
         // A cloud ties to what it covers; everything else ties to the object under its anchor.
-        const tied = links?.length ? withLinks(draft, links) : draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
+        const tied = links !== undefined ? withLinks(draft, links) : draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
         setSelectedKeys(linkedKeys(tied));
-        setTab('notes');
+        setTab(keepAgentOpen ? 'agent' : 'notes');
         setTool('select');
+        return tied.id;
     };
 
     // A comment being written belongs to the comment tool and to one page.
@@ -461,6 +463,7 @@ export function App() {
             author: { name: r.name, ...(profile.photo ? { photo: profile.photo } : {}) },
         };
         setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
+        return reply.id;
     }, [profile.photo]);
 
     const editComment = useCallback((id: string, text: string) => {
@@ -503,15 +506,17 @@ export function App() {
     }, []);
 
     const save = useCallback(async () => {
-        if (!doc || saving) return;
+        if (!doc || saving) return false;
         setSaving(true);
         setError(null);
         try {
             const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations, elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances });
             const name = annotatedName(doc.fileName);
             downloadPdf(bytes, name);
+            return true;
         } catch (e) {
             setError(`Could not save: ${errorText(e)}`);
+            return false;
         } finally {
             setSaving(false);
         }
@@ -629,8 +634,9 @@ export function App() {
             scopeKey: drawingScope ? JSON.stringify([...drawingScope].sort()) : 'all-views',
             locatableKeys: new Set(elements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).map((element) => element.key)),
             comments: [...pdfComments, ...viewerComments(pageAnnotations)], commentsStatus,
+            annotations: pageAnnotations, selectedKeys: selectedKeys ?? new Set<string>(), pageCount: doc.pageCount,
         };
-    }, [doc, pageData, pageElements, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus]);
+    }, [doc, pageData, pageElements, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus, selectedKeys]);
 
     const cancelFocus = useCallback(() => setFocusRequest(null), []);
     const changeFilters = useCallback((next: FilterState) => {
@@ -656,9 +662,9 @@ export function App() {
         setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: matchedKeys, drawingIds: drawingScope });
     };
 
-    const applyAgentHighlight = (highlight: AgentHighlight | null) => {
+    const applyAgentHighlight = (highlight: AgentHighlight | null, preserveSelection = false) => {
         setAgentHighlight(highlight);
-        setSelectedKey(null);
+        if (highlight && !preserveSelection) setSelectedKey(null);
         setSelectedAnnotationId(null);
         setFocusRequest(null);
         setTool('select');
@@ -712,6 +718,84 @@ export function App() {
         setSelectedKeys(reviewKeys(annotation));
         setSelectedPdfComment(null);
         setTab('notes');
+    };
+
+    const handleAgentAction = async (action: AgentHostAction): Promise<AgentHostResult> => {
+        if (!doc || !pageData) throw new Error('Open a drawing before using viewer tools.');
+        const scoped = new Set(pageElements.map((element) => element.key));
+        const checkedKeys = (values: readonly string[]) => {
+            const keys = [...new Set(values)];
+            if (keys.some((key) => !scoped.has(key))) throw new Error('Some results are outside the current drawing view. Query the drawing again.');
+            return keys;
+        };
+        if (action.type === 'select' || action.type === 'focus') {
+            const keys = checkedKeys(action.elementKeys);
+            if (!keys.length) throw new Error('There are no matching elements to show.');
+            if (action.type === 'focus') {
+                const located = keys.filter((key) => agentContext?.locatableKeys.has(key));
+                if (!located.length) throw new Error('These elements have no mapped geometry in this drawing. Their properties remain available.');
+                setTool('select');
+                setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: new Set(located), drawingIds: drawingScope });
+                return { message: `Focused ${located.length} mapped elements on page ${pageData.number}.` };
+            }
+            setComposer(null);
+            setSelectedPdfComment(null);
+            setSelectedAnnotationId(null);
+            setSelectedKeys(keys);
+            setTab('agent');
+            return { message: `Selected ${keys.length} elements on page ${pageData.number}.` };
+        }
+        if (action.type === 'add_comment') {
+            const text = action.text.trim();
+            if (!text || text.length > 4000) throw new Error('A comment must contain between 1 and 4000 characters.');
+            const keys = checkedKeys(action.elementKeys);
+            const wanted = new Set(keys);
+            const parts = regionSources.filter((source) => wanted.has(source.elementKey));
+            if (keys.length && !parts.length) throw new Error('These elements have no mapped location for a comment pin. Add a general page comment instead.');
+            const bounds = parts.reduce((box, part) => [Math.min(box[0], part.bounds[0]), Math.min(box[1], part.bounds[1]), Math.max(box[2], part.bounds[2]), Math.max(box[3], part.bounds[3])] as const, [Infinity, Infinity, -Infinity, -Infinity] as readonly [number, number, number, number]);
+            const at: Point = parts.length ? [
+                Math.max(12, Math.min(pageData.width - 12, bounds[2])),
+                Math.max(24, Math.min(pageData.height - 12, bounds[1])),
+            ] : [pageData.width / 2, pageData.height / 2];
+            const id = addAnnotation({ kind: 'comment', from: at, to: at, text, author: { name: profile.name.trim() || 'Drawing agent', ...(profile.name.trim() && profile.photo ? { photo: profile.photo } : {}) } }, keys, true);
+            if (!id) throw new Error('The comment could not be added. Reopen the drawing and try again.');
+            return { message: keys.length ? `Added a comment linked to ${keys.length} elements.` : 'Added a general page comment.', id };
+        }
+        if (action.type === 'reply_comment') {
+            const comment = annotations.find((annotation) => annotation.id === action.commentId && annotation.kind === 'comment' && annotation.page === pageData.number);
+            if (!comment) throw new Error('That comment is unavailable on the current page. Inspect the comments again.');
+            if (!action.text.trim() || action.text.length > 4000) throw new Error('A reply must contain between 1 and 4000 characters.');
+            const id = sendReply(comment.id, { text: action.text.trim(), name: profile.name.trim() || 'Drawing agent' });
+            return { message: 'Added the reply to the comment thread.', id };
+        }
+        if (action.type === 'open_comment') {
+            const context = agentContext?.comments.find((comment) => comment.id === action.commentId);
+            const annotation = annotations.find((note) => note.id === (context?.annotationId ?? action.commentId));
+            if (annotation) {
+                goToPage(annotation.page);
+                setSelectedAnnotationId(annotation.id);
+                setSelectedKeys(reviewKeys(annotation));
+                setSelectedPdfComment(null);
+                setTab('notes');
+                return { message: 'Opened the comment in Notes.', id: annotation.id };
+            }
+            if (context) { selectComment(context); return { message: 'Opened the PDF comment in Notes.', id: context.id }; }
+            throw new Error('That comment is no longer available. Inspect the comments again.');
+        }
+        if (action.type !== 'viewer_action') throw new Error('That viewer action is unavailable.');
+        switch (action.action) {
+            case 'clear_selection': setSelectedKeys([]); setSelectedAnnotationId(null); setSelectedPdfComment(null); return { message: 'Selection cleared.' };
+            case 'fit_page': changeZoomMode({ kind: 'fit-page' }); return { message: 'Fitted the page to the viewer.' };
+            case 'fit_width': changeZoomMode({ kind: 'fit-width' }); return { message: 'Fitted the page width to the viewer.' };
+            case 'zoom_in': changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) }); return { message: 'Zoomed in.' };
+            case 'zoom_out': changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) }); return { message: 'Zoomed out.' };
+            case 'go_to_page':
+                if (!Number.isInteger(action.page) || action.page! < 1 || action.page! > doc.pageCount) throw new Error(`Choose a page from 1 to ${doc.pageCount}.`);
+                goToPage(action.page!); return { message: `Opened page ${action.page}.` };
+            case 'download_pdf':
+                if (!await save()) throw new Error('The PDF could not be downloaded. Check the viewer error and try again.');
+                return { message: 'Downloaded the PDF with its markups and review data.' };
+        }
     };
 
     return (
@@ -853,7 +937,7 @@ export function App() {
                     }))} />
                     <div className="panel" role="tabpanel" aria-label={tab === 'agent' ? 'Agent' : tab === 'properties' ? 'Properties' : tab === 'elements' ? 'Elements' : 'Notes'}>
                         <div className="agent-panel-host" hidden={tab !== 'agent'}>
-                            <AgentPanel context={agentContext} sessionKey={`${documentSession}:${page}`} active={tab === 'agent'} onHighlight={applyAgentHighlight} activeHighlight={agentHighlight} onFitHighlights={fitAgentHighlights} onSelectComment={selectComment} />
+                            <AgentPanel context={agentContext} sessionKey={`${documentSession}:${page}`} active={tab === 'agent'} onHighlight={applyAgentHighlight} activeHighlight={agentHighlight} onFitHighlights={fitAgentHighlights} onSelectComment={selectComment} onAction={handleAgentAction} />
                         </div>
                         {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>

@@ -44,6 +44,15 @@ describe('agent request boundary', () => {
             { ...input, context: { ...input.context, categories: [{ name: 'Walls', count: -1 }] } },
         ]) expect(() => parseAgentRequest(value)).toThrow();
     });
+
+    it('accepts optional bounded observations while rejecting malformed, unknown, and oversized facts', () => {
+        const observations = [{ id: 'o1', tool: 'query_elements', data: { resultId: 'r1', total: 2, rows: [{ key: 'actual-wall', category: 'Walls' }] } }];
+        expect(parseAgentRequest({ ...input, observations }).observations).toEqual(observations);
+        for (const value of [null, [{ id: 'o1', tool: 'run_script', data: {} }], [{ id: 'o1', tool: 'inspect_drawing', data: { value: 'x'.repeat(13_000) } }],
+            [{ id: 'o1', tool: 'inspect_drawing', data: {} }, { id: 'o1', tool: 'inspect_drawing', data: {} }]]) {
+            expect(() => parseAgentRequest({ ...input, observations: value })).toThrow('Invalid or oversized');
+        }
+    });
 });
 
 describe('local agent HTTP API', () => {
