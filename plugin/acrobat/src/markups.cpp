@@ -4,9 +4,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+#include "sdk_call.h"
 
 namespace {
 
@@ -19,37 +22,60 @@ bool InScope(const char* subtype) {
     return false;
 }
 
+CosType TypeOf(CosObj obj) { return Sdk(CosObjGetType, obj); }
+
+CosObj Get(CosObj dict, const char* key) { return Sdk(CosDictGetKeyString, dict, key); }
+
+// Acrobat holds annotation geometry as float32, so the same rect can read back slightly differently after
+// a save/reopen. Geometry is quantised to 0.01 pt so an unchanged markup gives an unchanged SheetRect
+// (otherwise a reopen could look like a table change and dirty the file). Same rule as PDF-XChange.
+double Quantise(double v) { return std::round(v * 100.0) / 100.0; }
+
 double Num(CosObj obj) {
-    CosType t = CosObjGetType(obj);
-    if (t == CosInteger) return static_cast<double>(CosIntegerValue(obj));
-    if (t == CosReal) return CosDoubleValue(obj);
+    CosType t = TypeOf(obj);
+    if (t == CosInteger) return static_cast<double>(Sdk(CosIntegerValue, obj));
+    if (t == CosReal) return Sdk(CosDoubleValue, obj);
     return 0.0;
 }
 
-// Numbers of a Cos array (non-numbers read as 0); empty if not an array.
+// Numbers of a Cos array (non-numbers read as 0), quantised; empty if not an array.
 std::vector<double> Nums(CosObj array) {
     std::vector<double> out;
-    if (CosObjGetType(array) != CosArray) return out;
-    ASTArraySize n = CosArrayLength(array);
-    for (ASTArraySize i = 0; i < n; ++i) out.push_back(Num(CosArrayGet(array, i)));
+    if (TypeOf(array) != CosArray) return out;
+    ASTArraySize n = Sdk(CosArrayLength, array);
+    for (ASTArraySize i = 0; i < n; ++i) out.push_back(Quantise(Num(Sdk(CosArrayGet, array, i))));
     return out;
 }
 
 std::string RawString(CosObj dict, const char* key) {
-    CosObj obj = CosDictGetKeyString(dict, key);
-    if (CosObjGetType(obj) != CosString) return std::string();
+    CosObj obj = Get(dict, key);
+    if (TypeOf(obj) != CosString) return std::string();
     ASTCount n = 0;
-    const char* p = CosStringValue(obj, &n);
+    const char* p = Sdk(CosStringValue, obj, &n);
     return (p && n > 0) ? std::string(p, static_cast<size_t>(n)) : std::string();
 }
 
 std::string NameAt(CosObj array, ASTArraySize i) {
-    if (CosObjGetType(array) != CosArray || i >= CosArrayLength(array)) return std::string();
-    CosObj obj = CosArrayGet(array, i);
-    if (CosObjGetType(obj) != CosName) return std::string();
-    const char* s = ASAtomGetString(CosNameValue(obj));
+    if (TypeOf(array) != CosArray || i >= Sdk(CosArrayLength, array)) return std::string();
+    CosObj obj = Sdk(CosArrayGet, array, i);
+    if (TypeOf(obj) != CosName) return std::string();
+    const char* s = Sdk(ASAtomGetString, Sdk(CosNameValue, obj));
     return s ? s : "";
 }
+
+// Releases an acquired page on every path, including an AcroError thrown while it is held.
+class PageHold {
+public:
+    explicit PageHold(PDPage page) : page_(page) {}
+    ~PageHold() {
+        if (page_) SdkNoThrow(PDPageRelease, page_);
+    }
+    PageHold(const PageHold&) = delete;
+    PageHold& operator=(const PageHold&) = delete;
+
+private:
+    PDPage page_;
+};
 
 void AppendUtf8(std::string& out, uint32_t cp) {
     if (cp < 0x80) {
@@ -114,7 +140,7 @@ sm::Markup ReadMarkup(CosObj dict, const std::string& subtype, int page) {
     m.createdUtc = PdfDateToUtc(RawString(dict, "CreationDate"));
     m.modifiedUtc = PdfDateToUtc(RawString(dict, "M"));
 
-    std::vector<double> r = Nums(CosDictGetKeyString(dict, "Rect"));
+    std::vector<double> r = Nums(Get(dict, "Rect"));
     if (r.size() >= 4) m.rect = {std::min(r[0], r[2]), std::min(r[1], r[3]), std::max(r[0], r[2]), std::max(r[1], r[3])};
 
     double w = m.rect.x1 - m.rect.x0, h = m.rect.y1 - m.rect.y0;
@@ -124,9 +150,9 @@ sm::Markup ReadMarkup(CosObj dict, const std::string& subtype, int page) {
         m.anchorY = m.rect.y1;
     } else if (subtype == "Line") {
         m.shape = sm::Shape::Arrow;
-        std::vector<double> l = Nums(CosDictGetKeyString(dict, "L"));
+        std::vector<double> l = Nums(Get(dict, "L"));
         if (l.size() < 4) l = {m.rect.x0, m.rect.y0, m.rect.x1, m.rect.y1};
-        CosObj le = CosDictGetKeyString(dict, "LE");
+        CosObj le = Get(dict, "LE");
         std::string start = NameAt(le, 0), end = NameAt(le, 1);
         bool startHead = !start.empty() && start != "None";
         bool endHead = !end.empty() && end != "None";
@@ -147,20 +173,22 @@ sm::Markup ReadMarkup(CosObj dict, const std::string& subtype, int page) {
 
 CollectedMarkups CollectMarkups(PDDoc doc) {
     CollectedMarkups out;
-    ASInt32 pages = PDDocGetNumPages(doc);
+    ASInt32 pages = Sdk(PDDocGetNumPages, doc);
     for (ASInt32 p = 0; p < pages; ++p) {
-        PDPage page = PDDocAcquirePage(doc, p);
-        ASInt32 count = PDPageGetNumAnnots(page);
+        PDPage page = Sdk(PDDocAcquirePage, doc, p);
+        PageHold hold(page);
+        ASInt32 count = Sdk(PDPageGetNumAnnots, page);
         for (ASInt32 i = 0; i < count; ++i) {
-            PDAnnot annot = PDPageGetAnnot(page, i);
-            if (!PDAnnotIsValid(annot)) continue;
-            const char* subtype = ASAtomGetString(PDAnnotGetSubtype(annot));
+            PDAnnot annot = Sdk(PDPageGetAnnot, page, i);
+            if (!Sdk(PDAnnotIsValid, annot)) continue;
+            const char* subtype = Sdk(ASAtomGetString, Sdk(PDAnnotGetSubtype, annot));
             if (!subtype || !InScope(subtype)) continue;
-            CosObj dict = PDAnnotGetCosObj(annot);
+            CosObj dict = Sdk(PDAnnotGetCosObj, annot);
+            if (RawString(dict, "NM") == "smh-highlight") continue;  // a temporary inspect highlight, never a markup
+            if (TypeOf(Get(dict, "IRT")) != CosNull) continue;  // replies (comment threads) are not separate markups (spec)
             out.markups.push_back(ReadMarkup(dict, subtype, static_cast<int>(p) + 1));
             out.annots.push_back(dict);
         }
-        PDPageRelease(page);
     }
     return out;
 }

@@ -1,6 +1,7 @@
 // Acrobat handshake and init for SmartMarkup.api (adapted from the SDK's BasicPlugin sample).
 #include "PIHeaders.h"
 
+#include "duckdb_load.h"
 #include "hooks.h"
 #include "log.h"
 #include "selftest.h"
@@ -69,6 +70,7 @@ ACCB1 ASBool ACCB2 PluginUnload(void) {
 
 ACCB1 ASBool ACCB2 PIHandshake(Uns32 handshakeVersion, void* handshakeData) {
     if (handshakeVersion != HANDSHAKE_V0200) return false;
+    PreloadDuckDb();  // before any DuckDB call; the lifecycle stays inert if this fails
     auto* hs = static_cast<PIHandshakeData_V0200*>(handshakeData);
     hs->extensionName = ASAtomFromString(kExtensionName);
     hs->exportHFTsCallback = (void*)ASCallbackCreateProto(PIExportHFTsProcType, &PluginExportHFTs);

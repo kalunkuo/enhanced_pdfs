@@ -2,17 +2,21 @@
 // annotations.parquet / annotation-links.parquet written into the attachments on save.
 #include <windows.h>
 
+#include <algorithm>
 #include <exception>
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "attachments.h"
 #include "doc_state.h"
+#include "duckdb_load.h"
 #include "element_map.h"
 #include "hooks.h"
 #include "log.h"
 #include "markups.h"
+#include "sdk_call.h"
 #include "selftest.h"
 #include "smartmarkup/reconcile.h"
 #include "smartmarkup/tables.h"
@@ -36,30 +40,29 @@ bool gBusy = false;            // set while we modify annotations ourselves
 bool gFaultNextWrite = false;  // self-test: next table write throws sm::TableError
 bool gFaultHit = false;
 
-// Runs fn; Acrobat errors and C++ exceptions are logged and reported as false. Never lets either escape.
+// Runs fn; errors are logged and reported as false, never escape into Acrobat. No DURING here: every SDK
+// call below goes through Sdk() (sdk_call.h), so an Acrobat raise arrives as AcroError and C++ objects are
+// destroyed normally on the way out.
 template <class F>
 bool Guarded(const char* what, F&& fn) {
-    bool ok = true;
-    std::string error;
-    DURING
-        try {
-            fn();
-        } catch (const std::exception& e) {
-            error = e.what();
-        } catch (...) {
-            error = "unknown C++ exception";
-        }
-    HANDLER
-        char message[256] = {};
-        ASGetErrorString(ERRORCODE, message, sizeof message);
-        error = std::string("Acrobat error ") + std::to_string((long long)ERRORCODE) + ": " + message;
-    END_HANDLER
-    if (!error.empty()) {
-        ok = false;
-        LogLine("lifecycle: %s failed: %s", what, error.c_str());
+    try {
+        fn();
+        return true;
+    } catch (const std::exception& e) {
+        LogLine("lifecycle: %s failed: %s", what, e.what());
+    } catch (...) {
+        LogLine("lifecycle: %s failed: unknown C++ exception", what);
     }
-    return ok;
+    return false;
 }
+
+// Marks our own annotation / attachment edits so the change notifications they cause are ignored.
+struct BusyScope {
+    BusyScope() { gBusy = true; }
+    ~BusyScope() { gBusy = false; }
+    BusyScope(const BusyScope&) = delete;
+    BusyScope& operator=(const BusyScope&) = delete;
+};
 
 DocState* Find(PDDoc doc) {
     auto it = gDocs.find(doc);
@@ -92,12 +95,13 @@ sm::ReconcileResult RunReconcile(PDDoc doc, DocState& s, const CollectedMarkups&
 
 // Writes the ids Reconcile assigned into the annotations' /NM (the only change we make to a markup).
 void ApplyIds(const CollectedMarkups& c, const sm::ReconcileResult& r, CosDoc cos) {
-    gBusy = true;
+    BusyScope busy;
     for (const auto& [index, id] : r.assignedIds)
-        CosDictPutKeyString(c.annots[index], "NM",
-                            CosNewString(cos, false, id.data(), static_cast<ASTArraySize>(id.size())));
-    gBusy = false;
+        Sdk(CosDictPutKeyString, c.annots[index], "NM",
+            Sdk(CosNewString, cos, static_cast<ASBool>(false), id.data(), static_cast<ASTArraySize>(id.size())));
 }
+
+ASUns32 DocFlags(PDDoc doc) { return static_cast<ASUns32>(Sdk(PDDocGetFlags, doc)); }
 
 void MakeInert(PDDoc doc) {
     auto it = gDocs.find(doc);
@@ -106,8 +110,12 @@ void MakeInert(PDDoc doc) {
 
 void OpenDoc(PDDoc doc) {
     DocState& s = gDocs[doc];
-    s = DocState{};
-    s.cos = PDDocGetCosDoc(doc);
+    s = DocState{};  // inert until the open completes
+    if (!DuckDbAvailable()) {  // no DuckDB: never touch the tables (a call would crash Acrobat)
+        LogLine("lifecycle: duckdb.dll unavailable, document left alone");
+        return;
+    }
+    s.cos = Sdk(PDDocGetCosDoc, doc);
     sm::Attachments files = ReadAttachments(doc);
     s.enhanced = sm::IsEnhanced(files);
     if (!s.enhanced) {
@@ -117,7 +125,7 @@ void OpenDoc(PDDoc doc) {
     s.model = sm::ReadModel(files);
     s.persisted = sm::ReadAnnotations(files);
 
-    bool wasDirty = (PDDocGetFlags(doc) & PDDocNeedsSave) != 0;
+    bool wasDirty = (DocFlags(doc) & PDDocNeedsSave) != 0;
     CollectedMarkups c = CollectMarkups(doc);
     sm::ReconcileResult r = RunReconcile(doc, s, c);
     ApplyIds(c, r, s.cos);
@@ -125,9 +133,9 @@ void OpenDoc(PDDoc doc) {
     s.openMarkups = c.markups.size();
     s.inert = false;
     if (r.changed)
-        PDDocSetFlags(doc, PDDocNeedsSave);
+        Sdk(PDDocSetFlags, doc, static_cast<ASInt32>(PDDocNeedsSave));
     else if (!wasDirty)
-        PDDocClearFlags(doc, PDDocNeedsSave);  // reading must never cause a "Save changes?" prompt
+        Sdk(PDDocClearFlags, doc, static_cast<ASInt32>(PDDocNeedsSave));  // reading must never prompt "Save changes?"
     LogLine("lifecycle: open: %zu markups, %zu rows, %zu links, %zu new ids, changed=%d", c.markups.size(),
             r.state.annotations.size(), r.state.links.size(), r.assignedIds.size(), r.changed ? 1 : 0);
 }
@@ -136,6 +144,8 @@ void Recompute(PDDoc doc, DocState& s) {
     CollectedMarkups c = CollectMarkups(doc);
     sm::ReconcileResult r = RunReconcile(doc, s, c);  // ids for markups without /NM are assigned on save
     s.current = r.state;
+    LogLine("lifecycle: recompute: %zu markups, %zu rows, %zu links", c.markups.size(), r.state.annotations.size(),
+            r.state.links.size());
 }
 
 void SaveDoc(PDDoc doc, DocState& s) {
@@ -155,28 +165,29 @@ void SaveDoc(PDDoc doc, DocState& s) {
     sm::Attachments out;
     out["annotations.parquet"] = sm::WriteAnnotationsParquet(r.state.annotations);
     out["annotation-links.parquet"] = sm::WriteLinksParquet(r.state.links);
-    gBusy = true;
-    WriteAttachments(doc, out);
-    gBusy = false;
+    {
+        BusyScope busy;
+        WriteAttachments(doc, out);
+    }
     s.persisted = r.state;
     LogLine("lifecycle: save: wrote %zu rows, %zu links", r.state.annotations.size(), r.state.links.size());
 }
 
+// Failure policy: only a failure while opening makes a document inert. A recompute or save failure is
+// logged and the next change or save retries: one transient error must not silently stop all later
+// table writes.
 void OnChangedDoc(PDDoc doc, const char* what) {
     if (gBusy || !doc) return;
     DocState* s = Find(doc);
     if (!s) return;
-    if (!Guarded(what, [&] { Recompute(doc, *s); })) MakeInert(doc);
+    Guarded(what, [&] { Recompute(doc, *s); });
 }
 
 void OnWillSave(PDDoc doc) {
     DocState* s = Find(doc);
     if (!s || s->saveHandled) return;
     s->saveHandled = true;
-    if (!Guarded("save", [&] { SaveDoc(doc, *s); })) {
-        gBusy = false;
-        MakeInert(doc);
-    }
+    Guarded("save", [&] { SaveDoc(doc, *s); });  // the save itself proceeds either way
 }
 
 // --- Acrobat notifications -------------------------------------------------------------------------
@@ -185,7 +196,7 @@ ACCB1 void ACCB2 DidOpen(AVDoc avDoc, ASInt32 error, void*) {
     if (error || !avDoc) return;
     PDDoc doc = nullptr;
     Guarded("open", [&] {
-        doc = AVDocGetPDDoc(avDoc);
+        doc = Sdk(AVDocGetPDDoc, avDoc);
         if (doc && !gDocs.count(doc)) OpenDoc(doc);
     });
     if (doc && !Find(doc)) MakeInert(doc);
@@ -194,7 +205,7 @@ ACCB1 void ACCB2 DidOpen(AVDoc avDoc, ASInt32 error, void*) {
 
 ACCB1 void ACCB2 WillClose(AVDoc avDoc, void*) {
     Guarded("close", [&] {
-        PDDoc doc = AVDocGetPDDoc(avDoc);
+        PDDoc doc = Sdk(AVDocGetPDDoc, avDoc);
         if (!doc) return;
         gDocs.erase(doc);
         ForgetElementMaps(doc);
@@ -204,7 +215,7 @@ ACCB1 void ACCB2 WillClose(AVDoc avDoc, void*) {
 ACCB1 void ACCB2 DidAddAnnot(PDPage page, PDAnnot, ASInt32 error, void*) {
     if (error || gBusy) return;
     PDDoc doc = nullptr;
-    Guarded("add-annot", [&] { doc = PDPageGetDoc(page); });
+    Guarded("add-annot", [&] { doc = Sdk(PDPageGetDoc, page); });
     OnChangedDoc(doc, "add-annot");
 }
 
@@ -212,7 +223,7 @@ ACCB1 void ACCB2 DidChangeAnnot(PDAnnot annot, ASAtom, ASInt32 error, void*) {
     if (error || gBusy) return;
     PDDoc doc = nullptr;
     Guarded("change-annot", [&] {
-        if (DocState* s = FindByCos(CosObjGetDoc(PDAnnotGetCosObj(annot)))) doc = DocOf(s);
+        if (DocState* s = FindByCos(Sdk(CosObjGetDoc, Sdk(PDAnnotGetCosObj, annot)))) doc = DocOf(s);
     });
     OnChangedDoc(doc, "change-annot");
 }
@@ -220,7 +231,7 @@ ACCB1 void ACCB2 DidChangeAnnot(PDAnnot annot, ASAtom, ASInt32 error, void*) {
 ACCB1 void ACCB2 DidRemoveAnnot(PDPage page, ASInt32, ASInt32 error, void*) {
     if (error || gBusy) return;
     PDDoc doc = nullptr;
-    Guarded("remove-annot", [&] { doc = PDPageGetDoc(page); });
+    Guarded("remove-annot", [&] { doc = Sdk(PDPageGetDoc, page); });
     OnChangedDoc(doc, "remove-annot");
 }
 
@@ -249,15 +260,17 @@ bool FileExists(const std::string& path) { return GetFileAttributesA(path.c_str(
 bool SaveTo(PDDoc doc, const std::string& path) {
     DeleteFileA(path.c_str());
     volatile bool ok = true;
-    ASFileSys fs = ASGetDefaultFileSys();
-    ASPathName name = ASFileSysCreatePathName(fs, ASAtomFromString("Cstring"), path.c_str(), nullptr);
-    DURING
+    ASFileSys fs = Sdk(ASGetDefaultFileSys);
+    ASPathName name = Sdk(ASFileSysCreatePathName, fs, Sdk(ASAtomFromString, "Cstring"),
+                          static_cast<const void*>(path.c_str()), static_cast<const void*>(nullptr));
+    const char* pathText = path.c_str();
+    DURING  // plain values only inside (sdk_call.h)
         PDDocSave(doc, static_cast<PDSaveFlags>(PDSaveFull | PDSaveCollectGarbage), name, fs, nullptr, nullptr);
     HANDLER
         ok = false;
-        LogLine("selftest: save to %s failed (error %d)", path.c_str(), (int)ERRORCODE);
+        LogLine("selftest: save to %s failed (error %d)", pathText, (int)ERRORCODE);
     END_HANDLER
-    ASFileSysReleasePath(fs, name);
+    SdkNoThrow(ASFileSysReleasePath, fs, name);
     return ok && FileExists(path);
 }
 
@@ -271,8 +284,12 @@ ASFixedRect FixedRect(double x0, double y0, double x1, double y1) {
 }
 
 void PutString(PDAnnot annot, const char* key, const std::string& value, CosDoc cos) {
-    CosDictPutKeyString(PDAnnotGetCosObj(annot), key,
-                        CosNewString(cos, false, value.data(), static_cast<ASTArraySize>(value.size())));
+    Sdk(CosDictPutKeyString, Sdk(PDAnnotGetCosObj, annot), key,
+        Sdk(CosNewString, cos, static_cast<ASBool>(false), value.data(), static_cast<ASTArraySize>(value.size())));
+}
+
+PDAnnot AddAnnot(PDPage page, const char* subtype, const ASFixedRect& rect) {
+    return Sdk(PDPageAddNewAnnot, page, static_cast<ASInt32>(-1), Sdk(ASAtomFromString, subtype), &rect);
 }
 
 const sm::Box& BoxOf(PDDoc doc, int64_t id) {
@@ -284,28 +301,28 @@ const sm::Box& BoxOf(PDDoc doc, int64_t id) {
 
 std::string StepOpen(PDDoc doc, const std::string&) {
     const DocState& s = StateFor(doc);
-    bool dirty = (PDDocGetFlags(doc) & PDDocNeedsSave) != 0;
+    bool dirty = (DocFlags(doc) & PDDocNeedsSave) != 0;
     return "{\"enhanced\": " + Bool(s.enhanced) + ", \"markups\": " + std::to_string(s.openMarkups) +
            ", \"annotations\": " + std::to_string(s.current.annotations.size()) +
            ", \"links\": " + std::to_string(s.current.links.size()) + ", \"dirty\": " + Bool(dirty) + "}";
 }
 
 std::string StepAddMarkup(PDDoc doc, const std::string& outDir) {
-    CosDoc cos = PDDocGetCosDoc(doc);
+    CosDoc cos = Sdk(PDDocGetCosDoc, doc);
     sm::Box wall = BoxOf(doc, 676281);
     sm::Box door = BoxOf(doc, 745963);
     double cx = (door.x0 + door.x1) / 2, cy = (door.y0 + door.y1) / 2;
 
-    PDPage page = PDDocAcquirePage(doc, 0);
+    PDPage page = Sdk(PDDocAcquirePage, doc, static_cast<ASInt32>(0));
     ASFixedRect squareRect = FixedRect(wall.x0 - 40, wall.y0 - 40, wall.x1 + 40, wall.y1 + 40);
-    PDAnnot square = PDPageAddNewAnnot(page, -1, ASAtomFromString("Square"), &squareRect);
+    PDAnnot square = AddAnnot(page, "Square", squareRect);
     PutString(square, "Contents", "Confirm 2 HR rating; see 745963", cos);
     PutString(square, "T", "SmartMarkup self-test", cos);
     ASFixedRect noteRect = FixedRect(cx, cy - 20, cx + 20, cy);  // anchor (x0, y1) = door centre
-    PDAnnot note = PDPageAddNewAnnot(page, -1, ASAtomFromString("Text"), &noteRect);
+    PDAnnot note = AddAnnot(page, "Text", noteRect);
     PutString(note, "Contents", "Door check", cos);
     PutString(note, "T", "SmartMarkup self-test", cos);
-    PDPageRelease(page);
+    Sdk(PDPageRelease, page);
 
     std::string path = outDir + "\\saved.pdf";
     bool saved = SaveTo(doc, path);
@@ -317,11 +334,11 @@ std::string StepAddMarkup(PDDoc doc, const std::string& outDir) {
 
 std::string StepFaultDuckDb(PDDoc doc, const std::string& outDir) {
     // A fresh markup guarantees the tables change, so the save really attempts a table write.
-    PDPage page = PDDocAcquirePage(doc, 0);
+    PDPage page = Sdk(PDDocAcquirePage, doc, static_cast<ASInt32>(0));
     ASFixedRect rect = FixedRect(0, 0, 60, 60);
-    PDAnnot square = PDPageAddNewAnnot(page, -1, ASAtomFromString("Square"), &rect);
-    PutString(square, "Contents", "fault-duckdb self-test", PDDocGetCosDoc(doc));
-    PDPageRelease(page);
+    PDAnnot square = AddAnnot(page, "Square", rect);
+    PutString(square, "Contents", "fault-duckdb self-test", Sdk(PDDocGetCosDoc, doc));
+    Sdk(PDPageRelease, page);
 
     gFaultHit = false;
     gFaultNextWrite = true;
@@ -363,4 +380,15 @@ void RegisterLifecycle() {
 const sm::ModelData* FindModel(PDDoc doc) {
     DocState* s = Find(doc);
     return s ? &s->model : nullptr;
+}
+
+std::vector<int64_t> LinkedElementIds(PDDoc doc, const std::string& annotationId) {
+    std::vector<int64_t> ids;
+    DocState* s = Find(doc);
+    if (!s) return ids;
+    for (const auto& link : s->current.links)  // both "linked" and "referenced"
+        if (link.annotationId == annotationId) ids.push_back(link.elementId);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
 }

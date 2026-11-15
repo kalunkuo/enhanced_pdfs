@@ -12,7 +12,9 @@ struct CollectedMarkups {
     std::vector<CosObj> annots;  // parallel to markups: the annotation's Cos dict
 };
 
-// All Square/Circle/Polygon/PolyLine/Line/Ink/FreeText/Text annotations, page order. Raises on Cos errors.
+// All Square/Circle/Polygon/PolyLine/Line/Ink/FreeText/Text annotations, page order, except replies (/IRT)
+// and the inspect highlight (/NM "smh-highlight"). Geometry is rounded to 0.01 pt. Throws AcroError (never
+// raises) on Cos errors.
 CollectedMarkups CollectMarkups(PDDoc doc);
 
 // "D:YYYYMMDDHHmmSS+HH'mm'" -> "YYYY-MM-DDTHH:MM:SSZ"; "" if not parseable (needs at least YYYYMMDD).
