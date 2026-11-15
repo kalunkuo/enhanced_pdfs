@@ -9,6 +9,7 @@
   --color-border: #474c50;
   --color-control-border: var(--primitive-color-ink-500);
   --color-primary: var(--primitive-color-blue-500);
+  --color-primary-secondary: var(--primitive-color-blue-600);
   --color-secondary: var(--primitive-color-red-500);
   --color-tertiary-pink: var(--primitive-color-pink-300);
   --color-tertiary-green: var(--primitive-color-green-500);
@@ -17,10 +18,12 @@
 
   /* Accents carry meaning in the viewer; do not use color alone for status. */
   --color-action: var(--primitive-color-white);
-  --color-geometry-highlight: var(--color-primary);
+  --color-geometry-highlight: var(--color-secondary);
   --color-geometry-highlight-soft: color-mix(in srgb, var(--color-geometry-highlight) 16%, transparent);
   --color-geometry-highlight-strong: color-mix(in srgb, var(--color-geometry-highlight) 34%, transparent);
-  --color-selection: var(--color-secondary);
+  --color-selection: var(--primitive-color-blue-selection);
+  --color-hover: color-mix(in srgb, var(--color-selection) 62%, #000);
+  --color-hover-strong: color-mix(in srgb, var(--color-hover) 40%, transparent);
   --color-selection-strong: color-mix(in srgb, var(--color-selection) 34%, transparent);
   --color-annotation: var(--color-secondary);
   --color-annotation-tied: var(--color-annotation);

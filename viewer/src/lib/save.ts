@@ -2,19 +2,22 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStrin
 import { calloutBounds, leaderSegment, textBox } from './callout';
 import { cloudPolyline, cloudRect } from './cloud';
 import { initials, pdfDate, safeImage } from './comments';
+import { cleanLinks } from './links';
+import { buildMarkupTables, MARKUP_FILES, markupParquetFiles, type MarkupSource, type PageFrame } from './markupTables';
 import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
  * Save annotations into the PDF two ways:
  *  - as standard PDF annotations with their own appearance streams, so Acrobat and other viewers show them, and
- *  - as an `annotations.json` attachment, which keeps the object-ID ties and lets this viewer restore them.
- * Annotations from an earlier save (named `ep-...`) are replaced, not duplicated.
+ *  - as an `annotations.json` attachment, which keeps the object-ID ties and lets this viewer restore them, and
+ *  - as `markups`, `markup-links`, and `markup-replies` Parquet attachments for a Revit import (see `markupTables.ts`).
+ * Annotations and attachments from an earlier save (named `ep-...`) are replaced, not duplicated.
  */
 
 export const ANNOTATIONS_FILE = 'annotations.json';
 const NAME_PREFIX = 'ep-';
 const AUTHOR = 'Enhanced PDF Viewer';
-const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
+export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
 
 type Rgb = readonly [number, number, number];
 const TIED: Rgb = [0.937, 0.267, 0.267];
@@ -43,7 +46,7 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
     const isPoint = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
     return list
         .filter((a): a is Annotation =>
-            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
+            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && ANNOTATION_KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
             (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
         )
         .map(cleanComment);
@@ -53,14 +56,14 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
 const MAX_REPLIES = 500;
 const MAX_TEXT = 10_000;
 
-function cleanAuthor(author: unknown): { name: string; photo?: string } | undefined {
+export function cleanAuthor(author: unknown): { name: string; photo?: string } | undefined {
     const a = author as { name?: unknown; photo?: unknown } | undefined;
     const name = typeof a?.name === 'string' ? a.name.trim().slice(0, 80) : '';
     const photo = safeImage(a?.photo);
     return name ? { name, ...(photo ? { photo } : {}) } : undefined;
 }
 
-function cleanReplies(value: unknown): Reply[] {
+export function cleanReplies(value: unknown): Reply[] {
     if (!Array.isArray(value)) return [];
     const out: Reply[] = [];
     for (const r of value.slice(0, MAX_REPLIES) as Record<string, unknown>[]) {
@@ -73,7 +76,7 @@ function cleanReplies(value: unknown): Reply[] {
     return out;
 }
 
-function cleanContained(value: unknown): ContainedElement[] {
+export function cleanContained(value: unknown): ContainedElement[] {
     if (!Array.isArray(value)) return [];
     return (value.slice(0, MAX_REPLIES) as Record<string, unknown>[])
         .filter((c) => typeof c?.key === 'string' && c.key.length > 0 && c.key.length <= 200 && typeof c.fully === 'boolean')
@@ -81,21 +84,21 @@ function cleanContained(value: unknown): ContainedElement[] {
 }
 
 function cleanComment(a: Annotation): Annotation {
-    const { author, createdAt, image, replies, contained, ...rest } = a as Annotation & Record<string, unknown>;
+    const { author, createdAt, image, replies, contained, elementKey, elementKeys, ...rest } = a as Annotation & Record<string, unknown>;
     const cleanedContained = cleanContained(contained);
     const cleanedReplies = cleanReplies(replies);
     const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
     const photo = safeImage(author?.photo);
     const when = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? createdAt : undefined;
     const picture = safeImage(image);
-    return {
+    return cleanLinks({
         ...rest,
         ...(name ? { author: { name, ...(photo ? { photo } : {}) } } : {}),
         ...(when ? { createdAt: when } : {}),
         ...(picture ? { image: picture } : {}),
         ...(cleanedReplies.length ? { replies: cleanedReplies } : {}),
         ...(cleanedContained.length ? { contained: cleanedContained } : {}),
-    } as Annotation;
+    } as Annotation, { elementKey, elementKeys });
 }
 
 /** Side of the comment teardrop, in page points. Its tip is the comment's anchor point. */
@@ -104,7 +107,7 @@ const DROP = 22;
 interface Box { x0: number; y0: number; x1: number; y1: number }
 
 /** Page-space (top-left origin) bounds of everything an annotation draws. */
-function boundsOf(a: Annotation): Box {
+export function boundsOf(a: Annotation): Box {
     const [x0, y0] = a.from;
     const [x1, y1] = a.to;
     const text = a.text ?? '';
@@ -140,7 +143,7 @@ function encode(font: PDFFont, text: string): string {
     return font.encodeText(safe).toString();
 }
 
-export interface PageFrame { cropX: number; cropY: number; cropH: number }
+export type { PageFrame };
 
 /** Content stream for one annotation, in PDF user space. */
 function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): { content: string; resources: Record<string, unknown> } {
@@ -244,7 +247,7 @@ function removeOurAnnotations(doc: PDFDocument): void {
     }
 }
 
-/** Remove an earlier annotations.json from a flat /EmbeddedFiles name list. */
+/** Remove an earlier attachment of ours from a flat /EmbeddedFiles name list. */
 function removeAttachment(doc: PDFDocument, fileName: string): void {
     const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict)?.lookupMaybe(PDFName.of('Names'), PDFArray);
     if (!names) return;
@@ -259,13 +262,17 @@ function removeAttachment(doc: PDFDocument, fileName: string): void {
 
 /**
  * Write annotations into a copy of the PDF. `describe` gives the text shown in a viewer's comment list,
- * such as "Tied to Wall 02 (ID 900002)".
+ * such as "Tied to Wall 02 (ID 900002)". `source` holds the document's BIM tables, so the markup Parquet
+ * resolves each linked object's Revit identity and drawing.
  */
-export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly Annotation[], describe: (a: Annotation) => string): Promise<Uint8Array> {
+export async function buildAnnotatedPdf(
+    bytes: Uint8Array, annotations: readonly Annotation[], describe: (a: Annotation) => string, source: MarkupSource = {},
+): Promise<Uint8Array> {
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const ctx = doc.context;
     removeOurAnnotations(doc);
-    removeAttachment(doc, ANNOTATIONS_FILE);
+    for (const name of [ANNOTATIONS_FILE, ...MARKUP_FILES]) removeAttachment(doc, name);
+    const frames = new Map<number, PageFrame>();
 
     const fonts: Fonts = { sans: await doc.embedFont(StandardFonts.Helvetica), script: await doc.embedFont(StandardFonts.TimesRomanItalic) };
     const pages = doc.getPages();
@@ -276,6 +283,7 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         if (page.getRotation().angle % 360 !== 0) throw new Error(`Page ${a.page} is rotated; saving annotations on rotated pages is not supported yet.`);
         const crop = page.getCropBox();
         const frame: PageFrame = { cropX: crop.x, cropY: crop.y, cropH: crop.height };
+        frames.set(a.page, frame);
         const tied = a.elementKey !== undefined;
         const { content, resources } = drawing(a, frame, fonts, tied);
 
@@ -342,5 +350,9 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
     await doc.attach(new TextEncoder().encode(json), ANNOTATIONS_FILE, {
         mimeType: 'application/json', description: 'Enhanced PDF Viewer annotations and their object-ID ties',
     });
+    const tables = buildMarkupTables(annotations, frames, boundsOf, source);
+    for (const [name, data] of markupParquetFiles(tables)) {
+        await doc.attach(data, name, { mimeType: 'application/vnd.apache.parquet', description: 'Enhanced PDF Viewer markups for Revit import' });
+    }
     return doc.save();
 }

@@ -48,6 +48,18 @@
   --segmented-slide-duration: var(--duration-slide);
   --segmented-slide-easing: var(--ease-slide);
 
+  /* Element list entry: one bordered, clickable container per matching element. */
+  --element-entry-gap: var(--primitive-space-2);
+  --element-entry-line-gap: var(--primitive-space-1);
+  --element-entry-padding-block: var(--primitive-space-2);
+  --element-entry-padding-inline: var(--primitive-space-3);
+  --element-entry-radius: var(--radius-control);
+  --element-entry-border: var(--color-border);
+  --element-entry-background: var(--color-surface);
+  --element-entry-hover-background: var(--menu-hover-background);
+  --element-entry-active-background: var(--menu-active-background);
+  --element-entry-active-foreground: var(--menu-active-foreground);
+
   --progress-height: var(--primitive-space-2);
   --progress-radius: var(--radius-control);
   --progress-track: var(--color-surface-raised);
@@ -77,6 +89,14 @@
   --comment-error-accent: var(--color-error);
 
   /* Toolbars: 24px compact controls, 8px gaps, 4px container padding. */
+  /* "ePDF." wordmark: blue "e", red square period. */
+  --logo-font-size: var(--primitive-font-size-lg);
+  --logo-font-weight: var(--primitive-font-weight-bold);
+  --logo-text: var(--color-text);
+  --logo-accent: var(--color-primary);
+  --logo-dot: var(--color-secondary);
+  --logo-dot-size: .2em;
+
   --toolbar-gap: var(--primitive-space-2);
   --toolbar-padding: var(--primitive-space-1);
   --toolbar-control-height: var(--button-icon-size);
@@ -90,8 +110,6 @@
   --metadata-link-indicator: var(--color-metadata-link);
 
   /* Existing viewer composition: these govern chrome, not the PDF raster. */
-  /* Inspector width: at least this, otherwise as wide as the segmented control plus panel margins. */
-  --viewer-side-min-width: 360px;
   --viewer-rail-width: calc(var(--button-icon-size) + 2 * var(--toolbar-padding) + 2 * var(--primitive-border-1));
   --viewer-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.2);
   --viewer-shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);

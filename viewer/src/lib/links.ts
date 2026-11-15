@@ -1,0 +1,48 @@
+import { singularCategory } from './elementLabel';
+import type { Annotation, ElementInfo } from './types';
+
+/**
+ * The objects an annotation is linked to. One link is stored as `elementKey`; several also fill `elementKeys`,
+ * whose first entry is always `elementKey`, so readers that only know a single tie still see the first object.
+ * Revision clouds keep their own `contained` list instead.
+ */
+export function linkedKeys(a: Pick<Annotation, 'elementKey' | 'elementKeys'>): string[] {
+    if (a.elementKeys?.length) return [...a.elementKeys];
+    return a.elementKey ? [a.elementKey] : [];
+}
+
+/** Replace an annotation's links. Duplicates and empty keys are dropped; no keys leaves it untied. */
+export function withLinks<T extends Annotation>(a: T, keys: readonly string[]): T {
+    const { elementKey: _key, elementKeys: _keys, ...rest } = a;
+    const unique = [...new Set(keys.filter((key) => key !== ''))];
+    if (unique.length === 0) return rest as T;
+    if (unique.length === 1) return { ...rest, elementKey: unique[0]! } as T;
+    return { ...rest, elementKey: unique[0]!, elementKeys: unique } as T;
+}
+
+const MAX_LINKS = 5000;
+const MAX_KEY_LENGTH = 200;
+
+/** Links read from untrusted storage (a saved PDF or browser storage), normalized with `withLinks`. */
+export function cleanLinks<T extends Annotation>(a: T, raw: { elementKey?: unknown; elementKeys?: unknown }): T {
+    const valid = (key: unknown): key is string => typeof key === 'string' && key.length > 0 && key.length <= MAX_KEY_LENGTH;
+    const list = Array.isArray(raw.elementKeys) ? raw.elementKeys.slice(0, MAX_LINKS).filter(valid) : [];
+    const first = valid(raw.elementKey) ? [raw.elementKey] : [];
+    // elementKey goes first: it is the tie every reader shows.
+    return withLinks(a, [...first, ...list]);
+}
+
+/**
+ * What a multi-object link is called where space is tight: its categories with counts, largest first
+ * ("Wall (12)", or "Wall (8), Floor (4)"). More than two categories end in "+N more" instead of a long list.
+ */
+export function linksSummary(keys: readonly string[], elements: ReadonlyMap<string, Pick<ElementInfo, 'category'>> | undefined): string {
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+        const category = singularCategory(elements?.get(key)?.category ?? '') || 'Object';
+        counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    const sorted = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const shown = sorted.slice(0, 2).map(([category, n]) => `${category} (${n})`).join(', ');
+    return sorted.length > 2 ? `${shown}, +${sorted.length - 2} more` : shown;
+}

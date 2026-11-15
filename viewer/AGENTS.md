@@ -42,6 +42,18 @@ The loader also accepts optional `geometry.parquet` for compatibility with the s
 | `MinX`, `MinY`, `MaxX`, `MaxY` | double | Bounding box in PDF points, origin bottom-left. |
 | `Outline` | string, optional | JSON `[[x,y],...]` polygon in the same space. Used for hit-testing when present. |
 
+### Saved review data (for Revit import)
+
+Download (Ctrl+S) writes standard PDF annotations, the lossless `annotations.json` the viewer restores from, and three Parquet tables for a Revit import (`src/lib/markupTables.ts`). They follow the add-in's conventions (PascalCase columns, `ElementKey`/`DrawingId` join keys, ISO 8601 UTC strings, `SchemaVersion`). Required columns are written non-nullable, so they deserialize into C# non-nullable record fields; the rest are optional. Coordinates are PDF user-space points with the origin at the bottom left, crop box applied, the same space as `geometry.parquet`. Each save replaces earlier copies, and the tables are left out when there are no markups.
+
+| File | Row | Columns |
+| --- | --- | --- |
+| `markups.parquet` | one per annotation | `MarkupId`, `Page`, `DrawingId`/`ViewId`/`ViewUniqueId` (page's root drawing), `Kind`, `RevitKind` (hint: `DetailLine`, `TextNote`, `RevisionCloud`, ...), `Text`, `Author`, `CreatedUtc`, `ModifiedUtc`, `Color`, `MinX`/`MinY`/`MaxX`/`MaxY`, `AnchorX`/`AnchorY`, `Points` (JSON `[[x,y],...]`), `ElementKey` (first link), `LinkCount`, `ReplyCount`, `HasImage`, `SchemaVersion` |
+| `markup-links.parquet` | one per referenced element | `MarkupId`, `Ordinal`, `ElementKey`, `Relation` (`Linked`, or `Contained`/`Overlaps` for revision clouds), `DrawingId` (viewport on that page), `ModelKey`, `UniqueId`, `ElementId`, `LinkInstanceId`, `Category`, `Resolved` (false when the key is not in `elements`) |
+| `markup-replies.parquet` | one per reply | `MarkupId`, `ReplyId`, `Ordinal`, `Author`, `CreatedUtc`, `Text`, `HasImage` |
+
+Image data URLs stay in `annotations.json` only. Add columns rather than changing existing ones, and bump `MARKUP_SCHEMA_VERSION` for breaking changes.
+
 `scripts/make-demo-pdf.py` writes a synthetic PDF with this optional table (`public/demo/demo-enhanced.pdf`); its data is made up. Its legacy geometry conversion assumes the simple demo frame; use the shared viewport transformations for native PDF geometry, including cropped and negative-origin pages.
 
 ## Ordinary PDFs and unsupported graphics
@@ -52,11 +64,11 @@ Native capture supports bounded Path2D fills/strokes and explicit clips on the b
 
 ## Layers and parallel ownership
 
-Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from its published shared baseline for annotation/review tools. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
+Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` after `viewer-v1` merged in PR #6). Feature branches, including Yam's annotation/review tools, start from `viewer-v2` and open PRs against it. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
-- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
-- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
+- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook. It renders a full-page base raster capped at ~4 MP (this is the capture render, so its scale stops changing once zoom passes the cap), plus a full-resolution detail tile covering only the visible area and 10% margin, re-rendered after scroll/zoom settles. Do not go back to rasterizing the whole page at zoom × DPR.
+- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. Selection is a set: one picked element, several (Select similar, or a note linked to several objects), or every filter match (filtering selects all matches until something is picked). `PropertiesPanel` merges the selection's parameters via `src/lib/selection.ts`, showing shared values and "Varies" otherwise. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
 - Drawing/view filters use stable `DrawingId` membership. Apply the same scope to picking, highlights, coverage, appearance counts, and focus bounds; never borrow an element's plan ink to locate its schedule membership.
 - `navigation.ts` fits existing page-space bounds. `PdfStage` applies a focus request after zoom layout, at most once per request. Preserve padding/centering, exclude DPR from scroll math, and cancel stale requests when the user changes context or navigates manually.
 - `MarkupLayer` owns annotation rendering, draft/editor state, and creation gestures. It forwards select-mode page gestures to the shared picker.
@@ -66,6 +78,14 @@ Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from
 ## Annotations and object IDs
 
 Every annotation carries an optional `elementKey` (the object ID). It is set automatically from the element under the annotation's anchor point, and can be changed or cleared in the Notes tab ("Object ID" select).
+
+An annotation can link to several objects: `elementKeys` lists them all, and `elementKey` stays equal to its first entry so single-tie readers keep working. Read links through `linkedKeys` and write them through `withLinks` (`src/lib/links.ts`). A note linked to several objects keeps its links when it is dragged; re-tying it to one object in the Notes tab replaces them. Revision clouds keep their own `contained` list.
+
+With elements selected in the select tool, `SelectionActions` pins a small bar under the selection's bottom-right corner (above the top-right corner near the page bottom; comment pins use the top edge). **Select similar** adds every element on this page and drawing scope that shares a type (`typeIdentity` in `src/lib/selection.ts`: the exported `TypeKey`, else category + family + type). **Comment** opens the composer at the selection's top-right corner, and the comment links to every selected element.
+
+## Session recovery
+
+`src/lib/session.ts` keeps the open file and review state in IndexedDB so a reload reopens where the user left off: annotations, page, selection, filters, zoom mode, inspector tab, draw kind, and highlight color. State is keyed to the file's SHA-256 fingerprint and discarded on mismatch; opening a new file replaces the remembered one. Storage failures show a status line and never block viewing. Add new persisted fields to `SessionState` and `parseSessionState`, which validates each field and falls back to defaults.
 
 ## Gotchas
 

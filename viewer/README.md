@@ -10,11 +10,11 @@ bun run typecheck
 bun run test
 ```
 
-The development server defaults to <http://localhost:5313/>. The application opens the functional viewer. **Open demo** loads the synthetic enhanced PDF from `public/demo/`; its metadata is illustrative.
+The development server defaults to <http://localhost:5313/>. The application opens the functional viewer. A synthetic enhanced PDF for testing is at `public/demo/demo-enhanced.pdf`; open it from the **More actions** (⋯) menu → **Upload enhanced PDF**. Its metadata is illustrative.
 
 ## Drawing agent demo
 
-The right sidebar opens on **Agent**. Choose **Open demo**, then use a suggestion or type a request:
+The right sidebar opens on **Agent**. Upload `public/demo/demo-enhanced.pdf`, then use a suggestion or type a request:
 
 - `Highlight and color code walls based on fire rating`
 - `Compare door widths at 36 inches: green below and red above`

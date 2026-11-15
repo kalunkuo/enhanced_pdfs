@@ -8,6 +8,7 @@ import { ElementOverlay } from './ElementOverlay';
 import { MarkupLayer } from './MarkupLayer';
 import { PdfCanvas } from './PdfCanvas';
 import { NativeElementOverlay } from './NativeElementOverlay';
+import { SelectionActions } from './SelectionActions';
 import type { NativeGeometry } from '../../lib/nativeGeometry';
 import { collectFocusBounds, fitBounds, getFocusScrollOffset, type FocusRequest } from '../../lib/navigation';
 
@@ -21,16 +22,24 @@ interface Props {
     hideEmbeddedAnnotations: boolean;
     tool: Tool;
     hoverKey: string | null;
-    selectedKey: string | null;
+    /** More objects drawn in the hover state, e.g. a category hovered in Properties. */
+    previewKeys?: ReadonlySet<string> | null;
+    /** Elements drawn as selected: a clicked element, or every filter match. */
+    selectedKeys: ReadonlySet<string> | null;
+    onSelectElements?: (keys: readonly string[], mode: 'replace' | 'add' | 'toggle') => void;
+    /** Elements whose bounds touch a page rectangle, wholly inside first. */
+    regionOf?: (rect: readonly [number, number, number, number]) => readonly { key: string; fully: boolean }[];
     annotations: Annotation[];
     selectedAnnotationId: string | null;
     highlightColor: string;
     labelFor: (elementKey: string) => string;
+    /** Names a multi-object link by category and count, e.g. "Wall (12)". */
+    linksLabel: (elementKeys: readonly string[]) => string;
     onZoom: (effective: number) => void;
     onHover: (key: string | null, at: { x: number; y: number }) => void;
     onSelectElement: (key: string | null) => void;
     onSelectAnnotation: (id: string | null) => void;
-    onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
+    onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>) => void;
     /** Comment threads drawn over the page. `comments`, `page` and `zoom` come from the stage. */
     commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments' | 'pick'>;
     /** The comment tool was clicked at a page point. */
@@ -51,6 +60,12 @@ interface Props {
     onZoomMode?: (mode: ZoomMode) => void;
     onFocusComplete?: (request: FocusRequest, located: boolean) => void;
     onCancelFocus?: () => void;
+    /** Contextual actions on the element selection, shown on its corner in the select tool. */
+    selectionActions?: {
+        onSelectSimilar: () => void;
+        /** Start a comment linked to the whole selection, its pin at `at` (page coordinates). */
+        onComment: (at: Point) => void;
+    };
 }
 
 const PAD_X = 104;
@@ -166,6 +181,14 @@ export function PdfStage(props: Props) {
         props.onFocusComplete?.(request, true);
     }, [props.focusRequest, props.geometry, props.onZoomMode, props.onFocusComplete, page, size, zoom]);
 
+    // Page-space bounds of the selection on this page, for pinning the selection bar to its corner.
+    const selectionBounds = useMemo(() => {
+        if (!props.selectedKeys?.size) return undefined;
+        const raw = collectFocusBounds(props.geometry?.parts ?? [], page.shapes, props.selectedKeys, props.drawingIds ?? null);
+        return raw && [Math.max(0, raw[0]), Math.max(0, raw[1]), Math.min(page.width, raw[2]), Math.min(page.height, raw[3])] as const;
+    }, [props.selectedKeys, props.geometry, props.drawingIds, page]);
+    const showSelectionActions = !!props.selectionActions && !!selectionBounds && tool === 'select' && !props.commentLayer.composerAt;
+
     const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
         if (tool !== 'pan' || event.button !== 0 || !wrapRef.current) return;
         props.onCancelFocus?.();
@@ -185,29 +208,31 @@ export function PdfStage(props: Props) {
         setPanning(false);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     };
-    const noteTool = tool === 'text' || tool === 'comment' || tool === 'signature';
-    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : noteTool ? 'tool-text' : 'tool-draw';
+    // Every annotation tool shares one cursor, which shows whether an object is under it (see review.css).
+    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : ['line', 'rect', 'ellipse', 'highlight', 'pen', 'cloud'].includes(tool) ? 'tool-draw' : 'tool-review';
+    const hoverClass = !props.hoverKey || tool === 'pan' ? '' : tool === 'select' ? 'hovering' : 'over-object';
 
     return (
         <div className="stage" ref={wrapRef} onWheel={() => props.onCancelFocus?.()}>
             <div
                 ref={pageRef}
-                className={`page ${toolClass} ${props.hoverKey && tool === 'select' ? 'hovering' : ''}`}
+                className={`page ${toolClass} ${hoverClass}`}
                 style={{ width: page.width * zoom, height: page.height * zoom }}
                 onPointerDown={startPan}
                 onPointerMove={movePan}
                 onPointerUp={finishPan}
                 onPointerCancel={finishPan}
             >
-                <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
+                <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} pageWidth={page.width} pageHeight={page.height} scrollContainer={wrapRef}
+                    hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
-                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
-                    selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
+                    selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor} linksLabel={props.linksLabel}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
                     onElementMove={(point, client) => props.onHover(pickElement(point, 4 / zoom)[0]?.elementKey ?? null, client)}
-                    onElementSelect={(point) => {
+                    onElementSelect={(point, additive) => {
                         const hits = [...new Map(pickElement(point, 4 / zoom).map((hit) => [hit.elementKey, hit])).values()];
                         const keys = hits.map((hit) => hit.elementKey).join('\n');
                         const previous = previousPick.current;
@@ -215,9 +240,17 @@ export function PdfStage(props: Props) {
                         const repeat = previous && previous.keys === keys && now - previous.time < 3000 && Math.hypot(previous.x - point[0], previous.y - point[1]) < 6 / zoom;
                         const index = repeat && hits.length ? (previous.index + 1) % hits.length : 0;
                         previousPick.current = { x: point[0], y: point[1], keys, index, time: now };
-                        props.onSelectElement(hits[index]?.elementKey ?? null);
+                        const picked = hits[index]?.elementKey ?? null;
+                        if (additive && picked && props.onSelectElements) { props.onSelectElements([picked], 'toggle'); setPickNotice(null); props.onSelectAnnotation(null); return; }
+                        props.onSelectElement(picked);
                         setPickNotice(hits.length > 1 ? `${index + 1} of ${hits.length} elements · click again to cycle` : null);
                         props.onSelectAnnotation(null);
+                    }}
+                    onSelectRegion={(rect, additive, crossing) => {
+                        const hits = (props.regionOf?.(rect) ?? []).filter((hit) => crossing || hit.fully).map((hit) => hit.key);
+                        props.onSelectAnnotation(null);
+                        setPickNotice(hits.length ? `${hits.length} element${hits.length === 1 ? '' : 's'} selected` : null);
+                        if (props.onSelectElements) props.onSelectElements(hits, additive ? 'add' : 'replace');
                     }}
                     onElementLeave={() => props.onHover(null, { x: 0, y: 0 })}
                     onStartComment={props.onStartComment}
@@ -227,9 +260,14 @@ export function PdfStage(props: Props) {
                     onMoveAnnotation={props.onMoveAnnotation}
                     coverOf={props.coverOf}
                 >
-                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
+                {showSelectionActions && selectionBounds && (
+                    <SelectionActions bounds={selectionBounds} zoom={zoom} pageWidth={page.width} pageHeight={page.height} viewport={wrapRef} count={props.selectedKeys!.size}
+                        onSelectSimilar={props.selectionActions!.onSelectSimilar}
+                        onComment={() => props.selectionActions!.onComment([selectionBounds[2], selectionBounds[1]])} />
+                )}
                 {pickNotice && <div className="pick-status" role="status">{pickNotice}</div>}
             </div>
         </div>

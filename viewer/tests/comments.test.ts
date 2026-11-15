@@ -1,6 +1,6 @@
 import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFString } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { avatarColor, formatTimeAgo, initials, pdfDate, safeImage } from '../src/lib/comments';
+import { isAuthor, avatarColor, formatTimeAgo, initials, pdfDate, safeImage } from '../src/lib/comments';
 import { buildAnnotatedPdf, parseAnnotations } from '../src/lib/save';
 import type { Annotation } from '../src/lib/types';
 
@@ -35,7 +35,7 @@ describe('avatar helpers', () => {
     });
     it('gives the same color to the same name', () => {
         expect(avatarColor('Yam')).toBe(avatarColor('Yam'));
-        expect(avatarColor('Yam')).toMatch(/^hsl\(\d+ 65% 45%\)$/);
+        expect(avatarColor('Yam')).toMatch(/^var\(--primitive-color-(green|red|pink|blue|yellow)-\d+\)$/);
     });
 });
 
@@ -166,5 +166,16 @@ describe('withAuthorship', () => {
     it('never overwrites an author or time that is already there', () => {
         const out = withAuthorship({ author: { name: 'Carlos' }, createdAt: '2020-01-01T00:00:00Z' }, { name: 'Yam' }, NOW_ISO);
         expect(out).toEqual({ author: { name: 'Carlos' }, createdAt: '2020-01-01T00:00:00Z' });
+    });
+});
+
+describe('isAuthor', () => {
+    it('matches the profile name regardless of case and spacing', () => {
+        expect(isAuthor({ name: 'Yam Chum' }, { name: ' yam chum ' })).toBe(true);
+    });
+    it('is false for someone else, an unknown author, or an empty profile name', () => {
+        expect(isAuthor({ name: 'Ada' }, { name: 'Yam' })).toBe(false);
+        expect(isAuthor(undefined, { name: 'Yam' })).toBe(false);
+        expect(isAuthor({ name: '' }, { name: '' })).toBe(false);
     });
 });

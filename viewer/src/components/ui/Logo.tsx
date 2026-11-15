@@ -1,6 +1,13 @@
-import logoUrl from '../../assets/enhanced-pdf-logo.svg';
-
-/** The Enhanced PDF mark. To change the logo, replace src/assets/enhanced-pdf-logo.svg. */
-export function Logo({ size = 28 }: { size?: number }) {
-    return <img className="logo" src={logoUrl} width={size} height={size} alt="Enhanced PDF" title="Enhanced PDF" draggable={false} />;
+/**
+ * The "ePDF." wordmark. Colors and size come from the `--logo-*` component tokens:
+ * the "e" is primary blue and the trailing period is a secondary-red square.
+ */
+export function Logo({ className }: { className?: string }) {
+    return (
+        <span className={className ? `ui-logo ${className}` : 'ui-logo'} role="img" aria-label="ePDF" title="Enhanced PDF">
+            <span className="ui-logo-e" aria-hidden="true">e</span>
+            <span aria-hidden="true">PDF</span>
+            <span className="ui-logo-dot" aria-hidden="true" />
+        </span>
+    );
 }

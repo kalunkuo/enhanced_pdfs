@@ -14,8 +14,8 @@ export function groupOf(p: ParameterInfo): string {
 
 const ORDER = ['Constraints', 'Cross-Section Definition', 'Fire & Function', 'Other', 'Type Parameters'];
 
-export function groupParameters(params: readonly ParameterInfo[]): [string, ParameterInfo[]][] {
-    const map = new Map<string, ParameterInfo[]>();
+export function groupParameters<T extends ParameterInfo>(params: readonly T[]): [string, T[]][] {
+    const map = new Map<string, T[]>();
     for (const p of params) {
         const g = groupOf(p);
         map.set(g, [...(map.get(g) ?? []), p]);

@@ -63,9 +63,15 @@ describe('buildAnnotatedPdf', () => {
     it('keeps existing attachments and stores the annotations so the ties can be restored', async () => {
         const out = await buildAnnotatedPdf(await source(), ANNOTATIONS, describe_);
         const files = await attachments(out);
-        expect([...files.keys()].sort()).toEqual([ANNOTATIONS_FILE, 'elements.parquet']);
+        expect([...files.keys()].sort()).toEqual([ANNOTATIONS_FILE, 'elements.parquet', 'markup-links.parquet', 'markup-replies.parquet', 'markups.parquet']);
         expect(new TextDecoder().decode(files.get('elements.parquet')![0])).toBe('parquet-bytes');
         expect(parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!)).toEqual(ANNOTATIONS);
+    });
+
+    it('keeps a comment linked to several objects', async () => {
+        const linked: Annotation = { id: 'a9', page: 1, kind: 'comment', from: [40, 40], to: [40, 40], text: 'Same type?', elementKey: 'w1', elementKeys: ['w1', 'w2', 'w3'] };
+        const files = await attachments(await buildAnnotatedPdf(await source(), [linked], describe_));
+        expect(parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!)).toEqual([linked]);
     });
 
     it('replaces its own earlier annotations and attachment on a second save', async () => {

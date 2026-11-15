@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Button, IconButton } from '../ui/Button';
-import { Logo } from '../ui/Logo';
-import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon, UploadIcon } from '../ui/icons';
+import { IconButton } from '../ui/Button';
+import { FlyoutMenu, Logo } from '../ui';
+import { CheckIcon, ChevronDownIcon, DownloadIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SelectIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -22,20 +22,19 @@ interface Props {
     onZoomIn: () => void;
     onZoomOut: () => void;
     onUpload: () => void;
-    onOpenDemo: () => void;
-    /** File name and status, shown before the upload buttons. */
-    info?: ReactNode;
-    /** Your profile, shown after the upload buttons. */
+    /** Omit while Revit export is not available; the menu item shows disabled. */
+    onExportRevit?: () => void;
+    /** Your profile, shown after the more-actions menu. */
     account?: ReactNode;
 }
 
-/** The document bar: save, print, pages, select and pan, zoom, then demo and upload at the far right. Laid out like Acrobat's. */
+/** The document bar: save, print, pages, select and pan, zoom, then a more-actions menu (upload, export to Revit) at the far right. Laid out like Acrobat's. */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
             <Logo />
             <span className="sep" />
-            <IconButton label={p.saving ? 'Saving…' : 'Save with annotations (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><SaveIcon /></IconButton>
+            <IconButton label={p.saving ? 'Saving…' : 'Download PDF with markups and review data (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><DownloadIcon /></IconButton>
             <IconButton label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
             <span className="sep" />
             <IconButton label="Previous page (PageUp)" disabled={p.disabled || p.page <= 1} onClick={() => p.onPage(p.page - 1)}><PrevPageIcon /></IconButton>
@@ -49,9 +48,13 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
             <span className="docbar-spacer" />
-            {p.info && <div className="docbar-info">{p.info}</div>}
-            <Button variant="ghost" onClick={p.onOpenDemo}>Open demo drawing</Button>
-            <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
+            <FlyoutMenu
+                label="More actions"
+                items={[
+                    { id: 'upload', label: 'Upload enhanced PDF', icon: 'upload', onSelect: p.onUpload },
+                    { id: 'export-revit', label: 'Export to Revit', icon: 'export', onSelect: () => p.onExportRevit?.(), disabled: p.disabled || !p.onExportRevit },
+                ]}
+            />
             {p.account}
         </div>
     );

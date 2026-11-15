@@ -21,11 +21,14 @@ export function initials(name: string): string {
     return letters.toUpperCase();
 }
 
-/** A stable background color for a name, so one person always looks the same. */
+/** The accent colors a profile can default to: the design system's green, red, pink, blue and yellow. */
+export const PROFILE_COLORS = ['green-500', 'red-500', 'pink-300', 'blue-500', 'yellow-500'] as const;
+
+/** A stable default color for a name, so one person always looks the same. Initials on it are dark, not white. */
 export function avatarColor(name: string): string {
     let hash = 0;
     for (const ch of name) hash = (hash * 31 + ch.codePointAt(0)!) >>> 0;
-    return `hsl(${hash % 360} 65% 45%)`;
+    return `var(--primitive-color-${PROFILE_COLORS[hash % PROFILE_COLORS.length]})`;
 }
 
 const SAFE_IMAGE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
@@ -64,4 +67,10 @@ export function withAuthorship<T extends { author?: { name: string; photo?: stri
     const name = profile.name.trim();
     const author = annotation.author ?? (name ? { name, ...(profile.photo ? { photo: profile.photo } : {}) } : undefined);
     return { ...annotation, createdAt: annotation.createdAt ?? nowIso, ...(author ? { author } : {}) };
+}
+
+/** Only the person who wrote a message can edit it, judged by the name on the message and the name in the profile. */
+export function isAuthor(author: { name: string } | undefined, profile: { name: string }): boolean {
+    const mine = profile.name.trim().toLowerCase();
+    return mine !== '' && author?.name.trim().toLowerCase() === mine;
 }

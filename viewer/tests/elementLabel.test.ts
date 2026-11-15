@@ -57,3 +57,12 @@ describe('elementTypeLabel', () => {
         expect(elementTypeLabel({ category: '', name: 'Thing' })).toBe('Thing');
     });
 });
+
+import { linksSummary } from '../src/lib/links';
+describe('linksSummary', () => {
+    const elements = new Map([['a', { category: 'Walls' }], ['b', { category: 'Walls' }], ['c', { category: 'Floors' }], ['d', { category: 'Doors' }], ['e', { category: 'Doors' }]]);
+    it('names one category with its count', () => expect(linksSummary(['a', 'b'], elements)).toBe('Wall (2)'));
+    it('lists a few categories, largest first', () => expect(linksSummary(['a', 'b', 'c'], elements)).toBe('Wall (2), Floor (1)'));
+    it('shortens long lists', () => expect(linksSummary(['a', 'b', 'c', 'd', 'e'], elements)).toBe('Door (2), Wall (2), +1 more'));
+    it('copes with objects it does not know', () => expect(linksSummary(['x', 'y'], elements)).toBe('Object (2)'));
+});
