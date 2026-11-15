@@ -17,14 +17,7 @@ internal static class ApplyChange
         transaction.Start();
         try
         {
-            string? error = proposal.Change switch
-            {
-                SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
-                MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
-                FlipInstance flip => Flip(element, flip.Side),
-                NewWallType wall => NewWallTypeAtWidth(document, element, wall),
-                _ => "Unsupported change.",
-            };
+            string? error = ApplyIn(document, element, proposal);
             if (error is not null) { transaction.RollBack(); return error; }
             if (revertOf?.Change is NewWallType created) DeleteWallTypeIfUnused(document, created.TypeName);
             if (transaction.Commit() != TransactionStatus.Committed) return "Revit did not commit the change.";
@@ -36,6 +29,16 @@ internal static class ApplyChange
             return e.Message;
         }
     }
+
+    /// <summary>Makes the change inside the caller's open transaction (Apply's, or the preview's what-if one).</summary>
+    internal static string? ApplyIn(Document document, Element element, Proposal proposal) => proposal.Change switch
+    {
+        SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
+        MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
+        FlipInstance flip => Flip(element, flip.Side),
+        NewWallType wall => NewWallTypeAtWidth(document, element, wall),
+        _ => "Unsupported change.",
+    };
 
     /// <summary>What a change does, for transaction names and card titles.</summary>
     public static string Describe(Change change) => change switch
