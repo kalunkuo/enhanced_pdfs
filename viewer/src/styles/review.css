@@ -170,3 +170,8 @@
 .tie-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted-foreground); }
 .tie-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tie-meta { margin-left: auto; padding-left: 8px; font-size: 11px; white-space: nowrap; }
+
+/* Annotation tools show a text-insertion (I-beam) cursor: gray over empty paper, dark and active over an object.
+   Over an object that object is also highlighted, as with the Select tool. */
+.page.tool-review > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'%20stroke='%23fff'%20stroke-width='4'/%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'%20stroke='%239ca3af'%20stroke-width='2'/%3E%3C/svg%3E") 12 12, text; }
+.page.tool-review.over-object > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'%20stroke='%23fff'%20stroke-width='4'/%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'%20stroke='%2318181b'%20stroke-width='2'/%3E%3C/svg%3E") 12 12, text; }
