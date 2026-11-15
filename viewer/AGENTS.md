@@ -2,6 +2,8 @@
 
 Browser app (React, TypeScript, Vite) that opens an enhanced PDF from the Revit add-in, lets you hover and click elements on the drawing, and annotate it. Everything runs client-side. Design rules: `docs/design-system.md`.
 
+The optional drawing-agent API is the exception: `server/openaiAgent.ts` and `server/agentMiddleware.ts` run only in the local Vite dev/preview server. Credentials come from ignored `.env.local` or server environment variables, never `VITE_*`, browser code, or storage. Only prompts, bounded conversation history, and aggregate page counts go to the model; actual drawing actions execute against current client-side data through `src/lib/agentApi.ts`. Missing credentials keep Local demo available. API failures must stay explicit rather than silently changing modes. See `README.md` for setup.
+
 ```sh
 bun install
 bun run dev        # http://localhost:5313, or DEV_PORT=NNNN bun run dev

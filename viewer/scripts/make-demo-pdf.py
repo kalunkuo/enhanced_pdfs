@@ -37,6 +37,10 @@ WALLS = [
     ('Wall 06', 380, 330 - T, 640, 330, INT),
 ]
 COLUMNS = [('Column 01', 250, 295, 266, 311), ('Column 02', 500, 395, 516, 411)]
+# Standalone illustrative door symbols, not measured building geometry.
+# (mark, hinge x, hinge y, display width); one intentionally lacks a width.
+DOORS = [('D01', 215, 240, '2\' 8"'), ('D02', 305, 415, '3\' 0"'),
+         ('D03', 455, 250, '3\' 6"'), ('D04', 555, 420, None)]
 
 
 def pq_bytes(columns):
@@ -97,6 +101,43 @@ def main(path, plain=False, pages=1):
                              Outline=outline(x0, y0, x1, y1)))
     for n, v in [('Section Shape', 'W12x50')]:
         params.append(dict(OwnerKey='type-col', Scope='Type', Name=n, DisplayValue=v))
+
+    if not plain:
+        for j, (mark, x, y, width) in enumerate(DOORS, start=1):
+            radius = [25.6, 28.8, 33.6, 28.8][j - 1]
+            k = 0.55228475  # cubic approximation of the quarter-circle swing
+            page.draw_line((x, y), (x, y - radius), color=(0.1, 0.1, 0.1), width=1.5)
+            page.draw_bezier((x + radius, y), (x + radius, y - k * radius),
+                             (x + k * radius, y - radius), (x, y - radius),
+                             color=(0.25, 0.25, 0.25), width=0.7)
+            page.draw_circle((x, y), 1.2, color=(0.1, 0.1, 0.1), fill=(0.1, 0.1, 0.1))
+            page.insert_text((x - 4, y + 14), mark, fontsize=9)
+            key, type_key = f'door-{j}', f'type-door-{j}'
+            type_name = f'Single-Flush - {width or "Width unspecified"}'
+            elements.append(dict(
+                ElementKey=key, ModelKey='demo', Model='Demo Building', LinkInstanceId=None, UniqueId=f'uid-{key}',
+                ElementId=710000 + j, Category='Doors', CategoryId=-2000023, Name=type_name,
+                Family='Single-Flush', Type=type_name, TypeKey=type_key, TypeId=3000 + j, Level='GROUND FLOOR',
+                Mark=mark, WallFunction=None, FireRating=None, FireRatingSource=None, VersionGuid=f'v-{key}'))
+            params.append(dict(OwnerKey=key, Scope='Instance', Name='Mark', DisplayValue=mark))
+            if width:
+                params.append(dict(OwnerKey=type_key, Scope='Type', Name='Width', DisplayValue=width))
+            x0, y0, x1, y1 = x - 2, y - radius - 2, x + radius + 2, y + 2
+            geometry.append(dict(DrawingId='d1', ElementKey=key, MinX=x0, MinY=PAGE_H - y1, MaxX=x1, MaxY=PAGE_H - y0,
+                                 Outline=outline(x0, y0, x1, y1)))
+
+        page.insert_text((140, 510), 'Synthetic doors: D01 32 in | D02 36 in | D03 42 in | D04 width unavailable', fontsize=8)
+        page.insert_text((140, 525), 'Try: color walls by fire rating / compare doors at 36 inches / latest comments', fontsize=8)
+        reviews = [
+            ((270, 220), 'Demo reviewer Alex', 'Synthetic review: Check the D01 door width against the project requirement.', "D:20261114100000-08'00'"),
+            ((510, 265), 'Demo reviewer Sam', 'Synthetic review: D03 is 42 inches wide. Confirm the required opening with the design team.', "D:20261114101500-08'00'"),
+            ((405, 355), 'Demo reviewer Alex', 'Synthetic review: Interior walls have no exported fire rating. Confirm the rating before review sign-off.', "D:20261114103000-08'00'"),
+        ]
+        for point, author, content, timestamp in reviews:
+            note = page.add_text_annot(point, content)
+            note.set_info(title=author, subject='Synthetic demo review', content=content,
+                          creationDate=timestamp, modDate=timestamp)
+            note.update()
 
     page.insert_text((140, 105), 'A101 - First Floor Plan (demo data, not a Revit export)', fontsize=12)
 

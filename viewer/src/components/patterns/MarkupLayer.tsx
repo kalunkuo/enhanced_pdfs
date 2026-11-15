@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { clampShift, cloudRect, cloudSvgPath } from '../../lib/cloud';
+import { anchorHandle, defaultBoxOrigin, hasLeader, leaderSegment, textBox } from '../../lib/callout';
 import type { Tool } from '../../lib/presentation';
-import type { Annotation, PageData, Point } from '../../lib/types';
+import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
 
-type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen';
-type NoteTool = 'text' | 'comment' | 'signature';
+type DrawingTool = 'line' | 'rect' | 'ellipse' | 'highlight' | 'pen' | 'cloud';
+type NoteTool = 'text' | 'signature';
 type Draft = { kind: DrawingTool; from: Point; to: Point; points?: Point[] };
-type Editor = { kind: NoteTool; at: Point; value: string };
+/** `tip` is where a text box's leader points; without it the box has no leader. */
+type Editor = { kind: NoteTool; at: Point; tip?: Point; value: string };
+/** A text box being dragged: `box` moves its text, `tip` moves its leader, `both` moves a box that has no leader. */
+type MovePart = 'box' | 'tip' | 'both';
+type Moving = { id: string; from: Point; to: Point; key: string | null; /** For a cloud: what it would cover if dropped here. */ contained?: ContainedElement[] };
 
 export interface MarkupLayerProps {
     page: Pick<PageData, 'number' | 'width' | 'height'>;
@@ -21,20 +27,33 @@ export interface MarkupLayerProps {
     onElementMove: (point: Point, client: { x: number; y: number }) => void;
     onElementSelect: (point: Point) => void;
     onElementLeave: () => void;
+    /** The comment tool was clicked at a page point; the comment layer opens its composer. */
+    onStartComment: (point: Point) => void;
+    /** The element under a page point, or null for empty paper. Decides tied or untied while a text box is dragged. */
+    pick: (point: Point) => string | null;
+    /** The element a dragged text box's tip is over, for highlighting. */
+    onDragTarget: (key: string | null, client: { x: number; y: number }) => void;
+    /** A text box was dropped; the caller re-ties it to whatever its tip is over. */
+    onMoveAnnotation: (id: string, patch: { from: Point; to: Point }) => void;
+    /** The elements a cloud with these corners would cover, so a moving cloud can show its count live. */
+    coverOf: (a: Pick<Annotation, 'from' | 'to'>) => ContainedElement[];
     /** Element highlights render below the markup content in the shared SVG. */
     children?: ReactNode;
 }
 
 const MIN_DRAG = 4;
+/** An untied markup is plain gray, text included. */
+const UNTIED_INK = '#71717a';
+const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
 /** The PDF page is always white, so annotation ink remains fixed in both themes. */
 const INK = '#18181b';
 
 function isDrawingTool(tool: Tool): tool is DrawingTool {
-    return tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'highlight' || tool === 'pen';
+    return tool === 'line' || tool === 'rect' || tool === 'ellipse' || tool === 'highlight' || tool === 'pen' || tool === 'cloud';
 }
 
 function isNoteTool(tool: Tool): tool is NoteTool {
-    return tool === 'text' || tool === 'comment' || tool === 'signature';
+    return tool === 'text' || tool === 'signature';
 }
 
 /**
@@ -48,6 +67,17 @@ export function MarkupLayer(props: MarkupLayerProps) {
     const draftRef = useRef<Draft | null>(null);
     const [editor, setEditor] = useState<Editor | null>(null);
     const editorRef = useRef<Editor | null>(null);
+    // A text-box gesture in progress: placing one (drag out a leader), or moving an existing one.
+    const textPress = useRef<{ tip: Point; moved: boolean } | null>(null);
+    const [leaderPreview, setLeaderPreview] = useState<{ from: Point; to: Point } | null>(null);
+    const movePress = useRef<{ id: string; part: MovePart; x: number; y: number; from: Point; to: Point; moved: boolean } | null>(null);
+    const [moving, setMoving] = useState<Moving | null>(null);
+    // The drop reads this ref, not `moving`: a quick flick can release before React re-renders the last move.
+    const movingRef = useRef<Moving | null>(null);
+    const updateMoving = (next: Moving | null) => {
+        movingRef.current = next;
+        setMoving(next);
+    };
 
     const updateDraft = (next: Draft | null) => {
         draftRef.current = next;
@@ -64,7 +94,24 @@ export function MarkupLayer(props: MarkupLayerProps) {
         editorRef.current = null;
         setDraft(null);
         setEditor(null);
+        textPress.current = null;
+        setLeaderPreview(null);
+        movePress.current = null;
+        updateMoving(null);
     }, [page, tool]);
+
+    // Escape puts a dragged text box back where it was.
+    useEffect(() => {
+        if (!moving) return;
+        const esc = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            movePress.current = null;
+            updateMoving(null);
+            props.onDragTarget(null, { x: 0, y: 0 });
+        };
+        window.addEventListener('keydown', esc);
+        return () => window.removeEventListener('keydown', esc);
+    }, [moving, props]);
 
     const toPage = (event: { clientX: number; clientY: number }): Point => {
         const rect = svgRef.current!.getBoundingClientRect();
@@ -77,6 +124,36 @@ export function MarkupLayer(props: MarkupLayerProps) {
 
     const onMove = (event: ReactPointerEvent<SVGSVGElement>) => {
         const point = toPage(event);
+        const drag = movePress.current;
+        if (drag) {
+            if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < MIN_DRAG) return;
+            drag.moved = true;
+            const origin = toPage({ clientX: drag.x, clientY: drag.y });
+            const dx = point[0] - origin[0];
+            const dy = point[1] - origin[1];
+            // Moving a whole shape shifts every corner by the same clamped amount, so it keeps its size at the page edge.
+            const [sx, sy] = drag.part === 'both' ? clampShift([drag.from, drag.to], dx, dy, page.width, page.height) : [dx, dy];
+            const shift = (p: Point): Point => (drag.part === 'both' ? [p[0] + sx, p[1] + sy] : [clamp(p[0] + dx, page.width), clamp(p[1] + dy, page.height)]);
+            const from = drag.part === 'tip' ? drag.from : shift(drag.from);
+            const to = drag.part === 'box' ? drag.to : shift(drag.to);
+            if (annotations.find((a) => a.id === drag.id)?.kind === 'cloud') {
+                // A cloud ties to what it covers, so show that as it moves instead of the object under a point.
+                const contained = props.coverOf({ from, to });
+                updateMoving({ id: drag.id, from, to, key: contained[0]?.key ?? null, contained });
+                props.onDragTarget(null, { x: event.clientX, y: event.clientY });
+                return;
+            }
+            const key = props.pick(to);
+            updateMoving({ id: drag.id, from, to, key });
+            props.onDragTarget(key, { x: event.clientX, y: event.clientY });
+            return;
+        }
+        const placing = textPress.current;
+        if (placing && Math.hypot(point[0] - placing.tip[0], point[1] - placing.tip[1]) >= MIN_DRAG) {
+            placing.moved = true;
+            setLeaderPreview({ from: point, to: placing.tip });
+            return;
+        }
         const active = draftRef.current;
         if (active && active.kind === tool) {
             const last = active.points?.at(-1);
@@ -91,20 +168,52 @@ export function MarkupLayer(props: MarkupLayerProps) {
         if (event.button !== 0) return;
         const point = toPage(event);
         if (isDrawingTool(tool)) {
-            event.currentTarget.setPointerCapture?.(event.pointerId);
+            try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
             updateDraft({ kind: tool, from: point, to: point, ...(tool === 'pen' ? { points: [point] } : {}) });
+        } else if (tool === 'text') {
+            // Press on the object, drag out to where the text should sit. A plain click makes a box with no leader.
+            try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
+            textPress.current = { tip: point, moved: false };
         } else if (tool === 'select') {
             props.onElementSelect(point);
         }
     };
 
+    const beginMove = (event: ReactPointerEvent<SVGElement>, a: Annotation, part: 'box' | 'tip' | 'body') => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
+        const leaderless = !hasLeader(a);
+        movePress.current = { id: a.id, part: part === 'body' || (leaderless && part === 'box') ? 'both' : part, x: event.clientX, y: event.clientY, from: a.from, to: a.to, moved: false };
+    };
+
     // Opening on click avoids the trailing pointer-down focus change closing
     // the newly mounted text editor before the user can enter anything.
     const onClick = (event: ReactMouseEvent<SVGSVGElement>) => {
-        if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
+        const press = textPress.current;
+        textPress.current = null;
+        setLeaderPreview(null);
+        if (tool === 'comment') props.onStartComment(toPage(event));
+        else if (tool === 'text') {
+            // Dragged: the box sits where the pointer was released and the leader points back at the press.
+            // Clicked: the anchor is the click and the box goes beside it, so a text box always has a leader to move.
+            const clicked = toPage(event);
+            updateEditor(press?.moved
+                ? { kind: 'text', at: clicked, tip: press.tip, value: '' }
+                : { kind: 'text', at: defaultBoxOrigin(clicked, page.width, page.height), tip: clicked, value: '' });
+        } else if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
     };
 
     const onUp = () => {
+        const drag = movePress.current;
+        if (drag) {
+            movePress.current = null;
+            const last = movingRef.current;
+            if (drag.moved && last) props.onMoveAnnotation(drag.id, { from: last.from, to: last.to });
+            updateMoving(null);
+            props.onDragTarget(null, { x: 0, y: 0 });
+            return;
+        }
         const active = draftRef.current;
         updateDraft(null);
         if (!active || active.kind !== tool) return;
@@ -124,7 +233,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
         // Clear synchronously so Enter followed by blur commits only once.
         updateEditor(null);
         if (active && active.kind === tool && active.value.trim()) {
-            props.onAddAnnotation({ kind: active.kind, from: active.at, to: active.at, text: active.value.trim() });
+            props.onAddAnnotation({ kind: active.kind, from: active.at, to: active.tip ?? active.at, text: active.value.trim() });
         }
     };
 
@@ -136,24 +245,39 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 onPointerMove={onMove}
                 onPointerDown={onDown}
                 onPointerUp={onUp}
-                onPointerCancel={() => { updateDraft(null); props.onElementLeave(); }}
+                onPointerCancel={() => { updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; updateMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
                 onClick={onClick}
                 onPointerLeave={() => !draftRef.current && props.onElementLeave()}
             >
                 {props.children}
-                {annotations.map((annotation) => (
+                {annotations.filter((annotation) => annotation.kind !== 'comment').map((stored) => {
+                    // While a text box is dragged it follows the pointer and shows the tie it would get.
+                    const live = moving?.id === stored.id;
+                    const annotation = live ? { ...stored, from: moving.from, to: moving.to, ...(moving.contained ? { contained: moving.contained } : {}) } : stored;
+                    const key = live ? moving.key : (stored.elementKey ?? null);
+                    return (
                     <AnnotationShape
                         key={annotation.id}
                         annotation={annotation}
                         selected={annotation.id === props.selectedAnnotationId}
                         interactive={tool === 'select'}
-                        label={annotation.elementKey ? props.labelFor(annotation.elementKey) : undefined}
+                        tied={key !== null}
+                        label={key ? props.labelFor(key) : undefined}
+                        onPart={(event, part) => beginMove(event, stored, part)}
                         onClick={() => {
-                            props.onSelectAnnotation(annotation.id);
+                            // Object first, then the markup: the last selection decides which panel opens.
                             props.onSelectElement(annotation.elementKey ?? null);
+                            props.onSelectAnnotation(annotation.id);
                         }}
                     />
-                ))}
+                    );
+                })}
+                {leaderPreview && (
+                    <AnnotationShape annotation={{ id: 'draft', page: page.number, kind: 'text', from: leaderPreview.from, to: leaderPreview.to, text: '' }} selected={false} interactive={false} tied />
+                )}
+                {editor?.kind === 'text' && editor.tip && (
+                    <AnnotationShape annotation={{ id: 'draft', page: page.number, kind: 'text', from: editor.at, to: editor.tip, text: editor.value }} selected={false} interactive={false} tied />
+                )}
                 {draft && (
                     <AnnotationShape
                         annotation={{ id: 'draft', page: page.number, kind: draft.kind, from: draft.from, to: draft.to, ...(draft.points ? { points: draft.points } : {}), color: props.highlightColor }}
@@ -166,7 +290,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 <input
                     className={`note-input ${editor.kind}`}
                     autoFocus
-                    placeholder={editor.kind === 'comment' ? 'Add comment…' : editor.kind === 'signature' ? 'Type your name…' : 'Type text…'}
+                    placeholder={editor.kind === 'signature' ? 'Type your name…' : 'Type text…'}
                     style={{ left: editor.at[0] * zoom, top: editor.at[1] * zoom }}
                     value={editor.value}
                     onChange={(event) => updateEditor({ ...editor, value: event.target.value })}
@@ -181,8 +305,18 @@ export function MarkupLayer(props: MarkupLayerProps) {
     );
 }
 
-function AnnotationShape({ annotation: a, selected, interactive, label, onClick }: { annotation: Annotation; selected: boolean; interactive: boolean; label?: string; onClick?: () => void }) {
-    const tied = a.elementKey !== undefined;
+function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp, label, onClick, onPart }: {
+    annotation: Annotation;
+    selected: boolean;
+    interactive: boolean;
+    /** Overrides the stored tie, so a markup can show the tie it would get while being dragged. */
+    tied?: boolean;
+    label?: string;
+    onClick?: () => void;
+    /** A press on a draggable part of a text box. */
+    onPart?: (event: ReactPointerEvent<SVGElement>, part: 'box' | 'tip' | 'body') => void;
+}) {
+    const tied = tiedProp ?? a.elementKey !== undefined;
     const color = a.id === 'draft' || tied ? 'var(--color-annotation-tied)' : 'var(--color-annotation-untied)';
     const common = {
         stroke: color,
@@ -201,6 +335,17 @@ function AnnotationShape({ annotation: a, selected, interactive, label, onClick 
         body = <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)} {...common} />;
     } else if (a.kind === 'ellipse') {
         body = <ellipse cx={(x0 + x1) / 2} cy={(y0 + y1) / 2} rx={Math.abs(x1 - x0) / 2} ry={Math.abs(y1 - y0) / 2} {...common} />;
+    } else if (a.kind === 'cloud') {
+        const rect = cloudRect(a);
+        const d = cloudSvgPath(rect);
+        body = (
+            <g>
+                <path d={d} {...common} strokeLinejoin="round" />
+                {/* A wide invisible outline to grab: the inside stays free for picking the objects under the cloud. */}
+                {interactive && <path d={d} fill="none" stroke="transparent" strokeWidth={14} strokeLinejoin="round" pointerEvents="stroke" style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, 'body')} />}
+            </g>
+        );
+        chipAt = [rect[0], rect[1] - 10];
     } else if (a.kind === 'pen') {
         const points = a.points ?? [];
         body = <polyline points={points.map((point) => point.join(',')).join(' ')} {...common} strokeLinejoin="round" strokeLinecap="round" />;
@@ -208,32 +353,42 @@ function AnnotationShape({ annotation: a, selected, interactive, label, onClick 
     } else if (a.kind === 'highlight') {
         body = (
             <rect x={Math.min(x0, x1)} y={Math.min(y0, y1)} width={Math.abs(x1 - x0)} height={Math.abs(y1 - y0)}
-                fill={a.color ?? '#ffd43b'} fillOpacity={0.4} stroke={tied || a.id === 'draft' ? 'none' : 'var(--color-annotation-untied)'} strokeDasharray="6 4" strokeWidth={selected ? 3 : 1.5} vectorEffect="non-scaling-stroke" />
+                fill={tied || a.id === 'draft' ? (a.color ?? '#ffd43b') : '#9ca3af'} fillOpacity={0.4} stroke={tied || a.id === 'draft' ? 'none' : 'var(--color-annotation-untied)'} strokeDasharray="6 4" strokeWidth={selected ? 3 : 1.5} vectorEffect="non-scaling-stroke" />
         );
     } else if (a.kind === 'signature') {
-        body = <text x={x0} y={y0} fontSize={24} fill={INK} fontFamily="'Snell Roundhand','Segoe Script','Brush Script MT',cursive" fontStyle="italic">{a.text}</text>;
+        body = <text x={x0} y={y0} fontSize={24} fill={tied || a.id === 'draft' ? INK : UNTIED_INK} fontFamily="'Snell Roundhand','Segoe Script','Brush Script MT',cursive" fontStyle="italic">{a.text}</text>;
         chipAt = [x0, y0 - 26];
     } else if (a.kind === 'text') {
-        const width = Math.max(30, (a.text?.length ?? 0) * 6.6 + 10);
+        const box = textBox(a);
+        const leader = leaderSegment(a);
+        const dash = tied || a.id === 'draft' ? undefined : '6 4';
+        const grab = interactive ? { cursor: 'grab' } : undefined;
         body = (
             <g>
-                <rect x={x0 - 4} y={y0 - 14} width={width} height={20} fill="none" stroke={color} strokeWidth={1} strokeDasharray={common.strokeDasharray} vectorEffect="non-scaling-stroke" />
-                <text x={x0} y={y0} fontSize={12} fill={INK} fontWeight={500}>{a.text}</text>
+                {leader && <line x1={leader[0][0]} y1={leader[0][1]} x2={leader[1][0]} y2={leader[1][1]} stroke={color} strokeWidth={selected ? 2 : 1.5} strokeDasharray={dash} vectorEffect="non-scaling-stroke" />}
+                <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" stroke={color} strokeWidth={selected ? 2 : 1} strokeDasharray={dash} vectorEffect="non-scaling-stroke"
+                    style={grab} onPointerDown={(event) => onPart?.(event, 'box')} />
+                <text x={x0} y={y0} fontSize={12} fill={tied || a.id === 'draft' ? color : UNTIED_INK} fontWeight={500} pointerEvents="none">{a.text}</text>
+                {(() => {
+                    // The anchor: the leader tip, or the box corner on an old box that has no leader yet. Drag it to move the tie.
+                    const [ax, ay] = anchorHandle(a);
+                    return (
+                        <>
+                            <circle cx={ax} cy={ay} r={selected ? 4.5 : 3.5} fill={color} stroke="#fff" strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+                            <circle cx={ax} cy={ay} r={10} fill="transparent" style={grab} onPointerDown={(event) => onPart?.(event, 'tip')} />
+                        </>
+                    );
+                })()}
             </g>
         );
-        chipAt = [x0 - 4, y0 - 18];
+        chipAt = [box.x, box.y - 4];
     } else {
-        const width = Math.max(40, (a.text?.length ?? 0) * 6.2 + 12);
-        body = (
-            <g>
-                <circle cx={x0} cy={y0} r={5} fill={color} />
-                <rect x={x0 + 8} y={y0 - 10} width={width} height={20} rx={4} fill="#fff" stroke={color} strokeWidth={1} strokeDasharray={common.strokeDasharray} vectorEffect="non-scaling-stroke" />
-                <text x={x0 + 14} y={y0 + 4} fontSize={11} fill={INK}>{a.text}</text>
-            </g>
-        );
-        chipAt = [x0, y0 - 12];
+        return null; // comments are drawn by the comment layer
     }
-    const chip = tied ? `↳ ${label ?? 'element'}` : 'untied';
+    const covered = a.contained?.length ?? 0;
+    const chip = a.kind === 'cloud'
+        ? (covered ? `${covered} object${covered === 1 ? '' : 's'}` : 'no objects')
+        : tied ? `↳ ${label ?? 'element'}` : 'untied';
     return (
         <g
             style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}
@@ -242,7 +397,14 @@ function AnnotationShape({ annotation: a, selected, interactive, label, onClick 
         >
             {body}
             {a.id !== 'draft' && (
-                <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'}>{chip}</text>
+                <>
+                    {/* The label belongs to the text box, so pressing it drags the box too. */}
+                    {(a.kind === 'text' || a.kind === 'cloud') && interactive && (
+                        <rect x={chipAt[0] - 3} y={chipAt[1] - 11} width={chip.length * 5.2 + 8} height={15} fill="transparent"
+                            style={{ cursor: 'grab' }} onPointerDown={(event) => onPart?.(event, a.kind === 'cloud' ? 'body' : 'box')} />
+                    )}
+                    <text x={chipAt[0]} y={chipAt[1]} fontSize={9} fill={color} fontStyle={tied ? undefined : 'italic'} pointerEvents={a.kind === 'text' || a.kind === 'cloud' ? 'none' : undefined}>{chip}</text>
+                </>
             )}
         </g>
     );

@@ -30,6 +30,8 @@ export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }:
     const identity: ParameterInfo[] = [
         { name: 'Element ID', scope: 'Instance', value: element.elementIdText ?? String(element.elementId) },
         { name: 'Category', scope: 'Instance', value: element.category },
+        ...(element.family ? [{ name: 'Family', scope: 'Type' as const, value: element.family }] : []),
+        ...(element.type ? [{ name: 'Type', scope: 'Type' as const, value: element.type }] : []),
         ...(element.level ? [{ name: 'Level', scope: 'Instance' as const, value: element.level }] : []),
         ...(element.model ? [{ name: 'Model', scope: 'Instance' as const, value: element.model }] : []),
         ...(element.modelKey ? [{ name: 'Model key', scope: 'Instance' as const, value: element.modelKey }] : []),

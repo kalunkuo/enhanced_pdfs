@@ -63,10 +63,13 @@ export function buildParameters(rows: readonly Row[]): Map<string, ParameterInfo
         const owner = str(r.OwnerKey);
         const name = str(r.Name);
         if (!owner || !name) continue;
-        const value = str(r.DisplayValue) ?? str(r.TextValue) ??
+        const displayValue = str(r.DisplayValue), textValue = str(r.TextValue);
+        const value = displayValue ?? textValue ??
             (r.IntegerValue != null ? String(r.IntegerValue) : r.InternalValue != null ? String(r.InternalValue) : r.ReferenceId != null ? String(r.ReferenceId) : '');
+        const valueSource: ParameterInfo['valueSource'] = displayValue !== undefined ? 'display' : textValue !== undefined ? 'text' :
+            r.IntegerValue != null ? 'integer' : r.InternalValue != null ? 'internal' : r.ReferenceId != null ? 'reference' : undefined;
         const list = out.get(owner) ?? [];
-        list.push({ name, scope: r.Scope === 'Type' ? 'Type' : 'Instance', value,
+        list.push({ name, scope: r.Scope === 'Type' ? 'Type' : 'Instance', value, valueSource,
             parameterId: str(r.ParameterId), sharedGuid: str(r.SharedGuid), specId: str(r.SpecId), unitId: str(r.UnitId) });
         out.set(owner, list);
     }

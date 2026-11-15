@@ -57,7 +57,9 @@ function distanceToSegment(x: number, y: number, a: Point, b: Point): number {
 
 /** The point that decides which element an annotation belongs to. */
 export function anchorOf(a: Pick<Annotation, 'kind' | 'from' | 'to' | 'points'>): Point {
-    if (a.kind === 'text' || a.kind === 'comment' || a.kind === 'signature') return a.from;
+    // A text box ties by its leader tip (`to`, which equals `from` when there is no leader).
+    if (a.kind === 'text') return a.to;
+    if (a.kind === 'comment' || a.kind === 'signature') return a.from;
     if (a.kind === 'pen' && a.points?.length) {
         const xs = a.points.map((p) => p[0]);
         const ys = a.points.map((p) => p[1]);
