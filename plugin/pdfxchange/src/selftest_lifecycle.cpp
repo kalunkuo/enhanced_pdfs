@@ -182,6 +182,15 @@ std::string StepHighlightSave(IPXV_Document* doc, const std::string& outDir) {
     return std::string("{\"saved\": ") + (saved ? "true" : "false") + ", \"file\": " + JsonString(path) + "}";
 }
 
+// "Upgrade" test: the document was opened (catch-up linked any markups made without the plug-in); just save
+// a copy so the caller can check the tables. Use after lifecycle-open.
+std::string StepSaveCopy(IPXV_Document* doc, const std::string& outDir) {
+    std::string path = outDir + "\\upgraded.pdf";
+    bool saved = SaveCopy(doc, path);
+    doc->put_Modified(VARIANT_FALSE);  // keep the scripted close prompt-free
+    return std::string("{\"saved\": ") + (saved ? "true" : "false") + ", \"file\": " + JsonString(path) + "}";
+}
+
 // Linked-element highlight data path: a new cloud around wall 676281 is linked in memory right away
 // (annots.inserted -> recompute), LinkedElementIds() returns it, and ShowHighlights draws one box per id.
 std::string StepLinked(IPXV_Document* doc, const std::string&) {
@@ -237,6 +246,7 @@ struct RegisterSteps {
         RegisterSelfTestStep("fault-duckdb", &StepFaultDuckDb);
         RegisterSelfTestStep("highlight-save", &StepHighlightSave);
         RegisterSelfTestStep("linked", &StepLinked);
+        RegisterSelfTestStep("savecopy", &StepSaveCopy);
     }
 } gRegisterSteps;
 

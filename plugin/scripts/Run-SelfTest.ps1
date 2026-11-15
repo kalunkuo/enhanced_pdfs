@@ -3,6 +3,7 @@
 #   .\Run-SelfTest.ps1 -Pdf <file.pdf> -Out <dir> [-Steps ping,elementmap] [-TimeoutSeconds 120]
 #
 # Acrobat must not already be running (a running instance would receive the file without our env vars).
+# Acrobat is closed gently afterwards and never force-killed.
 # Exit code 0 when selftest.json reports ok, 1 otherwise.
 param(
     [Parameter(Mandatory)][string]$Pdf,
@@ -30,7 +31,14 @@ try {
 } finally {
     Remove-Item Env:SMARTMARKUP_SELFTEST, Env:SMARTMARKUP_SELFTEST_STEPS -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
-    Get-Process -Name Acrobat -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Close GENTLY (like clicking X). Never force-kill: killing Acrobat mid-way can damage its
+    # licensing/activation state. If it does not close (e.g. a "Save changes?" prompt), say so.
+    foreach ($p in Get-Process -Name Acrobat -ErrorAction SilentlyContinue) { [void]$p.CloseMainWindow() }
+    $closeBy = (Get-Date).AddSeconds(30)
+    while ((Get-Process -Name Acrobat -ErrorAction SilentlyContinue) -and (Get-Date) -lt $closeBy) { Start-Sleep -Milliseconds 500 }
+    if (Get-Process -Name Acrobat -ErrorAction SilentlyContinue) {
+        Write-Host "NOTE: Acrobat did not close by itself (maybe a 'Save changes?' prompt); please close it manually (choose No)."
+    }
 }
 
 if (-not (Test-Path $result)) { Write-Host "TIMEOUT: no selftest.json after $TimeoutSeconds s"; exit 1 }
