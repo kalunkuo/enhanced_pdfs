@@ -13,6 +13,7 @@
 #include "doc_state.h"
 #include "element_map.h"
 #include "events.h"
+#include "highlight.h"
 #include "inspect_window.h"
 #include "log.h"
 #include "selftest.h"
@@ -91,6 +92,7 @@ public:
             if (code == UIX_Notify_Click || code == UIX_Notify_ExecCmd) {
                 gOn = !gOn;
                 LogLine("inspect: %s", gOn ? "on" : "off");
+                if (!gOn) ClearHighlight();
                 RefreshCommand();
             }
         } catch (...) {
@@ -208,8 +210,9 @@ void EnsureCommand() {
     }
 }
 
-// Resolves the click to {core doc, page index, page-space point}. False when the click is not on a page.
-bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXC_Document>& core, int& pageIndex, PXC_Point& pt) {
+// Resolves the click to {editor doc, core doc, page index, page-space point}. False when not on a page.
+bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXV_Document>& doc, ComPtr<IPXC_Document>& core,
+                  int& pageIndex, PXC_Point& pt) {
     ComPtr<IPXV_PagesView> view;
     if (!from || FAILED(from->QueryInterface(__uuidof(IPXV_PagesView), reinterpret_cast<void**>(view.Put()))))
         return false;
@@ -221,7 +224,6 @@ bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXC_Document>& core, i
     long page = -1;
     if (FAILED(layout->HitTest(&dev, &unused, &page)) || page < 0) return false;
     if (FAILED(layout->DevicePointToPagePoint((ULONG)page, &dev, VARIANT_TRUE, &pt))) return false;
-    ComPtr<IPXV_Document> doc;
     if (FAILED(view->get_Doc(doc.Put())) || !doc) return false;
     if (FAILED(doc->get_CoreDoc(core.Put())) || !core) return false;
     pageIndex = (int)page;
@@ -237,14 +239,18 @@ void OnMouse(IEvent* event, IUnknown* from) {
     auto* uixEvent = reinterpret_cast<IUIX_Event*>(p2);  // borrowed: owned by the Editor for this call
     if (!uixEvent) return;
 
+    ComPtr<IPXV_Document> doc;
     ComPtr<IPXC_Document> core;
     int pageIndex = 0;
     PXC_Point pt = {};
-    if (!ResolveClick(from, uixEvent, core, pageIndex, pt)) return;
+    if (!ResolveClick(from, uixEvent, doc, core, pageIndex, pt)) return;
 
     const sm::ElementMap& map = GetElementMap(core.Get(), pageIndex);
     auto hit = sm::ElementAt(map, pt.x, pt.y);
-    if (!hit) return;
+    if (!hit) {
+        ClearHighlight();  // clicked empty paper: drop the previous highlight
+        return;
+    }
     const sm::ModelData* model = FindModel(core.Get());
     if (!model) {
         LogLine("inspect: element %lld hit but document has no model", (long long)*hit);
@@ -252,6 +258,7 @@ void OnMouse(IEvent* event, IUnknown* from) {
     }
     auto rows = sm::InspectRows(*model, *hit);
     if (rows.empty()) return;
+    ShowHighlight(doc.Get(), pageIndex, map.at(*hit));
     ShowInspectWindow(GetActiveWindow(), *hit, rows);
     event->put_Handled(VARIANT_TRUE);
     uixEvent->put_Handled(VARIANT_TRUE);

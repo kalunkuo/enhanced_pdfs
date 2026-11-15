@@ -13,6 +13,7 @@
 #include "attachments.h"
 #include "com_ptr.h"
 #include "doc_state.h"
+#include "highlight.h"
 #include "element_map.h"
 #include "events.h"
 #include "log.h"
@@ -234,6 +235,7 @@ void OnAnnots(IUnknown* from, const char* what) {
 }
 
 void OnBeforeSave(IUnknown* from) {
+    ClearHighlightIn(AsDoc(from).Get());  // the inspect highlight must never be saved
     ComPtr<IPXC_Document> core = CoreOf(AsDoc(from).Get());
     DocState* s = core ? Find(core.Get()) : nullptr;
     if (!s) return;
@@ -252,6 +254,7 @@ void OnAfterSave(IEvent* event, IUnknown* from) {
 
 void OnClose(IUnknown* from, const char* what) {
     Guarded(what, [&] {
+        ForgetHighlight(AsDoc(from).Get());
         ComPtr<IPXC_Document> core = CoreOf(AsDoc(from).Get());
         if (!core) return;
         if (gDocs.erase(core.Get())) LogLine("lifecycle: %s: state dropped", what);

@@ -186,6 +186,9 @@ CollectedMarkups CollectMarkups(IPXC_Document* doc) {
             bool inScope = InScope(subtype);
             std::string name = Take(subtype);
             if (!inScope) continue;
+            if (DictString(dict.Get(), L"NM") == "smh-highlight") continue;  // our temporary inspect highlight
+            Var inReplyTo;  // replies (comment threads) are not separate markups (spec)
+            if (SUCCEEDED(dict->Dict_Get(const_cast<LPWSTR>(L"IRT"), inReplyTo.Put())) && inReplyTo) continue;
             out.markups.push_back(ReadMarkup(dict.Get(), name, static_cast<int>(p) + 1));
             out.annots.push_back(std::move(dict));
         }
