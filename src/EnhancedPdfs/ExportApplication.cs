@@ -30,6 +30,7 @@ public sealed class ExportApplication : IExternalApplication
         (importButton.LargeImage, importButton.Image) = (RibbonIcons.ImportMarkups(32), RibbonIcons.ImportMarkups(16));
         var review = Review.ReviewController.Instance;
         review.Initialize();
+        Review.GhostPreview.Register();
         application.RegisterDockablePane(Review.ReviewController.PaneId, "Markup review", new Review.ReviewPane(review));
         return Result.Succeeded;
     }

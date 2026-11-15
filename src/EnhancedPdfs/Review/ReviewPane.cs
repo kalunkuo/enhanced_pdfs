@@ -32,6 +32,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private readonly Button _cancel = SmallButton("Stop Claude", Glyph.Stop);
     private readonly Button _end = SmallButton("End review", Glyph.Power);
     private readonly Button _save = SmallButton("Save review", Glyph.Save);
+    private readonly Button _openPdf = SmallButton("Open PDF", Glyph.OpenFile);
     private readonly StackPanel _filters = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
     private readonly StackPanel _cards = new();
     private readonly Dictionary<string, BitmapSource?> _crops = [];
@@ -57,8 +58,10 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
 
         _cancel.Click += (_, _) => _controller.Cancel();
         _save.Click += async (_, _) => await SaveClickedAsync();
+        _openPdf.Click += (_, _) => OpenPdf();
+        _openPdf.ToolTip = "Open the returned PDF in your default PDF viewer.";
         _end.Click += (_, _) => { _confirmingEnd = true; Refresh(); };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save, _end } };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _openPdf, _save, _end } };
         var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _endHost, _filters } };
         _clock.Tick += (_, _) => UpdateActivity();
 
@@ -103,6 +106,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _warning.Visibility = _controller.Warning is null ? Visibility.Collapsed : Visibility.Visible;
         _cancel.Visibility = _controller.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         _end.Visibility = session is null || _confirmingEnd ? Visibility.Collapsed : Visibility.Visible;
+        _openPdf.Visibility = session is null ? Visibility.Collapsed : Visibility.Visible;
         _endHost.Content = session is null ? null : _confirmingEnd ? EndConfirmation(session) : _confirmingSave ? SaveConfirmation(session) : null;
         _save.IsEnabled = session is not null && !_controller.IsRunning;
         UpdateActivity();
@@ -239,6 +243,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             if (_lastError is not null)
                 body.Children.Add(new TextBlock { Text = _lastError, Foreground = Red, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
             if (p.Status == ProposalStatus.Pending) body.Children.Add(Decisions(p));
+            if (p.Status == ProposalStatus.Approved) body.Children.Add(UndoApproval(p));
         }
         return Card(body, selected, () => Select(p));
     }
@@ -329,6 +334,23 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         return grid;
     }
 
+    private UIElement UndoApproval(Proposal p)
+    {
+        var undo = new Button
+        {
+            Content = Labelled(Glyph.Undo, "Undo approval"), Background = Brushes.White, Foreground = Ink, Padding = new Thickness(10, 4, 10, 4),
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0),
+            ToolTip = "Changed your mind? Puts the element back the way it was and returns this proposal to pending.",
+        };
+        undo.Click += async (_, _) =>
+        {
+            undo.IsEnabled = false;
+            _lastError = await _controller.RevertAsync(p);
+            Refresh();
+        };
+        return undo;
+    }
+
     private async void Select(Proposal p)
     {
         _selected = p.Id;
@@ -381,6 +403,20 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             Title = $"Markup · {markup.Kind} · {markup.Author ?? "unknown author"}", Width = 900, Height = 650,
             Content = new Image { Source = big, Stretch = Stretch.Uniform }, WindowStartupLocation = WindowStartupLocation.CenterScreen,
         }.Show();
+    }
+
+    /// <summary>Opens the returned PDF in whatever app Windows uses for PDFs (Acrobat, Edge, the web viewer…).</summary>
+    private void OpenPdf()
+    {
+        if (_controller.Session is not { } session) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(session.Pdf.Path) { UseShellExecute = true });
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException or FileNotFoundException)
+        {
+            _status.Text = $"Could not open the PDF: {e.Message}";
+        }
     }
 
     /// <summary>Saving over an existing "-reviewed.pdf" (possibly the file that was imported) asks first.</summary>
@@ -537,6 +573,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     {
         public const string Check = "", Cancel = "", Edit = "", Save = "", Stop = "",
             Send = "", Back = "", Power = "";
+        public const string Undo = "", OpenFile = "";
     }
 
     /// <summary>Icon + text button content; the icon takes the button's foreground colour.</summary>

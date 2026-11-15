@@ -11,11 +11,29 @@ namespace EnhancedPdfs.Review;
 internal static class Preview
 {
     /// <summary>A proposal: its element.</summary>
-    public static string? Show(UIApplication app, ReviewSession session, Proposal proposal) =>
-        ShowElements(app, session, proposal.MarkupId, [proposal.ElementKey]);
+    public static string? Show(UIApplication app, ReviewSession session, Proposal proposal)
+    {
+        string? why = ShowElements(app, session, proposal.MarkupId, [proposal.ElementKey]);
+        if (why is not null || app.ActiveUIDocument is not { } uidoc) return why;
+        // The ghost is a bonus: if it cannot be drawn the card still works, so its failures are logged, not shown.
+        try
+        {
+            var exported = session.Tables.ElementsByKey[proposal.ElementKey];
+            if (uidoc.Document.GetElement(exported.UniqueId) is { } element && proposal.Status is ProposalStatus.Pending or ProposalStatus.Blocked)
+                GhostPreview.Show(uidoc, element, proposal);
+        }
+        catch (Exception e) { ReviewController.Instance.LogException("ghost", e); GhostPreview.Clear(uidoc); }
+        return null;
+    }
 
     /// <summary>A note (or any markup): every host-model element it is tied to — tags and annotations included.</summary>
-    public static string? ShowMarkup(UIApplication app, ReviewSession session, Markup markup) =>
+    public static string? ShowMarkup(UIApplication app, ReviewSession session, Markup markup)
+    {
+        GhostPreview.Clear(app.ActiveUIDocument);
+        return ShowMarkupElements(app, session, markup);
+    }
+
+    private static string? ShowMarkupElements(UIApplication app, ReviewSession session, Markup markup) =>
         markup.Links.Count == 0
             ? "This markup is not tied to any element, so there is nothing to zoom to."
             : ShowElements(app, session, markup.Id, markup.Links.Select(l => l.ElementKey));
@@ -40,7 +58,11 @@ internal static class Preview
         return null;
     }
 
-    public static void Clear(UIApplication app) => app.ActiveUIDocument?.Selection.SetElementIds([]);
+    public static void Clear(UIApplication app)
+    {
+        GhostPreview.Clear(app.ActiveUIDocument);
+        app.ActiveUIDocument?.Selection.SetElementIds([]);
+    }
 
     /// <summary>A placed view on the markup's sheet page that shows at least one of the elements; else stay put.</summary>
     private static View? PreferredView(Document document, ReviewSession session, string markupId, List<Element> elements)

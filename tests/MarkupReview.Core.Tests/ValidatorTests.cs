@@ -189,7 +189,7 @@ public sealed class ValidatorTests : IDisposable
         Assert.True(r.Ok, r.Error);
         Assert.Equal(("1' - 2\"", "1' - 9\""), (r.OldValue, r.NormalisedValue));
         Assert.Equal([new SizeChange("Width", "1' - 2\"", "1' - 9\"")], r.SizeChanges);
-        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")"), r.NormalisedChange);
+        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")", "Basic Wall: Exterior - Brick"), r.NormalisedChange);
         Assert.Equal(1, r.AffectsCount); // a new type for this wall only: other walls of the old type are untouched
     }
 
@@ -248,6 +248,25 @@ public sealed class ValidatorTests : IDisposable
         var r = await Validate(FixturePdf.DoorKey, new ChangeType("36\" x 84\""));
         Assert.True(r.Ok);
         Assert.Equal("Element no longer in model", r.BlockReason);
+    }
+
+    [Fact]
+    public async Task Element_whose_live_category_differs_from_the_pdf_is_blocked()
+    {
+        // A crafted PDF could label one element ("Walls 676281") while its UniqueId points at another.
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { Category = "Doors" };
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-9"));
+        Assert.True(r.Ok);
+        Assert.Contains("does not match", r.BlockReason);
+    }
+
+    [Fact]
+    public async Task Element_whose_live_id_differs_from_the_pdf_is_blocked()
+    {
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { ElementId = 999 };
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-9"));
+        Assert.True(r.Ok);
+        Assert.Contains("does not match", r.BlockReason);
     }
 
     [Fact]

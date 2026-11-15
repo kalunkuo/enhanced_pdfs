@@ -15,7 +15,7 @@ public sealed record FlipInstance(FlipSide Side) : Change;
 /// Duplicate a basic wall's type at a new total width (its thickest core layer absorbs the difference) and move this
 /// wall to it. <paramref name="TypeName"/> null = "&lt;current type&gt; (&lt;width&gt;)".
 /// </summary>
-public sealed record NewWallType(string Width, string? TypeName) : Change;
+public sealed record NewWallType(string Width, string? TypeName, string? FromType = null) : Change;
 
 public enum ProposalStatus { Pending, Approved, Rejected, Blocked, Revised }
 

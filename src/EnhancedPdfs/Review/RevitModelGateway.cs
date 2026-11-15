@@ -19,6 +19,7 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
         return new ModelElement(element.UniqueId, element.VersionGuid.ToString(), element.Category?.Name ?? "",
             type?.FamilyName, type?.Name, false, parameters, type is null ? 1 : InstanceCount(element, type))
         {
+            ElementId = element.Id.Value,
             CanFlipFacing = element is FamilyInstance { CanFlipFacing: true },
             CanFlipHand = element is FamilyInstance { CanFlipHand: true },
             FacingFlipped = element is FamilyInstance { FacingFlipped: true },
