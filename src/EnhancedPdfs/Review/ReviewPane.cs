@@ -29,9 +29,9 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private readonly TextBlock _activity = new() { Foreground = Ink, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed };
     private readonly TextBlock _thought = new() { Foreground = Muted, FontStyle = FontStyles.Italic, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0), Visibility = Visibility.Collapsed };
     private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly Button _cancel = SmallButton("Stop Claude");
-    private readonly Button _end = SmallButton("End review");
-    private readonly Button _save = SmallButton("Save review");
+    private readonly Button _cancel = SmallButton("Stop Claude", Glyph.Stop);
+    private readonly Button _end = SmallButton("End review", Glyph.Power);
+    private readonly Button _save = SmallButton("Save review", Glyph.Save);
     private readonly StackPanel _filters = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
     private readonly StackPanel _cards = new();
     private readonly Dictionary<string, BitmapSource?> _crops = [];
@@ -267,10 +267,10 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             var reason = new TextBox { Margin = new Thickness(0, 6, 0, 4), MinHeight = 22, Text = _rejectText };
             reason.TextChanged += (_, _) => _rejectText = reason.Text;
             reason.Loaded += (_, _) => { reason.Focus(); reason.CaretIndex = reason.Text.Length; };
-            var confirm = SmallButton("Reject");
+            var confirm = SmallButton("Reject", Glyph.Cancel);
             confirm.Foreground = Red;
             confirm.Click += (_, _) => { _rejecting = null; _rejectText = ""; _controller.Reject(p, reason.Text); };
-            var back = SmallButton("Back");
+            var back = SmallButton("Back", Glyph.Back);
             back.Click += (_, _) => { _rejecting = null; Refresh(); };
             return new StackPanel { Children = { new TextBlock { Text = "Reason (optional):", Margin = new Thickness(0, 8, 0, 0) }, reason, new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, back } } } };
         }
@@ -279,7 +279,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             var instruction = new TextBox { Margin = new Thickness(0, 6, 0, 4), MinHeight = 44, Text = _reviseText, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true };
             instruction.TextChanged += (_, _) => _reviseText = instruction.Text;
             instruction.Loaded += (_, _) => { instruction.Focus(); instruction.CaretIndex = instruction.Text.Length; };
-            var send = new Button { Content = "Send to Claude", Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+            var send = new Button { Content = Labelled(Glyph.Send, "Send to Claude"), Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
             send.Click += (_, _) =>
             {
                 string? error = _controller.Revise(p, instruction.Text);
@@ -287,7 +287,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
                 _lastError = error;
                 Refresh();
             };
-            var back = SmallButton("Back");
+            var back = SmallButton("Back", Glyph.Back);
             back.Click += (_, _) => { _revisingInput = null; Refresh(); };
             return new StackPanel
             {
@@ -302,9 +302,9 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         if (_controller.Revising?.Id == p.Id)
             return new TextBlock { Text = "Claude is revising this proposal…", Foreground = Accent, Margin = new Thickness(0, 8, 0, 0) };
 
-        var approve = new Button { Content = "Approve", Background = Green, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderThickness = new Thickness(0) };
-        var approveBut = new Button { Content = "Approve, but…", Background = Brushes.White, Foreground = Green, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Green, ToolTip = "Agree with the intent and tell Claude what to change; it comes back with a revised proposal." };
-        var reject = new Button { Content = "Reject…", Background = Brushes.White, Foreground = Red, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Hex("#E0A3A3") };
+        var approve = new Button { Content = Labelled(Glyph.Check, "Approve"), Background = Green, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderThickness = new Thickness(0) };
+        var approveBut = new Button { Content = Labelled(Glyph.Edit, "Approve, but…"), Background = Brushes.White, Foreground = Green, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Green, ToolTip = "Agree with the intent and tell Claude what to change; it comes back with a revised proposal." };
+        var reject = new Button { Content = Labelled(Glyph.Cancel, "Reject…"), Background = Brushes.White, Foreground = Red, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Hex("#E0A3A3") };
         approve.Click += async (_, _) =>
         {
             approve.IsEnabled = false;
@@ -398,8 +398,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         bool isInput = string.Equals(Path.GetFullPath(output), Path.GetFullPath(session.Pdf.Path), StringComparison.OrdinalIgnoreCase);
         string message = $"{Path.GetFileName(output)} already exists" + (isInput ? " — it is the file you imported" : "") +
             ". Saving replaces it and its earlier review decisions.";
-        var confirm = new Button { Content = "Replace", Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
-        var cancel = SmallButton("Cancel");
+        var confirm = new Button { Content = Labelled(Glyph.Save, "Replace"), Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+        var cancel = SmallButton("Cancel", Glyph.Back);
         confirm.Click += async (_, _) => { _confirmingSave = false; Refresh(); await SaveAsync(); };
         cancel.Click += (_, _) => { _confirmingSave = false; Refresh(); };
         return new Border
@@ -440,8 +440,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             : "Nothing has been applied to the model.")
             + (pending > 0 ? $" {pending} pending proposal{(pending == 1 ? " is" : "s are")} discarded." : "")
             + (_controller.IsRunning ? " Claude will be stopped." : "");
-        var confirm = new Button { Content = "End review", Background = Red, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
-        var keep = SmallButton("Keep reviewing");
+        var confirm = new Button { Content = Labelled(Glyph.Power, "End review"), Background = Red, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+        var keep = SmallButton("Keep reviewing", Glyph.Back);
         confirm.Click += async (_, _) => await EndReviewAsync();
         keep.Click += (_, _) => { _confirmingEnd = false; Refresh(); };
         return new Border
@@ -527,8 +527,29 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
 
     private static string Shorten(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
-    private static Button SmallButton(string text) =>
-        new() { Content = text, Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(8, 2, 8, 2) };
+    private static Button SmallButton(string text, string? glyph = null) =>
+        new() { Content = glyph is null ? text : Labelled(glyph, text), Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(8, 2, 8, 2) };
+
+    // Windows' built-in icon fonts: Segoe Fluent Icons (Windows 11), else Segoe MDL2 Assets (Windows 10).
+    private static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+
+    private static class Glyph
+    {
+        public const string Check = "", Cancel = "", Edit = "", Save = "", Stop = "",
+            Send = "", Back = "", Power = "";
+    }
+
+    /// <summary>Icon + text button content; the icon takes the button's foreground colour.</summary>
+    private static StackPanel Labelled(string glyph, string text) => new()
+    {
+        Orientation = Orientation.Horizontal,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        Children =
+        {
+            new TextBlock { Text = glyph, FontFamily = IconFont, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 6, 0) },
+            new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center },
+        },
+    };
 
     private static SolidColorBrush Hex(string hex)
     {
