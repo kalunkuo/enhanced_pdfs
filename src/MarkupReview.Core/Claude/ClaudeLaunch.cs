@@ -19,6 +19,8 @@ public static class ClaudeLaunch
            For each one: call get_element for its elements (and get_parameter_options or list_types when you need valid values).
            - Doors and windows that should open the other way ("open outwards", "swing the other way", "wrong hand") are a
              flip: change.flip with side "facing" (opening direction) or "hand" (hinge side), one proposal per door.
+           - A basic wall that should be thicker or thinner ("6 inch thicker", "make it 8in"): if list_types has a type
+             with that width, use change_type; otherwise change.new_wall_type with the new total width.
            - If the markup's text states or clearly implies a parameter value or a type for one of its elements, call
              propose_change with that exact value and a one-line reason that quotes the markup's words.
              A markup over several elements may need several proposals.
@@ -107,7 +109,8 @@ public static class ClaudeLaunch
             Use get_element, get_parameter_options and list_types as needed, then call propose_change once with
             replaces = "{proposal.Id}" and a one-line reason that mentions the reviewer's instruction. It may target
             another element the markup (or a related markup, via related_markup_ids) is tied to.
-            If the instruction cannot be done with the available change kinds (set_parameter, change_type, flip), call
+            If the instruction cannot be done with the available change kinds (set_parameter, change_type, flip,
+            new_wall_type), call
             add_review_note for markup {markup.Id} explaining why, and stop. Keep your own text short.
             """;
     }

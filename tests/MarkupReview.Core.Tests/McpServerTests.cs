@@ -30,11 +30,14 @@ public sealed class McpServerTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private async Task<List<JsonNode>> Exchange(params object[] requests)
+    private Task<List<JsonNode>> Exchange(params object[] requests) => ExchangeAs(null, requests);
+
+    /// <param name="revising">The proposal a follow-up ("Approve, but…") run may replace; null = the main run.</param>
+    private async Task<List<JsonNode>> ExchangeAs(string? revising, params object[] requests)
     {
         string input = string.Concat(requests.Select(r => JsonSerializer.Serialize(r) + "\n"));
         var output = new MemoryStream();
-        await McpServer.RunAsync(new MemoryStream(Encoding.UTF8.GetBytes(input)), output, new ReviewTools(_session, _model), CancellationToken.None);
+        await McpServer.RunAsync(new MemoryStream(Encoding.UTF8.GetBytes(input)), output, new ReviewTools(_session, _model, revising), CancellationToken.None);
         return [.. Encoding.UTF8.GetString(output.ToArray()).Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => JsonNode.Parse(l)!)];
     }
 
@@ -184,7 +187,7 @@ public sealed class McpServerTests : IDisposable
     public async Task Propose_with_replaces_marks_the_old_proposal_revised()
     {
         var old = StageWallProposal();
-        var r = Assert.Single(await Exchange(Call(15, "propose_change", new
+        var r = Assert.Single(await ExchangeAs(old.Id, Call(15, "propose_change", new
         {
             markup_id = "m1", replaces = old.Id, handle = FixturePdf.WallKey, reason = "Reviewer: make it 3 HR instead.",
             change = new { set_parameter = new { name = "Fire Rating", scope = "type", value = "3 HR" } },
@@ -202,7 +205,7 @@ public sealed class McpServerTests : IDisposable
         old.Status = ProposalStatus.Approved;
         foreach (var id in new[] { old.Id, "proposal-99" })
         {
-            var r = Assert.Single(await Exchange(Call(16, "propose_change", new
+            var r = Assert.Single(await ExchangeAs(id, Call(16, "propose_change", new
             {
                 markup_id = "m1", replaces = id, handle = FixturePdf.WallKey, reason = "x",
                 change = new { set_parameter = new { name = "Fire Rating", scope = "type", value = "3 HR" } },
@@ -210,6 +213,65 @@ public sealed class McpServerTests : IDisposable
             Assert.True((bool?)r["result"]!["isError"]);
         }
         Assert.Single(_session.Proposals);
+    }
+
+    [Fact]
+    public async Task Propose_new_wall_type_stages_it_with_the_generated_type_name()
+    {
+        var r = Assert.Single(await Exchange(Call(17, "propose_change", new
+        {
+            markup_id = "m1", handle = FixturePdf.WallKey, reason = "Markup: wall should be thicker.",
+            change = new { new_wall_type = new { width = "1.75 ft" } },
+        })));
+        Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
+        var p = Assert.Single(_session.Proposals);
+        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")"), p.Change);
+        Assert.Equal("1' - 9\"", p.NewValue);
+    }
+
+    private static object ReplaceWall(int id, string replaces, string markupId = "m1", string value = "3 HR") => Call(id, "propose_change", new
+    {
+        markup_id = markupId, replaces, handle = FixturePdf.WallKey, reason = "revised",
+        change = new { set_parameter = new { name = "Fire Rating", scope = "type", value } },
+    });
+
+    [Fact]
+    public async Task Replaces_during_the_main_run_is_rejected()
+    {
+        // Markup text could steer the main run into hiding pending proposals by "replacing" them.
+        var old = StageWallProposal();
+        var r = Assert.Single(await Exchange(ReplaceWall(18, old.Id)));
+        Assert.True((bool?)r["result"]!["isError"]);
+        Assert.Equal(ProposalStatus.Pending, old.Status);
+    }
+
+    [Fact]
+    public async Task Replacing_a_proposal_other_than_the_one_being_revised_is_rejected()
+    {
+        var target = StageWallProposal();
+        var other = StageWallProposal();
+        var r = Assert.Single(await ExchangeAs(target.Id, ReplaceWall(19, other.Id)));
+        Assert.True((bool?)r["result"]!["isError"]);
+        Assert.Equal(ProposalStatus.Pending, other.Status);
+    }
+
+    [Fact]
+    public async Task Only_one_replacement_per_follow_up_run()
+    {
+        var old = StageWallProposal();
+        var responses = await ExchangeAs(old.Id, ReplaceWall(20, old.Id), ReplaceWall(21, old.Id, value: "4 HR"));
+        Assert.NotEqual(true, (bool?)responses[0]["result"]!["isError"]);
+        Assert.True((bool?)responses[1]["result"]!["isError"]);
+        Assert.Equal(2, _session.Proposals.Count);
+    }
+
+    [Fact]
+    public async Task Replacement_from_another_markup_is_rejected()
+    {
+        var old = StageWallProposal();
+        var r = Assert.Single(await ExchangeAs(old.Id, ReplaceWall(22, old.Id, markupId: "m3")));
+        Assert.True((bool?)r["result"]!["isError"]);
+        Assert.Equal(ProposalStatus.Pending, old.Status);
     }
 
     [Fact]

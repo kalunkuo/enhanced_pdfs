@@ -182,6 +182,50 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task New_wall_type_reports_the_width_change_and_names_the_type()
+    {
+        var p = P(FixturePdf.WallKey, new NewWallType("1.75 ft", null));
+        var r = await ProposalValidator.ValidateAsync(p, _model, _tables);
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(("1' - 2\"", "1' - 9\""), (r.OldValue, r.NormalisedValue));
+        Assert.Equal([new SizeChange("Width", "1' - 2\"", "1' - 9\"")], r.SizeChanges);
+        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")"), r.NormalisedChange);
+        Assert.Equal(1, r.AffectsCount); // a new type for this wall only: other walls of the old type are untouched
+    }
+
+    [Fact]
+    public async Task New_wall_type_with_an_existing_name_points_to_change_type()
+    {
+        var r = await Validate(FixturePdf.WallKey, new NewWallType("1.75 ft", "Exterior - Brick"));
+        Assert.False(r.Ok);
+        Assert.Contains("change_type", r.Error);
+    }
+
+    [Fact]
+    public async Task New_wall_type_on_a_door_is_rejected()
+    {
+        var r = await Validate(FixturePdf.DoorKey, new NewWallType("1.75 ft", null));
+        Assert.False(r.Ok);
+        Assert.Contains("basic wall", r.Error);
+    }
+
+    [Fact]
+    public async Task New_wall_type_at_the_same_width_is_rejected()
+    {
+        var r = await Validate(FixturePdf.WallKey, new NewWallType("1.1666666667 ft", null));
+        Assert.False(r.Ok);
+        Assert.Contains("already", r.Error);
+    }
+
+    [Fact]
+    public async Task New_wall_type_with_an_unreadable_width_is_rejected()
+    {
+        var r = await Validate(FixturePdf.WallKey, new NewWallType("thicker", null));
+        Assert.False(r.Ok);
+        Assert.Contains("could not read", r.Error);
+    }
+
+    [Fact]
     public async Task Unknown_type_name_rejected()
     {
         var r = await Validate(FixturePdf.DoorKey, new ChangeType("40\" x 84\""));

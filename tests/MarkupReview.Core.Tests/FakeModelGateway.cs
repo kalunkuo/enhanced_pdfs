@@ -22,6 +22,7 @@ public sealed class FakeModelGateway : IModelGateway
             new ModelParameter("Unconnected Height", ParamScope.Instance, "Double", "10' - 0\"", false),
         ], 14);
         gateway.Options[("wall-uid", "Unconnected Height")] = new ParameterOptions("Double", null, "Feet and fractional inches");
+        gateway.Types["wall-uid"] = [new ModelType("Basic Wall", "Exterior - Brick") { Sizes = new Dictionary<string, string> { ["Width"] = "1' - 2\"" } }];
         gateway.Options[("wall-uid", "Structural Usage")] = new ParameterOptions("Integer", ["Bearing", "Non-bearing", "Shear"], null);
         gateway.Elements["door-uid"] = new ModelElement("door-uid", "v-door-1", "Doors", "Single-Flush", "32\" x 84\"", false,
             [new ModelParameter("Fire Rating", ParamScope.Type, "String", "", false)], 6) { CanFlipFacing = true, CanFlipHand = true };
@@ -54,6 +55,8 @@ public sealed class FakeModelGateway : IModelGateway
         int whole = (int)feet, inches = (int)Math.Round((feet - whole) * 12);
         return Task.FromResult(new ParsedValue(true, $"{whole}' - {inches}\"", null));
     }
+
+    public Task<ParsedValue> ParseLengthAsync(string raw) => ParseValueAsync("", "", ParamScope.Instance, raw);
 
     public Task<ParameterOptions> GetOptionsAsync(string uniqueId, string parameter, ParamScope scope)
     {

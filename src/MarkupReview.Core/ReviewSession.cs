@@ -11,6 +11,12 @@ public enum FlipSide { Facing, Hand }
 /// <summary>Flip a door or window: facing (which side it opens to) or hand (hinge side).</summary>
 public sealed record FlipInstance(FlipSide Side) : Change;
 
+/// <summary>
+/// Duplicate a basic wall's type at a new total width (its thickest core layer absorbs the difference) and move this
+/// wall to it. <paramref name="TypeName"/> null = "&lt;current type&gt; (&lt;width&gt;)".
+/// </summary>
+public sealed record NewWallType(string Width, string? TypeName) : Change;
+
 public enum ProposalStatus { Pending, Approved, Rejected, Blocked, Revised }
 
 public sealed record Proposal
@@ -18,7 +24,7 @@ public sealed record Proposal
     public required string Id { get; init; }
     public required string MarkupId { get; init; }
     public required string ElementKey { get; init; }
-    public required Change Change { get; init; }
+    public required Change Change { get; set; }
     public required string Reason { get; init; }
     /// <summary>Other markups this proposal reads together with <see cref="MarkupId"/> (an arrow plus its text box).</summary>
     public IReadOnlyList<string> RelatedMarkupIds { get; init; } = [];

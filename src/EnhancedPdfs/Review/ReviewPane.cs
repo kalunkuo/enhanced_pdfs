@@ -215,9 +215,15 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
                 body.Children.Add(Quote(markup!.Text!));
             foreach (var related in p.RelatedMarkupIds.Select(session.FindMarkup).OfType<Markup>())
                 body.Children.Add(new StackPanel { Margin = new Thickness(0, 4, 0, 0), Children = { new TextBlock { Text = $"with {related.Kind}" + (related.Author is null ? "" : $" · {related.Author}"), Foreground = Muted, FontSize = 10 }, Quote(string.IsNullOrWhiteSpace(related.Text) ? "(no text)" : related.Text!) } });
-            body.Children.Add(Diff(what, p.OldValue, p.NewValue));
-            foreach (var size in p.SizeChanges)
-                body.Children.Add(Diff(size.Name, size.OldValue, size.NewValue));
+            // A new wall type is all about the width: show it once, labelled "Width", rather than twice.
+            if (p.Change is NewWallType)
+                body.Children.Add(Diff("Width", p.OldValue, p.NewValue));
+            else
+            {
+                body.Children.Add(Diff(what, p.OldValue, p.NewValue));
+                foreach (var size in p.SizeChanges)
+                    body.Children.Add(Diff(size.Name, size.OldValue, size.NewValue));
+            }
             if (p.AffectsCount > 1)
                 body.Children.Add(new TextBlock { Text = $"Type parameter: affects {p.AffectsCount} {element?.Category?.ToLowerInvariant() ?? "elements"}.", Foreground = Accent, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
             body.Children.Add(new Border { Background = QuoteBg, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 4, 6, 4), Margin = new Thickness(0, 6, 0, 0),

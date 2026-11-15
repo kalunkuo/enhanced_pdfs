@@ -157,7 +157,7 @@ internal sealed class ReviewController
         string bridge = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "MarkupReview.Bridge.exe");
         _cancel = new CancellationTokenSource();
         var cancel = _cancel.Token;
-        var tools = new ReviewTools(Session!, Gateway!);
+        var tools = new ReviewTools(Session!, Gateway!, Revising?.Id);
         _ = PipeHost.RunAsync(pipe, token, stream => McpServer.RunAsync(stream, stream, tools, cancel), cancel)
             .ContinueWith(t => Log($"pipe host ended: {t.Exception?.GetBaseException().Message ?? "ok"}"), TaskScheduler.Default);
 

@@ -63,6 +63,14 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
         return new ParsedValue(true, UnitFormatUtils.Format(units, spec, value, false), null);
     });
 
+    public Task<ParsedValue> ParseLengthAsync(string raw) => dispatcher.InvokeAsync(_ =>
+    {
+        var units = Document.GetUnits();
+        return UnitFormatUtils.TryParse(units, SpecTypeId.Length, raw, out double feet, out string message)
+            ? new ParsedValue(true, UnitFormatUtils.Format(units, SpecTypeId.Length, feet, false), null)
+            : new ParsedValue(false, null, $"Revit could not read it as a length{(string.IsNullOrEmpty(message) ? "" : $" ({message})")}.");
+    });
+
     internal static Parameter? FindParameter(Document document, Element? element, string name, ParamScope scope)
     {
         if (element is null) return null;

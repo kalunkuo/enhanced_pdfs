@@ -41,6 +41,9 @@ public interface IModelGateway
     /// so proposals are checked and shown as Revit will store them.
     /// </summary>
     Task<ParsedValue> ParseValueAsync(string uniqueId, string parameter, ParamScope scope, string raw);
+
+    /// <summary>Parses a length ("20 5/8\"", "1.75 ft", "525 mm") in the model's units; returns Revit's display form.</summary>
+    Task<ParsedValue> ParseLengthAsync(string raw);
 }
 
 public sealed record ParsedValue(bool Ok, string? Display, string? Error);

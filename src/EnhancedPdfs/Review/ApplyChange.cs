@@ -22,6 +22,7 @@ internal static class ApplyChange
                 SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
                 MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
                 FlipInstance flip => Flip(element, flip.Side),
+                NewWallType wall => NewWallTypeAtWidth(document, element, wall),
                 _ => "Unsupported change.",
             };
             if (error is not null) { transaction.RollBack(); return error; }
@@ -41,8 +42,43 @@ internal static class ApplyChange
         SetParameter s => s.Name,
         FlipInstance { Side: FlipSide.Facing } => "Flip facing",
         FlipInstance { Side: FlipSide.Hand } => "Flip hand",
+        NewWallType n => $"New type \"{n.TypeName}\"",
         _ => "Type",
     };
+
+    private const double MinLayerFeet = 1.0 / 256; // ~1.2 mm: anything thinner is not a real layer
+
+    /// <summary>
+    /// Duplicates the wall's (basic) type, widens or narrows its thickest core layer by the width difference, and moves
+    /// the wall to the new type. Runs inside Apply's transaction, so a rollback removes the duplicate too.
+    /// </summary>
+    private static string? NewWallTypeAtWidth(Document document, Element element, NewWallType change)
+    {
+        if (element is not Wall wall || wall.WallType.Kind != WallKind.Basic) return "Only basic walls can get a new type at a different thickness.";
+        if (string.IsNullOrWhiteSpace(change.TypeName)) return "The new type has no name.";
+        if (!UnitFormatUtils.TryParse(document.GetUnits(), SpecTypeId.Length, change.Width, out double target))
+            return $"Revit could not read '{change.Width}' as a length.";
+        bool nameTaken = new FilteredElementCollector(document).OfClass(typeof(WallType)).Cast<WallType>()
+            .Any(t => string.Equals(t.Name, change.TypeName, StringComparison.OrdinalIgnoreCase));
+        if (nameTaken) return $"A wall type named '{change.TypeName}' already exists.";
+
+        var newType = (WallType)wall.WallType.Duplicate(change.TypeName);
+        var structure = newType.GetCompoundStructure();
+        if (structure is null) return "This wall type has no layer structure to change.";
+        double delta = target - newType.Width;
+
+        // The thickest core layer absorbs the change (the structure); with no core, the thickest layer overall.
+        int first = structure.GetFirstCoreLayerIndex(), last = structure.GetLastCoreLayerIndex();
+        var candidates = first >= 0 && last >= first ? Enumerable.Range(first, last - first + 1) : Enumerable.Range(0, structure.LayerCount);
+        int layer = candidates.OrderByDescending(structure.GetLayerWidth).First();
+        double width = structure.GetLayerWidth(layer) + delta;
+        if (width < MinLayerFeet) return $"Making the wall {change.Width} would leave its core layer with no thickness.";
+
+        structure.SetLayerWidth(layer, width);
+        newType.SetCompoundStructure(structure);
+        wall.ChangeTypeId(newType.Id);
+        return null;
+    }
 
     private static string? Flip(Element element, FlipSide side)
     {

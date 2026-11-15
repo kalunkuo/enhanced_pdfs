@@ -4,8 +4,11 @@ using System.Text.Json.Nodes;
 namespace MarkupReview.Core.Mcp;
 
 /// <summary>The review-only tool surface. Nothing here writes to the model; proposals only enter the session.</summary>
-public sealed class ReviewTools(ReviewSession session, IModelGateway model)
+/// <param name="replaceableProposalId">Set only for an "Approve, but…" follow-up run: the one proposal it may replace (once).</param>
+public sealed class ReviewTools(ReviewSession session, IModelGateway model, string? replaceableProposalId = null)
 {
+    private bool _replacedOnce;
+
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = false };
 
     public static JsonArray Definitions() =>
@@ -32,6 +35,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
                     {
                         ["set_parameter"] = Obj(Props(("name", Str("Parameter name.")), ("scope", Enum("instance", "type")), ("value", Str("New value as Revit displays it."))), "name", "scope", "value"),
                         ["flip"] = Obj(Props(("side", Enum("facing", "hand"))), "side"),
+                        ["new_wall_type"] = Obj(Props(("width", Str("New total wall thickness, e.g. 20 5/8\" or 525 mm. Only when no existing type has it (check list_types first).")), ("type_name", Str("Optional name for the new type; default \"<current type> (<width>)\"."))), "width"),
                         ["change_type"] = Obj(Props(("type_name", Str("Family-qualified type name \"Family: Name\" from list_types (names repeat across families)."))), "type_name"),
                     },
                 })),
@@ -148,7 +152,13 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         Proposal? replaced = null;
         if (args["replaces"] is JsonValue rv && rv.TryGetValue(out string? replacesId) && !string.IsNullOrWhiteSpace(replacesId))
         {
+            // Only the follow-up run may replace, only its own proposal, only once: markup text cannot steer a run into
+            // hiding other pending proposals by "replacing" them.
+            if (replaceableProposalId is null) throw new ToolError("`replaces` is only for \"Approve, but…\" follow-ups; this run cannot replace proposals.");
+            if (replacesId != replaceableProposalId) throw new ToolError($"This run may only replace {replaceableProposalId}.");
+            if (_replacedOnce) throw new ToolError($"{replaceableProposalId} has already been replaced in this run.");
             replaced = session.Proposals.FirstOrDefault(p => p.Id == replacesId) ?? throw new ToolError($"No proposal '{replacesId}' to replace.");
+            if (markupId != replaced.MarkupId) throw new ToolError($"A revision must come from the same markup ({replaced.MarkupId}).");
             if (replaced.Status is not (ProposalStatus.Pending or ProposalStatus.Blocked))
                 throw new ToolError($"Proposal '{replacesId}' is already {replaced.Status.ToString().ToLowerInvariant()}; it cannot be replaced.");
         }
@@ -163,13 +173,14 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
             JsonObject c when c["set_parameter"] is JsonObject s =>
                 new SetParameter(Arg(s, "name"), Scope(Arg(s, "scope")), Arg(s, "value")),
             JsonObject c when c["change_type"] is JsonObject t => new ChangeType(Arg(t, "type_name")),
+            JsonObject c when c["new_wall_type"] is JsonObject nw => new NewWallType(Arg(nw, "width"), nw["type_name"] is JsonValue tn && tn.TryGetValue(out string? tns) ? tns : null),
             JsonObject c when c["flip"] is JsonObject fl => new FlipInstance(Arg(fl, "side").Trim().ToLowerInvariant() switch
             {
                 "facing" => FlipSide.Facing,
                 "hand" => FlipSide.Hand,
                 var s => throw new ToolError($"flip.side must be 'facing' or 'hand', not '{s}'."),
             }),
-            _ => throw new ToolError("`change` must contain set_parameter, change_type or flip."),
+            _ => throw new ToolError("`change` must contain set_parameter, change_type, flip or new_wall_type."),
         };
 
         var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, RelatedMarkupIds = related, ElementKey = handle, Change = change, Reason = reason, Replaces = replaced?.Id };
@@ -179,10 +190,11 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         proposal.OldValue = result.OldValue;
         proposal.NewValue = result.NormalisedValue;
         proposal.AffectsCount = result.AffectsCount;
+        if (result.NormalisedChange is not null) proposal.Change = result.NormalisedChange;
         proposal.SizeChanges = result.SizeChanges;
         if (result.BlockReason is not null) { proposal.Status = ProposalStatus.Blocked; proposal.BlockReason = result.BlockReason; }
         session.Add(proposal);
-        if (replaced is not null) { replaced.Status = ProposalStatus.Revised; replaced.RevisedBy = proposal.Id; replaced.DecidedUtc = DateTimeOffset.UtcNow; }
+        if (replaced is not null) { replaced.Status = ProposalStatus.Revised; replaced.RevisedBy = proposal.Id; replaced.DecidedUtc = DateTimeOffset.UtcNow; _replacedOnce = true; }
 
         string text = result.BlockReason is not null
             ? $"Staged {proposal.Id} as blocked: {result.BlockReason}. The reviewer will see it but cannot approve it."

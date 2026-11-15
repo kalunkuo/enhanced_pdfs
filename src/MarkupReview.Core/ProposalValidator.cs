@@ -10,6 +10,9 @@ public sealed record ValidationResult(bool Ok, string? Error, string? OldValue, 
 
     /// <summary>For a type swap: the dimensions that differ between the current and the proposed type.</summary>
     public IReadOnlyList<SizeChange> SizeChanges { get; init; } = [];
+
+    /// <summary>The change with defaults filled in (e.g. the generated type name), to store on the proposal.</summary>
+    public Change? NormalisedChange { get; init; }
 }
 
 /// <summary>Checks a proposed change against the open model. Used when Claude proposes and again at Approve.</summary>
@@ -37,6 +40,7 @@ public static class ProposalValidator
             SetParameter set => await ValidateParameter(set, exported, current, model, tables, changedSinceExport),
             ChangeType swap => await ValidateType(swap, exported, current, model, changedSinceExport),
             FlipInstance flip => ValidateFlip(flip, current),
+            NewWallType wall => await ValidateNewWallType(wall, current, model),
             _ => ValidationResult.Reject("Unsupported change kind."),
         };
     }
@@ -105,6 +109,29 @@ public static class ProposalValidator
             : null;
         var from = types.FirstOrDefault(t => Same(t.FullName, currentName)) ?? types.FirstOrDefault(t => Same(t.Name, current.Type));
         return new(true, null, currentName, target.FullName, 1, block) { SizeChanges = SizeDiff(from, target) };
+    }
+
+    private static async Task<ValidationResult> ValidateNewWallType(NewWallType change, ModelElement current, IModelGateway model)
+    {
+        if (!Same(current.Category, "Walls") || !Same(current.Family, "Basic Wall"))
+            return ValidationResult.Reject("A new wall type at a different thickness only works on a basic wall (not curtain or stacked walls, not other categories). Use add_review_note.");
+        var parsed = await model.ParseLengthAsync(change.Width);
+        if (!parsed.Ok) return ValidationResult.Reject($"'{change.Width}' is not a usable width: {parsed.Error}");
+
+        var types = await model.ListTypesAsync(current.UniqueId);
+        string currentName = $"{current.Family}: {current.Type}";
+        string? oldWidth = types.FirstOrDefault(t => Same(t.FullName, currentName))?.Sizes.GetValueOrDefault("Width");
+        if (Same(oldWidth, parsed.Display))
+            return ValidationResult.Reject($"The wall already is {parsed.Display} wide; no change needed.");
+
+        string name = string.IsNullOrWhiteSpace(change.TypeName) ? $"{current.Type} ({parsed.Display})" : change.TypeName.Trim();
+        if (types.Any(t => Same(t.Name, name)))
+            return ValidationResult.Reject($"A wall type named '{name}' already exists. To use it, propose change_type to '{current.Family}: {name}'; otherwise pick another type_name.");
+        return new(true, null, oldWidth, parsed.Display, 1)
+        {
+            SizeChanges = [new SizeChange("Width", oldWidth, parsed.Display)],
+            NormalisedChange = new NewWallType(parsed.Display!, name),
+        };
     }
 
     private static ValidationResult ValidateFlip(FlipInstance flip, ModelElement current)
