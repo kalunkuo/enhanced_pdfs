@@ -17,6 +17,10 @@ target_compile_definitions(SmartMarkup PRIVATE WIN_PLATFORM _WINDOWS WIN_ENV ACR
 target_link_options(SmartMarkup PRIVATE /EXPORT:PlugInMain)
 target_compile_options(SmartMarkup PRIVATE /wd4267 /wd4244 /wd4996 /wd4828)  # 4828: non-UTF-8 byte in an SDK header
 target_link_libraries(SmartMarkup PRIVATE smartmarkup_core comctl32)
+# Windows does not search plug_ins for a plug-in's imports: delay-load duckdb.dll and let PIHandshake
+# load it from the plug-in's own folder first (duckdb_load.cpp).
+target_link_options(SmartMarkup PRIVATE /DELAYLOAD:duckdb.dll)
+target_link_libraries(SmartMarkup PRIVATE delayimp)
 
 # duckdb.dll must sit next to SmartMarkup.api.
 add_custom_command(TARGET SmartMarkup POST_BUILD
