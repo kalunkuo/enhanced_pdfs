@@ -6,6 +6,9 @@ public sealed record ModelElement(
     string UniqueId, string VersionGuid, string Category, string? Family, string? Type, bool IsLinked,
     IReadOnlyList<ModelParameter> Parameters, int TypeInstanceCount)
 {
+    /// <summary>The live element id, to check the PDF's data describes the same element its UniqueId resolves to.</summary>
+    public long? ElementId { get; init; }
+
     /// <summary>Family instances Revit lets flip (doors, windows…), and their current state.</summary>
     public bool CanFlipFacing { get; init; }
     public bool CanFlipHand { get; init; }

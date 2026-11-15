@@ -251,6 +251,25 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Element_whose_live_category_differs_from_the_pdf_is_blocked()
+    {
+        // A crafted PDF could label one element ("Walls 676281") while its UniqueId points at another.
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { Category = "Doors" };
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-9"));
+        Assert.True(r.Ok);
+        Assert.Contains("does not match", r.BlockReason);
+    }
+
+    [Fact]
+    public async Task Element_whose_live_id_differs_from_the_pdf_is_blocked()
+    {
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { ElementId = 999 };
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-9"));
+        Assert.True(r.Ok);
+        Assert.Contains("does not match", r.BlockReason);
+    }
+
+    [Fact]
     public async Task Changed_element_with_conflicting_value_is_blocked()
     {
         _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { VersionGuid = "v-wall-2" };
