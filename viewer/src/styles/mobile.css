@@ -45,3 +45,25 @@
     .agent-composer { margin: var(--primitive-space-2) var(--primitive-space-2) 0; }
     .agent-composer textarea { min-height: 44px; padding: var(--primitive-space-2); }
 }
+
+/*
+ * Every phone layout (the stacked narrow layout from app.css and the landscape one above).
+ */
+@media (max-width: 860px), (orientation: landscape) and (max-height: 500px) {
+    /* The page itself never scrolls or rubber-bands: only the drawing and the inspector panel scroll, each
+       inside its own box. A one-finger drag on the drawing pans the stage (touch-action in app.css), and
+       reaching the drawing's edge no longer hands the scroll on to the page. dvh tracks the browser's
+       collapsing address bar, which plain 100% height does not. */
+    html, body { overflow: hidden; overscroll-behavior: none; }
+    html, body, #root, .app { height: 100dvh; }
+    .stage, .panel { overscroll-behavior: contain; }
+
+    /* Agent: just the prompt box. Conversation replies, errors and the colour legend still appear once
+       there is something to show; the title, connection line, welcome, starters and hints do not.
+       A voice error (the footer's status role) stays visible. */
+    .agent-heading, .agent-connection, .agent-welcome, .agent-composer-actions > span,
+    .agent-footer:not([role='status']) { display: none; }
+    .agent-scroll { min-height: 0; }
+    .agent-composer-actions { justify-content: flex-end; }
+    .drawing-agent > .agent-composer { margin: var(--primitive-space-2); }
+}
