@@ -8,9 +8,9 @@ import { Avatar } from '../ui/Avatar';
 import { Byline } from '../ui/Byline';
 import { TrashIcon } from '../ui/icons';
 import { CommentThread } from './CommentThread';
+import { TieTag } from './TieTag';
 
 const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature', cloud: 'Revision cloud' } as const;
-const UNTIED = '';
 
 interface Props {
     annotations: Annotation[];
@@ -68,33 +68,6 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
     }, [selectedId]);
 
     if (annotations.length === 0) return <div className="panel-empty">No annotations yet. Pick a tool and draw on the PDF.</div>;
-    const options = [...elements.values()];
-
-    const tieSelect = (a: Annotation) => (
-        <label className="tie-row">
-            <span className="muted">Object ID</span>
-            <select className="select" value={a.elementKey ?? UNTIED} onChange={(ev) => onTie(a.id, ev.target.value || null)}>
-                <option value={UNTIED}>Untied</option>
-                {options.map((o) => (
-                    <option key={o.key} value={o.key}>
-                        {elementLabel(o)}{o.placeholder ? ' (placeholder)' : ''}
-                    </option>
-                ))}
-            </select>
-        </label>
-    );
-
-    const tieChip = (a: Annotation) => {
-        const e = a.elementKey ? elements.get(a.elementKey) : undefined;
-        return a.elementKey ? (
-            <button className="chip tied linklike" title="Show this object's properties" onClick={() => onOpenElement(a.elementKey!)}>
-                ↳ {e ? elementLabel(e) : a.elementKey}
-            </button>
-        ) : (
-            <span className="chip untied">untied</span>
-        );
-    };
-
     return (
         <ul className="list notes-list">
             {annotations.map((a) => {
@@ -110,8 +83,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined}>
                         {selected && a.kind === 'comment' ? (
                             <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onDelete={onDelete}>
-                                <div className="tchips">{tieChip(a)}</div>
-                                {tieSelect(a)}
+                                <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
                             </CommentThread>
                         ) : selected ? (
                             <section className="thread adetails" aria-label={`${NAMES[a.kind]} details`}>
@@ -124,10 +96,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                                 {a.kind === 'cloud' ? (
                                     <CloudContents cloud={a} elements={elements} onOpen={onOpenElement} />
                                 ) : (
-                                    <>
-                                        <div className="tchips">{tieChip(a)}</div>
-                                        {tieSelect(a)}
-                                    </>
+                                    <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
                                 )}
                             </section>
                         ) : (

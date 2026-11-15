@@ -113,7 +113,6 @@
 .tdel { width: 28px; height: 28px; flex: none; color: var(--muted-foreground); }
 .ttext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timg { display: block; max-width: 100%; max-height: 240px; border-radius: calc(var(--radius) - 2px); }
-.thread .tie-row { padding: 0; border: 0; background: none; }
 .treplies { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--border); display: grid; gap: 14px; }
 .treplies .avatar { width: 26px !important; height: 26px !important; font-size: 11px !important; }
 .treply { margin-top: auto; display: grid; gap: 8px; }
@@ -131,7 +130,6 @@
 .adetails-head { display: flex; align-items: center; gap: 8px; }
 .akind { margin: 0; }
 .adetails .ttext { margin: 0; }
-.adetails .tchips { margin: 0; }
 
 /* Objects a revision cloud covers, in its Notes card */
 .cloud-contents { display: grid; gap: 6px; }
@@ -153,3 +151,22 @@
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon-btn svg { width: 18px; height: 18px; }
 .profile-btn { border-radius: 50%; }
+
+/* The tie tag and its menu: the tag is the control, so there is no separate Object ID dropdown. */
+.tie-tag { position: relative; display: inline-block; max-width: 100%; }
+.tie-button { display: inline-flex; align-items: center; gap: 4px; margin: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.tie-button svg { width: 12px; height: 12px; }
+.tie-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: min(320px, calc(100vw - 48px)); padding: 8px; display: grid; gap: 6px;
+    background: var(--popover); color: var(--foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); }
+.tie-search { width: 100%; height: 34px; padding: 0 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input); background: var(--background); color: inherit; font: inherit; }
+.tie-actions:empty { display: none; }
+.tie-action { width: 100%; padding: 6px 8px; border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; color: var(--color-primary); font: inherit; text-align: left; cursor: pointer; }
+.tie-action:hover { background: var(--accent); }
+.tie-options { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: grid; gap: 1px; }
+.tie-option { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 6px 8px; border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tie-option:hover { background: var(--accent); }
+.tie-check { display: inline-grid; width: 14px; flex: none; align-self: center; }
+.tie-check svg { width: 13px; height: 13px; }
+.tie-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted-foreground); }
+.tie-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tie-meta { margin-left: auto; padding-left: 8px; font-size: 11px; white-space: nowrap; }
