@@ -36,6 +36,7 @@ public static class ProposalValidator
         {
             SetParameter set => await ValidateParameter(set, exported, current, model, tables, changedSinceExport),
             ChangeType swap => await ValidateType(swap, exported, current, model, changedSinceExport),
+            FlipInstance flip => ValidateFlip(flip, current),
             _ => ValidationResult.Reject("Unsupported change kind."),
         };
     }
@@ -104,6 +105,16 @@ public static class ProposalValidator
             : null;
         var from = types.FirstOrDefault(t => Same(t.FullName, currentName)) ?? types.FirstOrDefault(t => Same(t.Name, current.Type));
         return new(true, null, currentName, target.FullName, 1, block) { SizeChanges = SizeDiff(from, target) };
+    }
+
+    private static ValidationResult ValidateFlip(FlipInstance flip, ModelElement current)
+    {
+        bool can = flip.Side == FlipSide.Facing ? current.CanFlipFacing : current.CanFlipHand;
+        if (!can)
+            return ValidationResult.Reject($"This {current.Category.ToLowerInvariant()} cannot be flipped ({flip.Side.ToString().ToLowerInvariant()}) in Revit. Use add_review_note.");
+        bool flipped = flip.Side == FlipSide.Facing ? current.FacingFlipped : current.HandFlipped;
+        // Revit knows "flipped or not", not "inside/outside": the card says what changes, the reviewer judges the direction.
+        return new(true, null, flipped ? "flipped" : "not flipped", flipped ? "not flipped" : "flipped", 1);
     }
 
     private static List<SizeChange> SizeDiff(ModelType? from, ModelType to)

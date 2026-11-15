@@ -163,6 +163,18 @@ public sealed class McpServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Propose_flip_stages_a_flip_proposal()
+    {
+        var r = Assert.Single(await Exchange(Call(14, "propose_change", new
+        {
+            markup_id = "m3", handle = FixturePdf.DoorKey, reason = "Markup: doors should open outwards.",
+            change = new { flip = new { side = "facing" } },
+        })));
+        Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
+        Assert.Equal(new FlipInstance(FlipSide.Facing), Assert.Single(_session.Proposals).Change);
+    }
+
+    [Fact]
     public async Task Unknown_related_markup_is_rejected()
     {
         var r = Assert.Single(await Exchange(Call(13, "propose_change", new

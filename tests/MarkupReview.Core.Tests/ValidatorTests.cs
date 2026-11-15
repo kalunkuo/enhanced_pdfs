@@ -157,6 +157,31 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Flip_facing_on_a_flippable_door_is_valid()
+    {
+        var r = await Validate(FixturePdf.DoorKey, new FlipInstance(FlipSide.Facing));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(("not flipped", "flipped"), (r.OldValue, r.NormalisedValue));
+    }
+
+    [Fact]
+    public async Task Flipping_an_already_flipped_door_flips_it_back()
+    {
+        _model.Elements["door-uid"] = _model.Elements["door-uid"] with { HandFlipped = true };
+        var r = await Validate(FixturePdf.DoorKey, new FlipInstance(FlipSide.Hand));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(("flipped", "not flipped"), (r.OldValue, r.NormalisedValue));
+    }
+
+    [Fact]
+    public async Task Flip_on_an_element_revit_cannot_flip_is_rejected()
+    {
+        var r = await Validate(FixturePdf.WallKey, new FlipInstance(FlipSide.Facing));
+        Assert.False(r.Ok);
+        Assert.Contains("cannot be flipped", r.Error);
+    }
+
+    [Fact]
     public async Task Unknown_type_name_rejected()
     {
         var r = await Validate(FixturePdf.DoorKey, new ChangeType("40\" x 84\""));

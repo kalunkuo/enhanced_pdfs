@@ -63,6 +63,7 @@ public static class DecisionsWriter
             {
                 SetParameter s => ("set_parameter", s.Name, s.Scope.ToString()),
                 ChangeType => ("change_type", (string?)"Type", (string?)null),
+                FlipInstance f => ("flip", (string?)f.Side.ToString(), (string?)null),
                 _ => ("unknown", null, null),
             };
             yield return new DecisionRow

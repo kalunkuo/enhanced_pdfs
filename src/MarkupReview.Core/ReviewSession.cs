@@ -6,6 +6,11 @@ public abstract record Change;
 public sealed record SetParameter(string Name, ParamScope Scope, string Value) : Change;
 public sealed record ChangeType(string TypeName) : Change;
 
+public enum FlipSide { Facing, Hand }
+
+/// <summary>Flip a door or window: facing (which side it opens to) or hand (hinge side).</summary>
+public sealed record FlipInstance(FlipSide Side) : Change;
+
 public enum ProposalStatus { Pending, Approved, Rejected, Blocked }
 
 public sealed record Proposal

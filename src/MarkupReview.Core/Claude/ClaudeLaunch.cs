@@ -17,6 +17,8 @@ public static class ClaudeLaunch
         2. Work through the markups one at a time; the reviewer starts approving as soon as your first proposal arrives.
            Finish each markup (its proposals or its note) before you look at the next markup.
            For each one: call get_element for its elements (and get_parameter_options or list_types when you need valid values).
+           - Doors and windows that should open the other way ("open outwards", "swing the other way", "wrong hand") are a
+             flip: change.flip with side "facing" (opening direction) or "hand" (hinge side), one proposal per door.
            - If the markup's text states or clearly implies a parameter value or a type for one of its elements, call
              propose_change with that exact value and a one-line reason that quotes the markup's words.
              A markup over several elements may need several proposals.

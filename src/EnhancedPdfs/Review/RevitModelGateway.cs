@@ -17,7 +17,13 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
         var type = Document.GetElement(element.GetTypeId()) as ElementType;
         var parameters = Read(element, ParamScope.Instance).Concat(type is null ? [] : Read(type, ParamScope.Type)).ToList();
         return new ModelElement(element.UniqueId, element.VersionGuid.ToString(), element.Category?.Name ?? "",
-            type?.FamilyName, type?.Name, false, parameters, type is null ? 1 : InstanceCount(element, type));
+            type?.FamilyName, type?.Name, false, parameters, type is null ? 1 : InstanceCount(element, type))
+        {
+            CanFlipFacing = element is FamilyInstance { CanFlipFacing: true },
+            CanFlipHand = element is FamilyInstance { CanFlipHand: true },
+            FacingFlipped = element is FamilyInstance { FacingFlipped: true },
+            HandFlipped = element is FamilyInstance { HandFlipped: true },
+        };
     });
 
     public Task<IReadOnlyList<ModelType>> ListTypesAsync(string uniqueId) => dispatcher.InvokeAsync<IReadOnlyList<ModelType>>(_ =>

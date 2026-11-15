@@ -4,7 +4,14 @@ public sealed record ModelParameter(string Name, ParamScope Scope, string Storag
 
 public sealed record ModelElement(
     string UniqueId, string VersionGuid, string Category, string? Family, string? Type, bool IsLinked,
-    IReadOnlyList<ModelParameter> Parameters, int TypeInstanceCount);
+    IReadOnlyList<ModelParameter> Parameters, int TypeInstanceCount)
+{
+    /// <summary>Family instances Revit lets flip (doors, windows…), and their current state.</summary>
+    public bool CanFlipFacing { get; init; }
+    public bool CanFlipHand { get; init; }
+    public bool FacingFlipped { get; init; }
+    public bool HandFlipped { get; init; }
+}
 
 public sealed record ModelType(string? Family, string Name)
 {

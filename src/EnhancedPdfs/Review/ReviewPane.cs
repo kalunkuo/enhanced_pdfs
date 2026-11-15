@@ -190,7 +190,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         bool selected = _selected == p.Id;
         var markup = session.FindMarkup(p.MarkupId);
         session.Tables.ElementsByKey.TryGetValue(p.ElementKey, out var element);
-        string what = p.Change is SetParameter s ? s.Name : "Type";
+        string what = ApplyChange.Describe(p.Change);
         var body = new StackPanel();
         body.Children.Add(new StackPanel
         {

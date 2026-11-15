@@ -30,6 +30,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
                     ["properties"] = new JsonObject
                     {
                         ["set_parameter"] = Obj(Props(("name", Str("Parameter name.")), ("scope", Enum("instance", "type")), ("value", Str("New value as Revit displays it."))), "name", "scope", "value"),
+                        ["flip"] = Obj(Props(("side", Enum("facing", "hand"))), "side"),
                         ["change_type"] = Obj(Props(("type_name", Str("Family-qualified type name \"Family: Name\" from list_types (names repeat across families)."))), "type_name"),
                     },
                 })),
@@ -154,7 +155,13 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
             JsonObject c when c["set_parameter"] is JsonObject s =>
                 new SetParameter(Arg(s, "name"), Scope(Arg(s, "scope")), Arg(s, "value")),
             JsonObject c when c["change_type"] is JsonObject t => new ChangeType(Arg(t, "type_name")),
-            _ => throw new ToolError("`change` must contain set_parameter or change_type."),
+            JsonObject c when c["flip"] is JsonObject fl => new FlipInstance(Arg(fl, "side").Trim().ToLowerInvariant() switch
+            {
+                "facing" => FlipSide.Facing,
+                "hand" => FlipSide.Hand,
+                var s => throw new ToolError($"flip.side must be 'facing' or 'hand', not '{s}'."),
+            }),
+            _ => throw new ToolError("`change` must contain set_parameter, change_type or flip."),
         };
 
         var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, RelatedMarkupIds = related, ElementKey = handle, Change = change, Reason = reason };

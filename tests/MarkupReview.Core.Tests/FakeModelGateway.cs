@@ -24,7 +24,7 @@ public sealed class FakeModelGateway : IModelGateway
         gateway.Options[("wall-uid", "Unconnected Height")] = new ParameterOptions("Double", null, "Feet and fractional inches");
         gateway.Options[("wall-uid", "Structural Usage")] = new ParameterOptions("Integer", ["Bearing", "Non-bearing", "Shear"], null);
         gateway.Elements["door-uid"] = new ModelElement("door-uid", "v-door-1", "Doors", "Single-Flush", "32\" x 84\"", false,
-            [new ModelParameter("Fire Rating", ParamScope.Type, "String", "", false)], 6);
+            [new ModelParameter("Fire Rating", ParamScope.Type, "String", "", false)], 6) { CanFlipFacing = true, CanFlipHand = true };
         gateway.Types["door-uid"] =
         [
             new ModelType("Single-Flush", "32\" x 84\"") { Sizes = new Dictionary<string, string> { ["Width"] = "2' - 8\"", ["Height"] = "7' - 0\"" } },

@@ -21,6 +21,7 @@ internal static class ApplyChange
             {
                 SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
                 MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
+                FlipInstance flip => Flip(element, flip.Side),
                 _ => "Unsupported change.",
             };
             if (error is not null) { transaction.RollBack(); return error; }
@@ -34,9 +35,30 @@ internal static class ApplyChange
         }
     }
 
+    /// <summary>What a change does, for transaction names and card titles.</summary>
+    public static string Describe(Change change) => change switch
+    {
+        SetParameter s => s.Name,
+        FlipInstance { Side: FlipSide.Facing } => "Flip facing",
+        FlipInstance { Side: FlipSide.Hand } => "Flip hand",
+        _ => "Type",
+    };
+
+    private static string? Flip(Element element, FlipSide side)
+    {
+        if (element is not FamilyInstance instance) return "Only family instances (doors, windows…) can be flipped.";
+        if (side == FlipSide.Facing)
+        {
+            if (!instance.CanFlipFacing) return "Revit does not allow flipping this element's facing.";
+            return instance.flipFacing() ? null : "Revit did not flip the facing.";
+        }
+        if (!instance.CanFlipHand) return "Revit does not allow flipping this element's hand.";
+        return instance.flipHand() ? null : "Revit did not flip the hand.";
+    }
+
     public static string TransactionName(Element element, Proposal proposal)
     {
-        string what = proposal.Change is SetParameter s ? s.Name : "Type";
+        string what = Describe(proposal.Change);
         return $"Markup: {element.Category?.Name ?? "Element"} {element.Id.Value} {what}";
     }
 
