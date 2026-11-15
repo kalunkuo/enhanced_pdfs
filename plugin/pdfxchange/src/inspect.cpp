@@ -231,7 +231,6 @@ bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXV_Document>& doc, Co
 }
 
 bool gSwallowUp = false;  // the mouse-down was ours: also swallow its mouse-up (the Editor selects on up)
-ULONGLONG gLastHighlightTick = 0;  // when we last showed a highlight (to ignore our own selection churn)
 
 void Consume(IEvent* event, IUIX_Event* uixEvent) {
     event->put_Handled(VARIANT_TRUE);
@@ -273,7 +272,6 @@ void OnMouse(IEvent* event, IUnknown* from) {
     }
     auto rows = sm::InspectRows(*model, *hit);
     if (rows.empty()) return;
-    gLastHighlightTick = GetTickCount64();
     ShowHighlight(doc.Get(), pageIndex, map.at(*hit));
     ShowInspectWindow(GetActiveWindow(), *hit, rows);
     Consume(event, uixEvent);
@@ -319,12 +317,7 @@ void RegisterInspect(IPXV_Inst* inst) {
         // Fallback: a document starting to view means the frame exists.
         Subscribe(inst, "e.document.viewingStarted", [](IEvent*, IUnknown*) { EnsureCommand(); });
         Subscribe(inst, "e.pagesView.mouse", OnMouse);
-        // Selecting anything else in the Editor drops the highlight. Name from the Editor's own registry
-        // (self-test `eventnames`, Editor 10.8.4; see docs/pdfxchange-event-names-10.8.4.txt).
-        Subscribe(inst, "e.docSelection.changed", [](IEvent*, IUnknown*) {
-            if (GetTickCount64() - gLastHighlightTick < 400) return;  // our own click, not a new selection
-            ClearHighlight();
-        });
+        // Selection changes (clear / show linked elements) are handled in linked_highlight.cpp.
         EnsureCommand();  // usually too early (no frame yet); harmless
     } catch (...) {
         LogLine("inspect: registration threw");

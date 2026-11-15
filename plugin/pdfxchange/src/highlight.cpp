@@ -9,6 +9,9 @@
 namespace {
 
 IPXV_Document* gDoc = nullptr;  // document currently showing a highlight (owned reference)
+ULONGLONG gChangedTick = 0;     // last time we added/removed highlight annotations
+
+bool AddBox(IPXV_Document* doc, IPXC_Page* page, ULONG_T pageIndex, ULONG_T square, const sm::Box& box);
 
 // Restores the document's modified flag after we add/remove our temporary annotation.
 class KeepModified {
@@ -77,9 +80,17 @@ ComPtr<IColor> Rgb(float r, float g, float b) {
 }  // namespace
 
 void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
+    ShowHighlights(doc, pageIndex, std::vector<sm::Box>{box});
+}
+
+bool HighlightJustChanged() { return GetTickCount64() - gChangedTick < 400; }
+
+void ShowHighlights(IPXV_Document* doc, int pageIndex, const std::vector<sm::Box>& boxes) {
     if (!doc) return;
+    gChangedTick = GetTickCount64();
     try {
         ClearHighlight();
+        if (boxes.empty()) return;
         KeepModified keep(doc);
         ComPtr<IPXC_Document> core;
         ComPtr<IPXC_Pages> pages;
@@ -89,13 +100,28 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
             return;
         ULONG_T square = 0;
         if (FAILED(PxsInst()->StrToAtom(const_cast<LPWSTR>(L"Square"), &square))) return;
+        bool any = false;
+        for (const sm::Box& box : boxes) any |= AddBox(doc, page.Get(), static_cast<ULONG_T>(pageIndex), square, box);
+        if (any) {
+            doc->AddRef();
+            gDoc = doc;
+        }
+    } catch (...) {
+        LogLine("highlight: show threw");
+    }
+    gChangedTick = GetTickCount64();
+}
 
+namespace {
+
+bool AddBox(IPXV_Document* doc, IPXC_Page* page, ULONG_T pageIndex, ULONG_T square, const sm::Box& box) {
+    {
         const double pad = 2.0;  // a little breathing room around thin elements
         PXC_Rect rect{box.x0 - pad, box.y0 - pad, box.x1 + pad, box.y1 + pad};
         ULONG_T count = 0;
         page->GetAnnotsCount(&count);
         ComPtr<IPXC_Annotation> annot;
-        if (FAILED(page->InsertNewAnnot(square, &rect, count, annot.Put())) || !annot) return;
+        if (FAILED(page->InsertNewAnnot(square, &rect, count, annot.Put())) || !annot) return false;
 
         BSTR name = SysAllocString(kHighlightName);
         annot->put_Name(name);
@@ -126,17 +152,16 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
         // Not selectable/movable by the user: ReadOnly (64) | Locked (128).
         annot->put_Flags(64 | 128);
         doc->FireAnnotInsertedEvent(annot.Get());  // keeps the Editor's annotation lists in sync
-        Repaint(doc, static_cast<ULONG_T>(pageIndex), rect);
-
-        doc->AddRef();
-        gDoc = doc;
-    } catch (...) {
-        LogLine("highlight: show threw");
+        Repaint(doc, pageIndex, rect);
+        return true;
     }
 }
 
+}  // namespace
+
 void ClearHighlight() {
     if (!gDoc) return;
+    gChangedTick = GetTickCount64();
     IPXV_Document* doc = gDoc;
     gDoc = nullptr;
     try {

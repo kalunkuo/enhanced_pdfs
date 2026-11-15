@@ -1,11 +1,15 @@
 // Self-test steps for the lifecycle (X2): lifecycle-open, addmarkup, fault-duckdb.
 // Steps that change the document clear its modified flag at the end, so the script's gentle close is not
 // blocked by a "Save changes?" prompt (self-test only; the source PDF is never saved).
+#include <algorithm>
 #include <cstdio>
+#include <cwchar>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "com_ptr.h"
+#include "doc_state.h"
 #include "element_map.h"
 #include "highlight.h"
 #include "lifecycle.h"
@@ -178,12 +182,61 @@ std::string StepHighlightSave(IPXV_Document* doc, const std::string& outDir) {
     return std::string("{\"saved\": ") + (saved ? "true" : "false") + ", \"file\": " + JsonString(path) + "}";
 }
 
+// Linked-element highlight data path: a new cloud around wall 676281 is linked in memory right away
+// (annots.inserted -> recompute), LinkedElementIds() returns it, and ShowHighlights draws one box per id.
+std::string StepLinked(IPXV_Document* doc, const std::string&) {
+    sm::Box box = BoxOf(doc, 676281);
+    AddAnnot(doc, L"Square", box.x0 - 40, box.y0 - 40, box.x1 + 40, box.y1 + 40, L"Linked highlight test");
+    ComPtr<IPXC_Document> core = Core(doc);
+    ComPtr<IPXC_Pages> pages;
+    ComPtr<IPXC_Page> page;
+    Check(core->get_Pages(pages.Put()), "get_Pages");
+    Check(pages->get_Item(0, page.Put()), "get page 1");
+    ULONG_T count = 0;
+    page->GetAnnotsCount(&count);
+    ComPtr<IPXC_Annotation> last;
+    Check(page->GetAnnot(count - 1, last.Put()), "get new annot");
+    BSTR name = nullptr;
+    last->get_Name(&name);
+    std::string id;
+    if (name) {
+        int n = WideCharToMultiByte(CP_UTF8, 0, name, -1, nullptr, 0, nullptr, nullptr);
+        id.assign(n > 0 ? n - 1 : 0, '\0');
+        if (n > 1) WideCharToMultiByte(CP_UTF8, 0, name, -1, &id[0], n, nullptr, nullptr);
+        SysFreeString(name);
+    }
+    std::vector<int64_t> ids = LinkedElementIds(core.Get(), id);
+    bool hasWall = std::find(ids.begin(), ids.end(), 676281) != ids.end();
+    const sm::ElementMap& map = GetElementMap(core.Get(), 0);
+    std::vector<sm::Box> boxes;
+    for (int64_t e : ids)
+        if (map.count(e)) boxes.push_back(map.at(e));
+    ShowHighlights(doc, 0, boxes);
+    int shown = 0;
+    page->GetAnnotsCount(&count);
+    for (ULONG_T i = 0; i < count; ++i) {
+        ComPtr<IPXC_Annotation> a;
+        BSTR n = nullptr;
+        if (SUCCEEDED(page->GetAnnot(i, a.Put())) && a && SUCCEEDED(a->get_Name(&n)) && n &&
+            std::wcscmp(n, kHighlightName) == 0)
+            ++shown;
+        if (n) SysFreeString(n);
+    }
+    ClearHighlight();
+    doc->put_Modified(VARIANT_FALSE);
+    if (!hasWall || shown != static_cast<int>(boxes.size()))
+        throw std::runtime_error("linked check failed: ids=" + std::to_string(ids.size()) + " shown=" + std::to_string(shown));
+    return "{\"annotation\": " + JsonString(id) + ", \"linkedIds\": " + std::to_string(ids.size()) +
+           ", \"hasWall676281\": true, \"boxesShown\": " + std::to_string(shown) + "}";
+}
+
 struct RegisterSteps {
     RegisterSteps() {
         RegisterSelfTestStep("lifecycle-open", &StepOpen);
         RegisterSelfTestStep("addmarkup", &StepAddMarkup);
         RegisterSelfTestStep("fault-duckdb", &StepFaultDuckDb);
         RegisterSelfTestStep("highlight-save", &StepHighlightSave);
+        RegisterSelfTestStep("linked", &StepLinked);
     }
 } gRegisterSteps;
 

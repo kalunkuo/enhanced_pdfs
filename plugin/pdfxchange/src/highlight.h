@@ -8,8 +8,17 @@
 
 constexpr const wchar_t* kHighlightName = L"smh-highlight";
 
+#include <vector>
+
 // Replaces any current highlight with one around `box` (PDF user space) on page `pageIndex` (0-based).
 void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box);
+
+// Same, for several boxes at once (one temporary annotation each).
+void ShowHighlights(IPXV_Document* doc, int pageIndex, const std::vector<sm::Box>& boxes);
+
+// True for a short moment after we changed the highlight: selection-change events caused by our own
+// annotation churn must not clear or replace it.
+bool HighlightJustChanged();
 
 // Removes the highlight from whichever document shows it (no-op if none).
 void ClearHighlight();

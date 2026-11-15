@@ -5,6 +5,7 @@
 #include "events.h"
 #include "inspect.h"
 #include "lifecycle.h"
+#include "linked_highlight.h"
 #include "log.h"
 #include "pxv.h"
 #include "selftest.h"
@@ -72,6 +73,7 @@ public:
         RegisterLifecycle(inst_);
         InitSelfTest(inst_);
         RegisterInspect(inst_);
+        RegisterLinkedHighlight(inst_);
         return S_OK;
     }
     HRESULT __stdcall Unload() override {
