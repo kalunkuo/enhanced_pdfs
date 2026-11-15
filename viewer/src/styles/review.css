@@ -171,8 +171,8 @@
 .tie-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tie-meta { margin-left: auto; padding-left: 8px; font-size: 11px; white-space: nowrap; }
 
-/* Annotation tools show a thin, faded blue text-insertion (I-beam) cursor over empty paper. Over an object it becomes a chat
+/* Annotation tools show a faded blue text-insertion (I-beam) cursor over empty paper. Over an object it becomes a chat
    bubble with "..." inside, the same teardrop as a comment pin with its tip on the pointer, and the object is
    highlighted as with the Select tool. */
-.page.tool-review > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%2331c6e8'%20stroke-opacity='0.6'%20stroke-width='1.75'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'/%3E%3C/svg%3E") 12 12, text; }
+.page.tool-review > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%2331c6e8'%20stroke-opacity='0.6'%20stroke-width='3'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'/%3E%3C/svg%3E") 12 12, text; }
 .page.tool-review.over-object > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cpath%20d='M2%2030V17A13%2013%200%200%201%2015%204A13%2013%200%200%201%2028%2017A13%2013%200%200%201%2015%2030Z'%20fill='%2331c6e8'%20stroke='%23ffffff'%20stroke-width='1.5'%20stroke-linejoin='round'/%3E%3Ccircle%20cx='9'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='15'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='21'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3C/svg%3E") 2 30, text; }
