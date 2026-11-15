@@ -2,6 +2,7 @@
 #include "PIHeaders.h"
 
 #include "hooks.h"
+#include "linked_highlight.h"
 #include "log.h"
 #include "selftest.h"
 
@@ -54,12 +55,14 @@ ACCB1 ASBool ACCB2 PluginInit(void) {
                               (void*)ASCallbackCreateNotification(AVDocDidOpen, &LogDocOpen), nullptr);
     RegisterLifecycle();
     RegisterInspect();
+    RegisterLinkedHighlight();
     InitSelfTest();
     LogLine("init: SmartMarkup ready");
     return true;  // never block Acrobat from starting
 }
 
 ACCB1 ASBool ACCB2 PluginUnload(void) {
+    UnregisterLinkedHighlight();
     UnregisterInspect();
     if (gAboutItem) AVMenuItemRemove(gAboutItem);
     if (gMenu) AVMenuRemove(gMenu);

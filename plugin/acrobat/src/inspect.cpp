@@ -7,7 +7,10 @@
 #include "element_map.h"
 #include "hooks.h"
 #include "inspect_window.h"
+#include <vector>
+
 #include "log.h"
+#include "overlay.h"
 #include "selftest.h"
 #include "smartmarkup/inspect_rows.h"
 #include "smartmarkup/linking.h"
@@ -20,7 +23,13 @@ AVPageViewClickProc gClickCb = nullptr;
 
 ACCB1 ASBool ACCB2 AlwaysEnabled(void*) { return true; }
 ACCB1 ASBool ACCB2 IsMarked(void*) { return gOn; }
-ACCB1 void ACCB2 Toggle(void*) { gOn = !gOn; }
+ACCB1 void ACCB2 Toggle(void*) {
+    gOn = !gOn;
+    if (!gOn) ClearOverlay();
+}
+
+// Kept out of the DURING block: the vector has a destructor.
+void ShowOneBox(AVDoc doc, int pageIndex, const sm::Box& box) { ShowOverlay(doc, pageIndex, std::vector<sm::Box>{box}); }
 
 ACCB1 ASBool ACCB2 OnPageClick(AVPageView pageView, AVDevCoord x, AVDevCoord y, AVFlagBits16, AVTCount, void*) {
     if (!gOn) return false;
@@ -42,12 +51,14 @@ ACCB1 ASBool ACCB2 OnPageClick(AVPageView pageView, AVDevCoord x, AVDevCoord y, 
                     } else {
                         auto rows = sm::InspectRows(*model, *hit);
                         if (!rows.empty()) {
+                            ShowOneBox(avDoc, pageIndex, map.find(*hit)->second);
                             ShowInspectWindow(WinAppGetModalParent(avDoc), *hit, rows);
                             consumed = true;
                         }
                     }
                 }
             }
+            if (!consumed) ClearOverlay();
         HANDLER
             LogLine("inspect: click failed (error %d)", (int)ERRORCODE);
             consumed = false;
@@ -85,6 +96,8 @@ struct RegisterSteps {
 } gRegisterSteps;
 
 }  // namespace
+
+bool InspectModeOn() { return gOn; }
 
 void RegisterInspect() {
     DURING
