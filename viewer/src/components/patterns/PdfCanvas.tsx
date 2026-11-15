@@ -1,6 +1,7 @@
 import { AnnotationMode, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPagePresentation, type PagePresentation, type RenderCapture, type RenderCaptureFactory } from '../../lib/presentation';
+import { visibleAnnotationOperations } from '../../lib/annotationVisibility';
 
 export interface PdfCanvasProps {
     pdf: PDFDocumentProxy;
@@ -11,7 +12,7 @@ export interface PdfCanvasProps {
     pageHeight: number;
     /** Scrolling element whose viewport decides which part of the page is rendered sharply. */
     scrollContainer: RefObject<HTMLElement | null>;
-    hideEmbeddedAnnotations: boolean;
+    hiddenAnnotationIds?: ReadonlySet<string>;
     createCapture?: RenderCaptureFactory;
     onPresentation?: (presentation: PagePresentation) => void;
     onError?: (error: unknown) => void;
@@ -24,6 +25,7 @@ const DETAIL_MARGIN = 0.1;
 const DETAIL_PIXEL_BUDGET = 16_000_000;
 /** Scroll/zoom must settle this long before a detail tile is rasterized. */
 const DETAIL_DELAY_MS = 120;
+const NO_HIDDEN_ANNOTATIONS: ReadonlySet<string> = new Set();
 
 /** Scale-1 page units: [x0, y0, x1, y1], top-left origin. */
 type PageRect = readonly [number, number, number, number];
@@ -48,7 +50,7 @@ const contains = (outer: PageRect, inner: PageRect) =>
  * The base raster is a bounded full-page render (and the capture render); above that resolution a
  * detail tile covers only the visible area plus a margin, so zooming in never rasterizes the whole sheet.
  */
-export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scrollContainer, hideEmbeddedAnnotations, createCapture, onPresentation, onError }: PdfCanvasProps) {
+export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scrollContainer, hiddenAnnotationIds = NO_HIDDEN_ANNOTATIONS, createCapture, onPresentation, onError }: PdfCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const tailRef = useRef<Promise<void>>(Promise.resolve());
     const generationRef = useRef(0);
@@ -57,7 +59,7 @@ export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scroll
     const dpr = window.devicePixelRatio || 1;
     // Constant once zoom exceeds the budget, so zooming further in does not repeat the full render or capture.
     const baseZoom = baseRasterZoom(zoom, pageWidth, pageHeight, dpr);
-    const annotationMode = hideEmbeddedAnnotations ? AnnotationMode.DISABLE : AnnotationMode.ENABLE;
+    const annotationMode = AnnotationMode.ENABLE;
 
     useEffect(() => {
         let cancelled = false;
@@ -71,6 +73,8 @@ export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scroll
             if (cancelled) return;
             const pdfPage = await pdf.getPage(pageNumber);
             if (cancelled || !canvasRef.current) return;
+            const visible = hiddenAnnotationIds.size ? visibleAnnotationOperations(await pdfPage.getOperatorList({ annotationMode }), hiddenAnnotationIds) : undefined;
+            if (cancelled) return;
             // Render off-screen and copy on completion so the page never flashes blank.
             const target = document.createElement('canvas');
             const viewport = pdfPage.getViewport({ scale: baseZoom });
@@ -92,9 +96,9 @@ export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scroll
                     viewport,
                     transform: [outputScale.x, 0, 0, outputScale.y, 0, 0],
                     annotationMode,
-                    operationsFilter: onOperation ? (index) => {
-                        onOperation(index);
-                        return true;
+                    operationsFilter: onOperation || visible ? (index) => {
+                        onOperation?.(index);
+                        return visible?.(index) ?? true;
                     } : undefined,
                 });
                 await task.promise;
@@ -118,11 +122,11 @@ export function PdfCanvas({ pdf, pageNumber, zoom, pageWidth, pageHeight, scroll
             controller.abort();
             task?.cancel();
         };
-    }, [pdf, pageNumber, baseZoom, dpr, annotationMode, createCapture]);
+    }, [pdf, pageNumber, baseZoom, dpr, annotationMode, hiddenAnnotationIds, createCapture]);
 
     return <>
         <canvas ref={canvasRef} aria-label={`PDF page ${pageNumber}`} />
-        <PdfDetailTile pdf={pdf} pageNumber={pageNumber} zoom={zoom} dpr={dpr} annotationMode={annotationMode}
+        <PdfDetailTile pdf={pdf} pageNumber={pageNumber} zoom={zoom} dpr={dpr} annotationMode={annotationMode} hiddenAnnotationIds={hiddenAnnotationIds}
             active={zoom > baseZoom * 1.001} pageWidth={pageWidth} pageHeight={pageHeight}
             scrollContainer={scrollContainer} onError={(error) => callbacks.current.onError?.(error)} />
     </>;
@@ -132,6 +136,7 @@ interface Tile {
     pdf: PDFDocumentProxy;
     pageNumber: number;
     annotationMode: number;
+    hiddenAnnotationIds: ReadonlySet<string>;
     rect: PageRect;
     zoom: number;
 }
@@ -142,6 +147,7 @@ interface PdfDetailTileProps {
     zoom: number;
     dpr: number;
     annotationMode: number;
+    hiddenAnnotationIds: ReadonlySet<string>;
     active: boolean;
     pageWidth: number;
     pageHeight: number;
@@ -150,7 +156,7 @@ interface PdfDetailTileProps {
 }
 
 /** Full-resolution raster of the visible page area plus a margin, re-rendered after scroll/zoom settles. */
-function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, active, pageWidth, pageHeight, scrollContainer, onError }: PdfDetailTileProps) {
+function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, hiddenAnnotationIds, active, pageWidth, pageHeight, scrollContainer, onError }: PdfDetailTileProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [tile, setTile] = useState<Tile | null>(null);
     const tileRef = useRef<Tile | null>(null);
@@ -178,7 +184,7 @@ function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, active, pag
             return [x0 / zoom, y0 / zoom, x1 / zoom, y1 / zoom];
         };
         const isCurrent = (current: Tile | null): current is Tile => !!current && current.pdf === pdf && current.pageNumber === pageNumber
-            && current.annotationMode === annotationMode && current.zoom === zoom;
+            && current.annotationMode === annotationMode && current.hiddenAnnotationIds === hiddenAnnotationIds && current.zoom === zoom;
 
         const render = async () => {
             const visible = visibleRect();
@@ -196,6 +202,8 @@ function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, active, pag
             try {
                 const pdfPage = await pdf.getPage(pageNumber);
                 if (disposed) return;
+                const visible = hiddenAnnotationIds.size ? visibleAnnotationOperations(await pdfPage.getOperatorList({ annotationMode }), hiddenAnnotationIds) : undefined;
+                if (disposed) return;
                 const sx = target.width / cssWidth, sy = target.height / cssHeight;
                 task = pdfPage.render({
                     canvas: null,
@@ -204,13 +212,14 @@ function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, active, pag
                     // Shift the page so the tile's top-left corner lands at the canvas origin.
                     transform: [sx, 0, 0, sy, -rect[0] * zoom * sx, -rect[1] * zoom * sy],
                     annotationMode,
+                    operationsFilter: visible,
                 });
                 await task.promise;
                 if (disposed) return;
                 canvas.width = target.width;
                 canvas.height = target.height;
                 canvas.getContext('2d')?.drawImage(target, 0, 0);
-                const next = { pdf, pageNumber, annotationMode, rect, zoom };
+                const next = { pdf, pageNumber, annotationMode, hiddenAnnotationIds, rect, zoom };
                 tileRef.current = next;
                 setTile(next);
             } catch (error) {
@@ -242,10 +251,10 @@ function PdfDetailTile({ pdf, pageNumber, zoom, dpr, annotationMode, active, pag
             container.removeEventListener('scroll', schedule);
             observer.disconnect();
         };
-    }, [active, pdf, pageNumber, zoom, dpr, annotationMode, pageWidth, pageHeight, scrollContainer]);
+    }, [active, pdf, pageNumber, zoom, dpr, annotationMode, hiddenAnnotationIds, pageWidth, pageHeight, scrollContainer]);
 
     // A tile from another page/document/mode is never shown; a stale-zoom tile is stretched until replaced.
-    const shown = active && tile && tile.pdf === pdf && tile.pageNumber === pageNumber && tile.annotationMode === annotationMode ? tile : null;
+    const shown = active && tile && tile.pdf === pdf && tile.pageNumber === pageNumber && tile.annotationMode === annotationMode && tile.hiddenAnnotationIds === hiddenAnnotationIds ? tile : null;
     return <canvas ref={canvasRef} className="pdf-detail" aria-hidden="true" style={shown ? {
         left: shown.rect[0] * zoom, top: shown.rect[1] * zoom,
         width: (shown.rect[2] - shown.rect[0]) * zoom, height: (shown.rect[3] - shown.rect[1]) * zoom,

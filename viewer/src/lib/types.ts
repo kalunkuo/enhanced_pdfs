@@ -92,6 +92,10 @@ export interface EnhancedPdf {
     appearances?: AppearanceInfo[];
     /** Annotations this viewer saved into the file earlier. */
     savedAnnotations: Annotation[];
+    /** Source PDF annotations imported without changing their original appearance. */
+    importedAnnotationCount?: number;
+    /** Exact PDF references of existing viewer-rendered copies; foreign ep-* annotations are excluded. */
+    viewerOwnedAnnotationRefs?: ReadonlySet<string>;
     /** Human-readable notes about missing or unreadable tables. */
     warnings: string[];
     /** Release the PDF worker when this document is replaced or the viewer unmounts. */
@@ -117,10 +121,33 @@ export interface Reply {
     text: string;
     /** An image attached to the reply, as a data URL. */
     image?: string;
+    /** Reference to an existing standard PDF reply, retained during save. */
+    source?: { ref: string; name?: string; renderId?: string };
+}
+
+/** Provenance for a standard PDF markup; its original graphics stay in the PDF. */
+export interface ImportedAnnotationSource {
+    /** PDF.js-style indirect reference (e.g. 123R), or direct:<original annotation index>. */
+    ref: string;
+    /** PDF.js rendering ID, when it differs from a direct source dictionary identity. */
+    renderId?: string;
+    name?: string;
+    subtype: string;
+    /** Scale-1 PDF.js viewport bounds and matching anchor, including page crop/rotation. */
+    bounds: readonly [number, number, number, number];
+    anchor: Point;
+    shape: 'area' | 'point' | 'arrow';
+    drawingId?: string;
+    linkState: 'pending' | 'linked' | 'unlinked' | 'ambiguous' | 'metadata-only';
+    linkMethod?: 'plugin' | 'geometry' | 'manual';
+    candidateKeys?: string[];
+    referencedElementKeys?: string[];
 }
 
 export interface Annotation {
     id: string;
+    /** Imported markups are editable review records over the unchanged source PDF appearance. */
+    source?: ImportedAnnotationSource;
     /** When a saved review comment was last edited, if recorded. */
     modifiedAt?: string;
     /** 1-based page number. */

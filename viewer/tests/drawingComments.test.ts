@@ -43,7 +43,7 @@ describe('real PDF review comments', () => {
         ]);
     });
 
-    it('ignores widgets, links, popups, blanks, duplicate references and viewer exports', async () => {
+    it('ignores widgets, links, popups, blanks and duplicate references without claiming ownership of an ep- prefix', async () => {
         const { pdf } = pdfWith([
             { id: 'link', subtype: 'Link', contentsObj: { str: 'Visit page' } },
             { id: 'widget', subtype: 'Widget', contentsObj: { str: 'Name' } },
@@ -54,7 +54,10 @@ describe('real PDF review comments', () => {
             { id: 'actual', subtype: 'Square', contentsObj: { str: 'Real review note' } },
             null,
         ]);
-        expect(await readPdfComments(pdf, 1)).toEqual([{ id: 'pdf:1:actual', page: 1, text: 'Real review note', source: 'pdf' }]);
+        expect(await readPdfComments(pdf, 1)).toEqual([
+            { id: 'pdf:1:viewer-name', page: 1, text: 'Saved viewer note', source: 'pdf' },
+            { id: 'pdf:1:actual', page: 1, text: 'Real review note', source: 'pdf' },
+        ]);
     });
 
     it('excludes real /NM app exports with custom authors while keeping external comments by the same author', async () => {
@@ -64,6 +67,9 @@ describe('real PDF review comments', () => {
         const replyRef = source.context.register(source.context.obj({ Type: 'Annot', Subtype: 'Text', NM: PDFString.of('ep-a1-r-r1'), Rect: [0, 0, 10, 10] }));
         const externalRef = source.context.register(source.context.obj({ Type: 'Annot', Subtype: 'Text', NM: PDFString.of('external-note'), Rect: [0, 0, 10, 10] }));
         page.node.set(PDFName.of('Annots'), source.context.obj([appRef, replyRef, externalRef]));
+        await source.attach(new TextEncoder().encode(JSON.stringify({ app: 'enhanced-pdf-viewer', version: 1, annotations: [
+            { id: 'a1', replies: [{ id: 'r1' }] },
+        ] })), 'annotations.json');
         const referenceId = (ref: typeof appRef) => `${ref.objectNumber}R`;
         const { pdf } = pdfWith([
             { id: referenceId(appRef), subtype: 'Text', titleObj: { str: 'Reviewer' }, contentsObj: { str: 'Saved viewer note' } },
@@ -91,6 +97,49 @@ describe('real PDF review comments', () => {
         expect(getPage).not.toHaveBeenCalled();
         getPage.mockRejectedValueOnce(new Error('Unreadable comments'));
         await expect(readPdfComments(pdf, 1)).rejects.toThrow('Unreadable comments');
+    });
+
+    it('keeps native-plugin ep- names visible until they have an imported review record', async () => {
+        const source = await PDFDocument.create();
+        const page = source.addPage();
+        const pluginRef = source.context.register(source.context.obj({ Type: 'Annot', Subtype: 'Text', NM: PDFString.of('ep-native-uuid'), Rect: [0, 0, 10, 10] }));
+        page.node.addAnnot(pluginRef);
+        const ref = `${pluginRef.objectNumber}R`;
+        const { pdf } = pdfWith([
+            { id: ref, subtype: 'Text', titleObj: { str: 'Contractor' }, contentsObj: { str: 'Original plugin note' } },
+            { id: 'unrelated', subtype: 'Text', contentsObj: { str: 'Another native note' } },
+        ]);
+        const bytes = await source.save();
+        expect((await readPdfComments(pdf, 1, bytes)).map((comment) => comment.text)).toEqual(['Original plugin note', 'Another native note']);
+        const imported: Annotation = { id: 'imported', kind: 'comment', page: 1, from: [5, 5], to: [5, 5], text: 'Original plugin note', source: {
+            ref, name: 'ep-native-uuid', subtype: 'Text', bounds: [0, 0, 10, 10], anchor: [5, 5], shape: 'point', linkState: 'pending',
+        } };
+        expect((await readPdfComments(pdf, 1, bytes, [imported])).map((comment) => comment.text)).toEqual(['Another native note']);
+    });
+
+    it('deduplicates imported replies by exact source reference without dropping unrelated comments', async () => {
+        const { pdf } = pdfWith([
+            { id: '1R', subtype: 'Text', contentsObj: { str: 'Root' } },
+            { id: '2R', subtype: 'Text', contentsObj: { str: 'Original reply' } },
+            { id: '3R', subtype: 'Text', contentsObj: { str: 'Unrelated' } },
+        ]);
+        const imported: Annotation = { id: 'root', kind: 'comment', page: 1, from: [0, 0], to: [0, 0], source: {
+            ref: '1R', subtype: 'Text', bounds: [0, 0, 10, 10], anchor: [0, 0], shape: 'point', linkState: 'pending',
+        }, replies: [{ id: 'r', text: 'Original reply', createdAt: '', author: { name: '' }, source: { ref: '2R' } }] };
+        expect((await readPdfComments(pdf, 1, undefined, [imported])).map((comment) => comment.text)).toEqual(['Unrelated']);
+    });
+
+    it('deduplicates direct imported markups by their page-local PDF.js rendering identity', async () => {
+        const { pdf } = pdfWith([
+            { id: 'annot_p0_0', subtype: 'Square', contentsObj: { str: 'Imported direct note' } },
+            { id: 'annot_p0_1', subtype: 'Text', contentsObj: { str: 'Imported direct reply' } },
+            { id: 'annot_p0_2', subtype: 'Square', contentsObj: { str: 'Unrelated direct note' } },
+        ]);
+        const imported: Annotation = { id: 'direct-note', kind: 'comment', page: 1, from: [5, 5], to: [5, 5], source: {
+            ref: 'direct:0', renderId: 'annot_p0_0', subtype: 'Square', bounds: [0, 0, 10, 10], anchor: [5, 5], shape: 'area', linkState: 'pending',
+        }, replies: [{ id: 'direct-reply', text: 'Imported direct reply', author: { name: '' }, createdAt: '', source: { ref: 'direct:1', renderId: 'annot_p0_1' } }] };
+        expect((await readPdfComments(pdf, 1, undefined, [imported])).map((comment) => comment.text)).toEqual(['Unrelated direct note']);
+        expect((await readPdfComments(pdf, 1, undefined, [{ ...imported, page: 2 }])).map((comment) => comment.text)).toEqual(['Imported direct note', 'Imported direct reply', 'Unrelated direct note']);
     });
 });
 

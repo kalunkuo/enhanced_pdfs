@@ -3,17 +3,20 @@ import { calloutBounds, leaderSegment, textBox } from './callout';
 import { cloudPolyline, cloudRect } from './cloud';
 import { initials, pdfDate, safeImage } from './comments';
 import { cleanLinks } from './links';
+import { cleanImportedSource, cleanSourceRef } from './annotationSource';
+import { collectViewerOwnedNames, isViewerOwnedAnnotation, listPdfAnnotationEntries, pdfText, readViewerManifest, removeEmbeddedFile, sortEmbeddedFileNames, VIEWER_ANNOTATION_MARKER, VIEWER_ANNOTATION_PREFIX, type PdfAnnotationEntry } from './pdfAnnotationOwnership';
 import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
  * Save annotations into the PDF two ways:
  *  - as standard PDF annotations with their own appearance streams, so Acrobat and other viewers show them, and
  *  - as an `annotations.json` attachment, which keeps the object-ID ties and lets this viewer restore them.
- * Annotations from an earlier save (named `ep-...`) are replaced, not duplicated.
+ * Only annotations listed in this viewer's manifest are replaced. Imported
+ * markups retain their standard PDF geometry, appearance, and original identity.
  */
 
 export const ANNOTATIONS_FILE = 'annotations.json';
-const NAME_PREFIX = 'ep-';
+const NAME_PREFIX = VIEWER_ANNOTATION_PREFIX;
 const AUTHOR = 'Enhanced PDF Viewer';
 export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
 
@@ -66,10 +69,14 @@ export function cleanReplies(value: unknown): Reply[] {
     const out: Reply[] = [];
     for (const r of value.slice(0, MAX_REPLIES) as Record<string, unknown>[]) {
         const author = cleanAuthor(r?.author);
-        const text = typeof r?.text === 'string' ? r.text.slice(0, MAX_TEXT) : '';
-        if (typeof r?.id !== 'string' || !author || !text.trim() || typeof r.createdAt !== 'string' || !Number.isFinite(Date.parse(r.createdAt))) continue;
+        const source = cleanSourceRef(r?.source);
+        // Native Contents must survive recovery byte-for-byte. Truncating it
+        // here would appear to be a user edit when compared with the source.
+        const text = typeof r?.text === 'string' ? source ? r.text : r.text.slice(0, MAX_TEXT) : '';
+        const dated = typeof r?.createdAt === 'string' && Number.isFinite(Date.parse(r.createdAt));
+        if (typeof r?.id !== 'string' || !text.trim() || (!author && !source) || (!dated && !source)) continue;
         const image = safeImage(r.image);
-        out.push({ id: r.id, author, createdAt: r.createdAt, text, ...(image ? { image } : {}) });
+        out.push({ id: r.id, author: author ?? { name: '' }, createdAt: dated ? r.createdAt as string : '', text, ...(image ? { image } : {}), ...(source ? { source } : {}) });
     }
     return out;
 }
@@ -82,7 +89,8 @@ export function cleanContained(value: unknown): ContainedElement[] {
 }
 
 function cleanComment(a: Annotation): Annotation {
-    const { author, createdAt, image, replies, contained, elementKey, elementKeys, ...rest } = a as Annotation & Record<string, unknown>;
+    const { author, createdAt, image, replies, contained, elementKey, elementKeys, source, ...rest } = a as Annotation & Record<string, unknown>;
+    const imported = cleanImportedSource(source);
     const cleanedContained = cleanContained(contained);
     const cleanedReplies = cleanReplies(replies);
     const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
@@ -96,6 +104,7 @@ function cleanComment(a: Annotation): Annotation {
         ...(picture ? { image: picture } : {}),
         ...(cleanedReplies.length ? { replies: cleanedReplies } : {}),
         ...(cleanedContained.length ? { contained: cleanedContained } : {}),
+        ...(imported ? { source: imported } : {}),
     } as Annotation, { elementKey, elementKeys });
 }
 
@@ -233,47 +242,168 @@ function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): 
     return { content, resources };
 }
 
-function removeOurAnnotations(doc: PDFDocument): void {
+function sourceEntry(entries: readonly PdfAnnotationEntry[], page: number, source: NonNullable<Annotation['source']> | NonNullable<Reply['source']>): PdfAnnotationEntry | undefined {
+    const compatible = (entry: PdfAnnotationEntry) => entry.page === page &&
+        (!('subtype' in source) || (entry.dict.get(PDFName.of('Subtype')) as PDFName | undefined)?.decodeText() === source.subtype);
+    const byRef = entries.find((entry) => compatible(entry) && entry.ref === source.ref && (!source.name || pdfText(entry.dict, 'NM') === source.name));
+    if (byRef) return byRef;
+    const byName = source.name ? entries.filter((entry) => compatible(entry) && pdfText(entry.dict, 'NM') === source.name) : [];
+    return byName.length === 1 ? byName[0] : undefined;
+}
+
+/** Nested native replies keep their original /IRT chain, confined to this page. */
+function replyBelongsToRoot(doc: PDFDocument, entries: ReadonlyMap<PDFDict, PdfAnnotationEntry>, reply: PdfAnnotationEntry, root: PdfAnnotationEntry, removed: ReadonlySet<PDFDict>): boolean {
+    const visited = new Set<PDFDict>();
+    let current: PdfAnnotationEntry | undefined = reply;
+    while (current && current.page === root.page && !visited.has(current.dict) && !removed.has(current.dict)) {
+        visited.add(current.dict);
+        const reference = current.dict.get(PDFName.of('IRT'));
+        if (!reference) return false;
+        let parent: unknown;
+        try { parent = doc.context.lookup(reference); } catch { return false; }
+        if (!(parent instanceof PDFDict)) return false;
+        if (parent === root.dict) return true;
+        current = entries.get(parent);
+    }
+    return false;
+}
+
+function removeEntries(doc: PDFDocument, entries: readonly PdfAnnotationEntry[], removed: ReadonlySet<PDFDict>) {
     for (const page of doc.getPages()) {
-        const annots = page.node.Annots();
-        if (!annots) continue;
-        for (let i = annots.size() - 1; i >= 0; i--) {
-            const dict = annots.lookupMaybe(i, PDFDict);
-            const nm = dict?.lookupMaybe(PDFName.of('NM'), PDFString, PDFHexString);
-            if (nm?.decodeText().startsWith(NAME_PREFIX)) annots.remove(i);
+        const array = page.node.Annots();
+        if (!array) continue;
+        for (let i = array.size() - 1; i >= 0; i--) {
+            try { if (removed.has(array.lookup(i, PDFDict))) array.remove(i); }
+            catch { /* Do not remove unrelated malformed annotation references. */ }
         }
     }
 }
 
-/** Remove an earlier annotations.json from a flat /EmbeddedFiles name list. */
-function removeAttachment(doc: PDFDocument, fileName: string): void {
-    const names = doc.catalog.lookupMaybe(PDFName.of('Names'), PDFDict)?.lookupMaybe(PDFName.of('EmbeddedFiles'), PDFDict)?.lookupMaybe(PDFName.of('Names'), PDFArray);
-    if (!names) return;
-    for (let i = names.size() - 2; i >= 0; i -= 2) {
-        const n = names.lookupMaybe(i, PDFString, PDFHexString);
-        if (n?.decodeText() === fileName) {
-            names.remove(i + 1);
-            names.remove(i);
+/** Select explicit user deletions and their replies/popups, never an ID prefix. */
+function deletedSources(doc: PDFDocument, entries: readonly PdfAnnotationEntry[], original: readonly Annotation[], current: readonly Annotation[]): Set<PDFDict> {
+    const result = new Set<PDFDict>();
+    const retained = new Set(current.flatMap((a) => a.source ? [sourceEntry(entries, a.page, a.source)?.dict].filter((dict): dict is PDFDict => !!dict) : []));
+    const currentIds = new Set(current.map((a) => a.id));
+    for (const a of original) if (a.source && !currentIds.has(a.id)) {
+        const entry = sourceEntry(entries, a.page, a.source);
+        if (entry && !retained.has(entry.dict)) result.add(entry.dict);
+    }
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const entry of entries) {
+            if (result.has(entry.dict)) continue;
+            for (const key of ['IRT', 'Parent']) {
+                // /Parent belongs to a popup; other annotation parent relationships
+                // (for example widgets) must not be treated as review threads.
+                if (key === 'Parent' && (entry.dict.get(PDFName.of('Subtype')) as PDFName | undefined)?.decodeText() !== 'Popup') continue;
+                const reference = entry.dict.get(PDFName.of(key));
+                if (!reference) continue;
+                try {
+                    const parent = doc.context.lookup(reference);
+                    if (parent instanceof PDFDict && result.has(parent)) { result.add(entry.dict); changed = true; break; }
+                } catch { /* An unrelated invalid relation stays in the PDF. */ }
+            }
         }
     }
+    return result;
+}
+
+export interface AnnotatedPdfOptions {
+    /** Original imported inventory lets an explicit browser deletion remove exactly that source markup. */
+    originalAnnotations?: readonly Annotation[];
 }
 
 /**
  * Write annotations into a copy of the PDF. `describe` gives the text shown in a viewer's comment list,
  * such as "Tied to Wall 02 (ID 900002)".
  */
-export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly Annotation[], describe: (a: Annotation) => string): Promise<Uint8Array> {
+export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly Annotation[], describe: (a: Annotation) => string, options: AnnotatedPdfOptions = {}): Promise<Uint8Array> {
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const ctx = doc.context;
-    removeOurAnnotations(doc);
-    removeAttachment(doc, ANNOTATIONS_FILE);
+    const sourceEntries = listPdfAnnotationEntries(doc);
+    const sourceEntriesByDict = new Map(sourceEntries.map((entry) => [entry.dict, entry]));
+    const previous = readViewerManifest(doc);
+    const original = options.originalAnnotations ?? (previous ? parseAnnotations(new TextEncoder().encode(JSON.stringify(previous))) : []);
+    const ownedNames = collectViewerOwnedNames(doc);
+    const removed = deletedSources(doc, sourceEntries, original, annotations);
+    for (const entry of sourceEntries) if (isViewerOwnedAnnotation(entry.dict, ownedNames)) removed.add(entry.dict);
+    removeEntries(doc, sourceEntries, removed);
+    removeEmbeddedFile(doc, ANNOTATIONS_FILE);
 
     const fonts: Fonts = { sans: await doc.embedFont(StandardFonts.Helvetica), script: await doc.embedFont(StandardFonts.TimesRomanItalic) };
     const pages = doc.getPages();
+    const normalized: Annotation[] = [];
+    const savedSources = new Set<PDFDict>();
+    const sourceNames = new Set(sourceEntries.map((entry) => pdfText(entry.dict, 'NM')).filter((name): name is string => !!name));
+
+    const assignSourceName = (entry: PdfAnnotationEntry, id: string) => {
+        const existing = pdfText(entry.dict, 'NM');
+        if (existing) return existing;
+        const base = `epu-${id}`.slice(0, 950);
+        let name = base, suffix = 1;
+        while (sourceNames.has(name)) name = `${base}-${suffix++}`;
+        sourceNames.add(name);
+        entry.dict.set(PDFName.of('NM'), PDFString.of(name));
+        return name;
+    };
+    const updateSourceMetadata = (dict: PDFDict, value: Pick<Annotation, 'text' | 'author' | 'modifiedAt'>, before?: Pick<Annotation, 'text' | 'author' | 'modifiedAt'>) => {
+        // Importers may bound/normalize UI strings. Only an explicit edit since
+        // import may replace the original text or author in the source PDF.
+        if (!before) return;
+        if (typeof value.text === 'string' && value.text !== before.text) dict.set(PDFName.of('Contents'), PDFHexString.fromText(value.text));
+        if (value.author?.name && value.author.name !== before.author?.name) dict.set(PDFName.of('T'), PDFHexString.fromText(value.author.name));
+        const modified = value.modifiedAt && value.modifiedAt !== before.modifiedAt ? pdfDate(value.modifiedAt) : undefined;
+        if (modified) dict.set(PDFName.of('M'), PDFString.of(modified));
+    };
+    const addReply = (reply: Reply, root: PDFRef | PDFDict, rect: PDFArray | readonly number[], pageNumber: number, annotationId: string) => {
+        const blank = ctx.register(ctx.stream('', { Type: 'XObject', Subtype: 'Form', BBox: rect }));
+        const when = pdfDate(reply.createdAt);
+        const replyEntries: Record<string, unknown> = {
+            Type: 'Annot', Subtype: 'Text', Rect: rect, F: 4, Name: 'Comment', IRT: root, RT: 'R',
+            NM: PDFString.of(`${NAME_PREFIX}${annotationId}-r-${reply.id}`), T: PDFHexString.fromText(reply.author.name),
+            Contents: PDFHexString.fromText(reply.text), AP: { N: blank }, [VIEWER_ANNOTATION_MARKER]: true,
+            ...(when ? { CreationDate: PDFString.of(when), M: PDFString.of(when) } : {}),
+        };
+        pages[pageNumber - 1]!.node.addAnnot(ctx.register(ctx.obj(replyEntries as never)));
+    };
 
     for (const a of annotations) {
         const page = pages[a.page - 1];
         if (!page) continue;
+        if (a.source) {
+            const entry = sourceEntry(sourceEntries, a.page, a.source);
+            if (!entry || removed.has(entry.dict)) throw new Error('An imported markup could not be found in the source PDF. Reopen the source before saving; its original appearance has been preserved.');
+            if (savedSources.has(entry.dict)) throw new Error('The same imported markup appears more than once in this review. Reopen the source before saving.');
+            savedSources.add(entry.dict);
+            // /IRT must point to an indirect object. Converting a legal direct
+            // annotation to a reference leaves its geometry/appearance intact.
+            const rootRef = entry.object instanceof PDFRef ? entry.object : ctx.register(entry.dict);
+            if (!(entry.object instanceof PDFRef)) {
+                const array = page.node.Annots();
+                if (array) for (let index = 0; index < array.size(); index++) {
+                    if (ctx.lookup(array.get(index)) === entry.dict) { array.set(index, rootRef); break; }
+                }
+            }
+            const source = { ...a.source, ref: `${rootRef.objectNumber}R${rootRef.generationNumber || ''}`, name: assignSourceName(entry, a.id) };
+            const before = original.find((old) => old.id === a.id && !!old.source);
+            updateSourceMetadata(entry.dict, a, before);
+            const replies: Reply[] = [];
+            for (const reply of a.replies ?? []) {
+                if (reply.source) {
+                    const native = sourceEntry(sourceEntries, a.page, reply.source);
+                    if (!native || !replyBelongsToRoot(doc, sourceEntriesByDict, native, entry, removed)) throw new Error('An imported reply could not be found in its source thread. Reopen the source before saving.');
+                    updateSourceMetadata(native.dict, reply, before?.replies?.find((old) => old.id === reply.id));
+                    replies.push({ ...reply, source: { ...reply.source, ref: native.ref, name: assignSourceName(native, `${a.id}-r-${reply.id}`) } });
+                } else {
+                    addReply(reply, rootRef, entry.dict.lookupMaybe(PDFName.of('Rect'), PDFArray) ?? [0, 0, 1, 1], a.page, a.id);
+                    replies.push(reply);
+                }
+            }
+            normalized.push({ ...a, source, ...(replies.length ? { replies } : {}) });
+            continue;
+        }
+        normalized.push(a);
         if (page.getRotation().angle % 360 !== 0) throw new Error(`Page ${a.page} is rotated; saving annotations on rotated pages is not supported yet.`);
         const crop = page.getCropBox();
         const frame: PageFrame = { cropX: crop.x, cropY: crop.y, cropH: crop.height };
@@ -293,6 +423,7 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
             Type: 'Annot', Subtype: subtype, Rect: rect, F: 4, C: [...color],
             NM: PDFString.of(`${NAME_PREFIX}${a.id}`), T: PDFHexString.fromText(a.author?.name || AUTHOR), Subj: PDFHexString.fromText(subject),
             Contents: PDFHexString.fromText(a.text ?? subject), AP: { N: ap },
+            [VIEWER_ANNOTATION_MARKER]: true,
         };
         const created = a.createdAt ? pdfDate(a.createdAt) : undefined;
         if (created) Object.assign(entries, { CreationDate: PDFString.of(created), M: PDFString.of(created) });
@@ -326,22 +457,14 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
 
         // Replies are standard reply annotations (IRT) with an empty appearance, so they list in a viewer's
         // comment panel without drawing anything extra on the page.
-        for (const reply of a.replies ?? []) {
-            const blank = ctx.register(ctx.stream('', { Type: 'XObject', Subtype: 'Form', BBox: rect }));
-            const when = pdfDate(reply.createdAt);
-            const replyEntries: Record<string, unknown> = {
-                Type: 'Annot', Subtype: 'Text', Rect: rect, F: 4, Name: 'Comment', IRT: annotRef, RT: 'R',
-                NM: PDFString.of(`${NAME_PREFIX}${a.id}-r-${reply.id}`), T: PDFHexString.fromText(reply.author.name),
-                Contents: PDFHexString.fromText(reply.text), AP: { N: blank },
-                ...(when ? { CreationDate: PDFString.of(when), M: PDFString.of(when) } : {}),
-            };
-            page.node.addAnnot(ctx.register(ctx.obj(replyEntries as never)));
-        }
+        for (const reply of a.replies ?? []) addReply(reply, annotRef, rect, a.page, a.id);
     }
 
-    const json = JSON.stringify({ app: 'enhanced-pdf-viewer', version: 1, annotations }, null, 1);
+    const json = JSON.stringify({ app: 'enhanced-pdf-viewer', version: 1, annotations: normalized }, null, 1);
     await doc.attach(new TextEncoder().encode(json), ANNOTATIONS_FILE, {
         mimeType: 'application/json', description: 'Enhanced PDF Viewer annotations and their object-ID ties',
     });
+    await doc.flush();
+    sortEmbeddedFileNames(doc);
     return doc.save();
 }

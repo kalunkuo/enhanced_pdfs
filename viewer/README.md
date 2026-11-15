@@ -26,6 +26,18 @@ Element actions use the current page and the active **Drawing / view** scope fro
 
 Comment context reads actual review comments on the current page and current viewer notes. Available creation/modification timestamps establish order; undated comments remain explicitly undated. Comment citations open their context in **Notes**. Comments are scoped by page rather than inferred element/view membership.
 
+## Upgrade existing PDF markups
+
+Opening an enhanced PDF imports its existing review markups into **Notes**, including their authors, dates, and reply threads. The original PDF graphics stay in place. Matching runs across all pages with imported notes, including pages you have not visited. **Review imported notes** opens the first note that needs attention; matching can be paused and retried.
+
+Point comments and arrow tips use drawing hit testing. Area markups use the objects’ printed extents and can link to several objects. Uncertain matches remain suggestions until you choose an object or use the object tag to search. Element IDs mentioned in the comment appear separately as text references. Existing plugin links and manual corrections are preserved. Sidebar filters do not change these matches. Ordinary PDFs without enhanced model identities still import their notes, but cannot acquire model links from geometry.
+
+Select an imported note to inspect its links, change its object tag, or reply. Its pin stays at the source markup. Save downloads a new PDF with links and review state in `annotations.json`, preserving the original markup appearance streams, positions, authors, dates, and embedded Parquet files. New replies are also saved as standard PDF replies. Deleting an imported note explicitly removes that original markup and its thread from the saved copy. Plugin `annotations` and `annotation-links` Parquet tables are read and preserved; browser edits do not rewrite those plugin tables.
+
+Save ownership comes from exact annotation references and the browser manifest. A native markup is never treated as browser-owned just because its name begins with `ep-`.
+
+## Agent connection
+
 Without an API key, the agent runs the supported drawing actions locally and is labeled **Local demo**. With a key configured, it automatically offers **OpenAI** mode. The optional microphone uses browser speech recognition where supported, places the transcript in the composer for review, and requires **Send** to run the request. Typed input is always available.
 
 ### Connect an API key
