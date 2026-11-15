@@ -299,3 +299,23 @@ lesson as the Acrobat plug-in spec).
   width/thickness rather than the new family's real geometry (real geometry needs a rolled-back type swap to
   read it). Only verifiable inside Revit.
 - **The old → new tag on the canvas** (same DirectContext3D server).
+
+## Iteration 2 (2026-11-15, approved: "all five in this order")
+
+Context: on `snowdon-towers-a101-enhanced.pdf` every markup became a note — door flips and a thicker wall are not
+parameter/type changes, and an arrow + text box pair could not be combined. The user is fine with Claude
+misreading a markup as long as the panel jumps to the right place.
+
+- **A. Every card zooms.** Selecting a note (not only a proposal) selects and zooms to all host-model elements the
+  markup is tied to, in the markup's view when they are visible there.
+- **2. Related markups.** `propose_change` takes optional `related_markup_ids`; the handle may be linked by the
+  markup or any related one (arrow + text box). The card quotes all of them.
+- **1. Flip.** New change kind `flip` (`facing` | `hand`) for family instances Revit allows to flip; old/new read
+  "not flipped"/"flipped". Applied with `flipFacing()`/`flipHand()` in one named transaction.
+- **B. "Approve, but…".** A third button takes an instruction; a short follow-up Claude run (same tools, after the
+  main run has finished) gets the markup, the proposal and the instruction and calls `propose_change` with
+  `replaces = <proposal id>`. The old proposal becomes `revised` (shown under Done, decision recorded with the
+  instruction); the new one is pending. If Claude cannot, it adds a note and the original stays pending.
+- **3. New wall type at a thickness.** New change kind `new_wall_type` (`width`, optional `type_name`) for basic walls:
+  duplicate the wall's type, widen or narrow its thickest core layer by the difference, swap the wall to it. Rejected
+  when the name exists (use `change_type`) or the element is not a basic wall. Card shows the width change.
