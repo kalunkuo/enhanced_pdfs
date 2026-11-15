@@ -368,7 +368,7 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
                 {leader && <line x1={leader[0][0]} y1={leader[0][1]} x2={leader[1][0]} y2={leader[1][1]} stroke={color} strokeWidth={selected ? 2 : 1.5} strokeDasharray={dash} vectorEffect="non-scaling-stroke" />}
                 <rect x={box.x} y={box.y} width={box.w} height={box.h} fill="transparent" stroke={color} strokeWidth={selected ? 2 : 1} strokeDasharray={dash} vectorEffect="non-scaling-stroke"
                     style={grab} onPointerDown={(event) => onPart?.(event, 'box')} />
-                <text x={x0} y={y0} fontSize={12} fill={tied || a.id === 'draft' ? INK : UNTIED_INK} fontWeight={500} pointerEvents="none">{a.text}</text>
+                <text x={x0} y={y0} fontSize={12} fill={tied || a.id === 'draft' ? color : UNTIED_INK} fontWeight={500} pointerEvents="none">{a.text}</text>
                 {(() => {
                     // The anchor: the leader tip, or the box corner on an old box that has no leader yet. Drag it to move the tie.
                     const [ax, ay] = anchorHandle(a);

@@ -177,3 +177,27 @@ describe('revision cloud', () => {
         expect((await PDFDocument.load(second)).getPage(0).node.Annots()!.size()).toBe(1);
     });
 });
+
+describe('text box colors in the saved PDF', () => {
+    const RED = '0.937 0.267 0.267 rg';
+    const GRAY = '0.443 0.443 0.478 rg';
+    const appearance = async (a: Annotation): Promise<string> => {
+        const src = await PDFDocument.create();
+        src.addPage([400, 300]);
+        const out = await PDFDocument.load(await buildAnnotatedPdf(await src.save(), [a], () => 'x'));
+        const annot = out.getPage(0).node.Annots()!.lookup(0, PDFDict);
+        const ap = annot.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRawStream;
+        return new TextDecoder().decode(decodePDFRawStream(ap).decode());
+    };
+
+    it('draws the text red when the box is tied', async () => {
+        const stream = await appearance({ id: 't', page: 1, kind: 'text', from: [100, 100], to: [200, 160], text: 'Check', elementKey: 'w1' });
+        expect(stream).toContain(`BT ${RED}`);
+        expect(stream).not.toContain(`BT ${GRAY}`);
+    });
+    it('draws the text gray when the box is untied', async () => {
+        const stream = await appearance({ id: 't', page: 1, kind: 'text', from: [100, 100], to: [200, 160], text: 'Check' });
+        expect(stream).toContain(`BT ${GRAY}`);
+        expect(stream).not.toContain(`BT ${RED}`);
+    });
+});
