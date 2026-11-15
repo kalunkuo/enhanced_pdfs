@@ -415,7 +415,7 @@ export function App() {
         setSaving(true);
         setError(null);
         try {
-            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie);
+            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances });
             const name = annotatedName(doc.fileName);
             downloadPdf(bytes, name);
         } catch (e) {
@@ -727,7 +727,7 @@ export function App() {
                 <aside className="side" data-doc={doc ? 'open' : 'none'}>
                     <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
                         value: t,
-                        label: t === 'agent' ? 'Agent' : t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? 'Elements' :'Properties',
+                        label: t === 'agent' ? 'Agent' : t === 'notes' ? 'Notes' : t === 'elements' ? 'Elements' :'Properties',
                     }))} />
                     <div className="panel" role="tabpanel" aria-label={tab === 'agent' ? 'Agent' : tab === 'properties' ? 'Properties' : tab === 'elements' ? 'Elements' : 'Notes'}>
                         <div className="agent-panel-host" hidden={tab !== 'agent'}>

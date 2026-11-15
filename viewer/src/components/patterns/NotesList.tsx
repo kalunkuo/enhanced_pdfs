@@ -1,6 +1,6 @@
 import { categoryColor } from '../../lib/categoryColor';
-import { useEffect, useRef } from 'react';
-import { formatTimeAgo } from '../../lib/comments';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { formatExactDate, formatTimeAgo } from '../../lib/comments';
 import { elementLabel } from '../../lib/elementLabel';
 import { linkedKeys } from '../../lib/links';
 import type { Profile } from '../../lib/profile';
@@ -8,7 +8,7 @@ import { useNow } from '../../lib/useNow';
 import type { Annotation, ElementInfo } from '../../lib/types';
 import { Avatar } from '../ui/Avatar';
 import { Byline } from '../ui/Byline';
-import { TrashIcon } from '../ui/icons';
+import { ChevronDownIcon, TrashIcon } from '../ui/icons';
 import { CommentThread } from './CommentThread';
 import { TieTag } from './TieTag';
 
@@ -60,23 +60,29 @@ function CloudContents({ cloud, elements, onOpen }: { cloud: Annotation; element
     );
 }
 
-/** The objects a note is linked to when there are several, each opening that object's properties. */
+/** The objects a note is linked to when there are several, each opening that object's properties. Collapsed by default. */
 function LinkedObjects({ keys, elements, onOpen }: { keys: readonly string[]; elements: Map<string, ElementInfo>; onOpen: (key: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const listId = useId();
     return (
         <div className="cloud-contents">
-            <h4>Linked objects ({keys.length})</h4>
-            <ul className="cloud-list">
-                {keys.map((key) => {
+            <h4>
+                <button type="button" className="linked-toggle" aria-expanded={open} aria-controls={open ? listId : undefined} onClick={() => setOpen((o) => !o)}>
+                    Linked objects ({keys.length}) <ChevronDownIcon />
+                </button>
+            </h4>
+            {open && <ul className="cloud-list linked-list" id={listId}>
+                {keys.map((key, i) => {
                     const e = elements.get(key);
                     return (
-                        <li key={key}>
+                        <li key={key} style={{ '--menu-row-index': i } as CSSProperties}>
                             <button className="cloud-item" title="Show this object's properties" onClick={() => onOpen(key)}>
                                 <strong>{e ? elementLabel(e) : key}</strong>
                             </button>
                         </li>
                     );
                 })}
-            </ul>
+            </ul>}
         </div>
     );
 }
@@ -84,10 +90,10 @@ function LinkedObjects({ keys, elements, onOpen }: { keys: readonly string[]; el
 export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete, onOpenElement }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
-    // Selecting a pin on the page brings its note into view.
+    // Selecting a markup on the page brings its open note to the top of the panel (scroll-margin-top leaves a little room).
     // Braces matter: scrollIntoView can return a promise, and an effect must not return anything but a cleanup.
     useEffect(() => {
-        selectedRef.current?.scrollIntoView({ block: 'nearest' });
+        selectedRef.current?.scrollIntoView({ block: 'start' });
     }, [selectedId]);
 
     if (annotations.length === 0) return <div className="panel-empty">No annotations yet. Pick a tool and draw on the PDF.</div>;
@@ -135,7 +141,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                                 <button aria-current={selected} onClick={() => onSelect(a)}>
                                     <strong>{NAMES[a.kind]}</strong> <span className="muted">p. {a.page}</span>
                                     {a.kind === 'comment' && (
-                                        <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'} <span className="muted">{formatTimeAgo(a.createdAt, now)}</span></span>
+                                        <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'} <time className="muted" dateTime={a.createdAt} title={formatTimeAgo(a.createdAt, now)}>{formatExactDate(a.createdAt)}</time></span>
                                     )}
                                     {a.text && <span> “{a.text}”</span>}
                                     {a.kind === 'comment' && (a.replies?.length ?? 0) > 0 && <span className="muted"> · {a.replies!.length} {a.replies!.length === 1 ? 'reply' : 'replies'}</span>}

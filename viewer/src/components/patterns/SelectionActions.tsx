@@ -1,7 +1,7 @@
 import type { SyntheticEvent } from 'react';
 import type { Bounds } from '../../lib/navigation';
 import { IconButton } from '../ui/Button';
-import { CommentOnSelectionIcon, SelectSimilarIcon } from '../ui/icons';
+import { CommentIcon, SelectSimilarIcon } from '../ui/icons';
 
 export interface SelectionActionsProps {
     /** Page-space bounds of the selected elements on this page. */
@@ -35,7 +35,7 @@ export function SelectionActions({ bounds, zoom, pageWidth, pageHeight, count, o
         <div className={`selection-actions${above ? ' above' : ''}`} style={{ left, top }} role="toolbar" aria-label="Selection actions"
             onPointerDown={stop} onPointerUp={stop} onClick={stop}>
             <IconButton label="Select all of the same type" onClick={onSelectSimilar}><SelectSimilarIcon /></IconButton>
-            <IconButton label={count === 1 ? 'Comment on the selected object' : `Comment on the ${count} selected objects`} onClick={onComment}><CommentOnSelectionIcon /></IconButton>
+            <IconButton label={count === 1 ? 'Comment on the selected object' : `Comment on the ${count} selected objects`} onClick={onComment}><CommentIcon /></IconButton>
         </div>
     );
 }

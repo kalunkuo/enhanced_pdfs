@@ -9,7 +9,6 @@ export const CommentIcon = icon(<><path d="M4 5h16v11H10l-4 3.5V16H4z" /><path d
 /** Select similar: one solid square and the matching outlines it adds to the selection. */
 export const SelectSimilarIcon = icon(<><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" fill="currentColor" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" /></>);
 /** Comment on the selection: a speech bubble tied to a small square. */
-export const CommentOnSelectionIcon = icon(<><path d="M9 4h11v9h-5l-3 3v-3H9z" /><rect x="3.5" y="13.5" width="6.5" height="6.5" rx="1.5" fill="currentColor" /></>);
 export const HighlightIcon = icon(<><path d="M14 4l6 6-8 8H7l-2 2H3v-2l2-2v-4z" /><path d="M3 21h8" strokeWidth={3} opacity={0.45} /></>);
 export const DrawIcon = icon(<path d="M4 15c3-9 8-10 8-6 0 5-6 7-3 9 4 2 9-6 11-4" />);
 export const TextBoxIcon = icon(<><rect x="4" y="4" width="16" height="16" rx="1.5" strokeDasharray="2.5 2" /><path d="M8.5 17l3.5-10 3.5 10M9.7 13.5h4.6" /></>);
@@ -24,7 +23,8 @@ export const TrashIcon = icon(<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" />);
 export const PlusIcon = icon(<path d="M12 5v14M5 12h14" />);
 export const MinusIcon = icon(<path d="M5 12h14" />);
 export const FitIcon = icon(<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />);
-export const SaveIcon = icon(<><path d="M5 3h11l3 3v15H5z" /><path d="M8 3v6h7V3M8 21v-7h8v7" /></>);
+// The classic download glyph: the upload arrow turned down into the same tray.
+export const DownloadIcon = icon(<path d="M12 4v12M7 11l5 5 5-5M4 20h16" />);
 export const PrintIcon = icon(<><path d="M7 9V3h10v6" /><rect x="3" y="9" width="18" height="8" rx="1.5" /><path d="M7 14h10v7H7z" /></>);
 export const PrevPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 17V8M8 11.5l4-4 4 4" /></>);
 export const NextPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 7v9M8 12.5l4 4 4-4" /></>);

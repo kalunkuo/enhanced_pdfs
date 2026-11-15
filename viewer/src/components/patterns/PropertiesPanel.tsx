@@ -1,9 +1,11 @@
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { groupParameters } from '../../lib/groups';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
 import { categoryCounts, combineParameters, identityParameters, type CombinedParameter } from '../../lib/selection';
 import type { ElementInfo, EnhancedPdf } from '../../lib/types';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
+import { MetadataRows } from '../ui/MetadataRows';
 
 const isBool = (v: string) => v === 'Yes' || v === 'No';
 
@@ -16,6 +18,9 @@ function Wall() {
         </svg>
     );
 }
+
+const IDENTITY = 'Identity Data';
+const TYPE_GROUP = 'Type Parameters';
 
 const LOCATABLE: readonly (LocationStatus | undefined)[] = ['ready', 'partial', 'legacy'];
 
@@ -38,9 +43,16 @@ export function PropertiesPanel({ doc, elements, hasShapes, locations, onLocate,
             ...(doc.parameters.get(element.key) ?? []),
             ...((element.typeKey && doc.parameters.get(element.typeKey)) || []),
         ]));
-        return [['Identity Data', identity], ...groupParameters(exported)];
+        return [[IDENTITY, identity], ...groupParameters(exported)];
     }, [doc, elements]);
     const counts = useMemo(() => categoryCounts(elements), [elements]);
+    // Only identity data starts open; the rest stay one click away. Open state survives selection changes.
+    const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set([IDENTITY]));
+    const toggleGroup = (group: string) => setOpenGroups((open) => {
+        const next = new Set(open);
+        if (!next.delete(group)) next.add(group);
+        return next;
+    });
     const element = elements[0];
     if (!element) {
         return (
@@ -77,26 +89,40 @@ export function PropertiesPanel({ doc, elements, hasShapes, locations, onLocate,
                     ? onLocate && <Button disabled={!locatable} onClick={() => onLocate(element.key)}>Locate on drawing</Button>
                     : onFitSelection && <Button disabled={!locatable} onClick={onFitSelection}>Fit selection</Button>}
             </div>
-            <p className="parameter-scope-note">{single ? 'Parameters retain their instance or type source.' : 'Values shared by every selected element are shown; others vary.'}</p>
             {groups.map(([group, params]) => (
-                <section className="group" key={group}>
-                    <h3>{group}</h3>
-                    <div className="rows">
-                        {params.map((p, i) => (
-                            <Row key={`${p.scope}-${p.name}-${i}`} p={p} />
-                        ))}
-                    </div>
-                </section>
+                <ParameterSection key={group} group={group} params={params} open={openGroups.has(group)} onToggle={() => toggleGroup(group)} />
             ))}
         </>
     );
 }
 
-function Row({ p }: { p: CombinedParameter }) {
+function ParameterSection({ group, params, open, onToggle }: { group: string; params: CombinedParameter[]; open: boolean; onToggle: () => void }) {
+    const bodyId = useId();
     return (
-        <>
-            <div className="k">{p.name} <span className="parameter-scope">{p.scope}</span></div>
-            <div>{p.varies ? <span className="muted">Varies</span> : isBool(p.value) ? <span className={`check ${p.value === 'Yes' ? 'on' : ''}`}>{p.value === 'Yes' ? '✓' : ''}</span> : p.value || <span className="muted">—</span>}</div>
-        </>
+        <section className="prop-section">
+            <h3>
+                <button type="button" className="prop-section-toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+                    <span>{group}</span>
+                    <span className="prop-section-count">{params.length}</span>
+                    <Icon className="prop-section-chevron" name="chevronDown" />
+                </button>
+            </h3>
+            <div id={bodyId} className={`prop-section-body ${open ? '' : 'is-collapsed'}`} aria-hidden={!open} inert={!open}>
+                <div>
+                    <MetadataRows items={params.map((p, i) => ({
+                        key: `${p.scope}-${p.name}-${i}`,
+                        // Type Parameters already names its scope; elsewhere only type-sourced rows are tagged.
+                        label: p.scope === 'Type' && group !== TYPE_GROUP ? <>{p.name} <span className="parameter-scope">Type</span></> : p.name,
+                        value: <Value p={p} />,
+                    }))} />
+                </div>
+            </div>
+        </section>
     );
+}
+
+function Value({ p }: { p: CombinedParameter }) {
+    if (p.varies) return <span className="muted">Varies</span>;
+    if (isBool(p.value)) return <span className={`check ${p.value === 'Yes' ? 'on' : ''}`} aria-label={p.value}>{p.value === 'Yes' ? '✓' : ''}</span>;
+    return p.value ? <>{p.value}</> : <span className="muted">—</span>;
 }

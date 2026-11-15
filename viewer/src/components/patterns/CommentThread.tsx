@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { formatTimeAgo } from '../../lib/comments';
+import { formatExactDate, formatTimeAgo } from '../../lib/comments';
 import type { Profile } from '../../lib/profile';
 import type { Annotation } from '../../lib/types';
 import { Avatar } from '../ui/Avatar';
@@ -15,7 +15,7 @@ function Message({ author, createdAt, text, now, action }: { author: Person | un
                 <Avatar name={name} photo={author?.photo} size={32} />
                 <div className="twho">
                     <strong>{name}</strong>
-                    <span className="muted" title={createdAt}>{formatTimeAgo(createdAt, now)}</span>
+                    <time className="muted" dateTime={createdAt} title={formatTimeAgo(createdAt, now)}>{formatExactDate(createdAt) || 'No date recorded'}</time>
                 </div>
                 {action}
             </div>

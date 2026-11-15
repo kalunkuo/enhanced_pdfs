@@ -42,6 +42,18 @@ The loader also accepts optional `geometry.parquet` for compatibility with the s
 | `MinX`, `MinY`, `MaxX`, `MaxY` | double | Bounding box in PDF points, origin bottom-left. |
 | `Outline` | string, optional | JSON `[[x,y],...]` polygon in the same space. Used for hit-testing when present. |
 
+### Saved review data (for Revit import)
+
+Download (Ctrl+S) writes standard PDF annotations, the lossless `annotations.json` the viewer restores from, and three Parquet tables for a Revit import (`src/lib/markupTables.ts`). They follow the add-in's conventions (PascalCase columns, `ElementKey`/`DrawingId` join keys, ISO 8601 UTC strings, `SchemaVersion`). Required columns are written non-nullable, so they deserialize into C# non-nullable record fields; the rest are optional. Coordinates are PDF user-space points with the origin at the bottom left, crop box applied, the same space as `geometry.parquet`. Each save replaces earlier copies, and the tables are left out when there are no markups.
+
+| File | Row | Columns |
+| --- | --- | --- |
+| `markups.parquet` | one per annotation | `MarkupId`, `Page`, `DrawingId`/`ViewId`/`ViewUniqueId` (page's root drawing), `Kind`, `RevitKind` (hint: `DetailLine`, `TextNote`, `RevisionCloud`, ...), `Text`, `Author`, `CreatedUtc`, `ModifiedUtc`, `Color`, `MinX`/`MinY`/`MaxX`/`MaxY`, `AnchorX`/`AnchorY`, `Points` (JSON `[[x,y],...]`), `ElementKey` (first link), `LinkCount`, `ReplyCount`, `HasImage`, `SchemaVersion` |
+| `markup-links.parquet` | one per referenced element | `MarkupId`, `Ordinal`, `ElementKey`, `Relation` (`Linked`, or `Contained`/`Overlaps` for revision clouds), `DrawingId` (viewport on that page), `ModelKey`, `UniqueId`, `ElementId`, `LinkInstanceId`, `Category`, `Resolved` (false when the key is not in `elements`) |
+| `markup-replies.parquet` | one per reply | `MarkupId`, `ReplyId`, `Ordinal`, `Author`, `CreatedUtc`, `Text`, `HasImage` |
+
+Image data URLs stay in `annotations.json` only. Add columns rather than changing existing ones, and bump `MARKUP_SCHEMA_VERSION` for breaking changes.
+
 `scripts/make-demo-pdf.py` writes a synthetic PDF with this optional table (`public/demo/demo-enhanced.pdf`); its data is made up. Its legacy geometry conversion assumes the simple demo frame; use the shared viewport transformations for native PDF geometry, including cropped and negative-origin pages.
 
 ## Ordinary PDFs and unsupported graphics
