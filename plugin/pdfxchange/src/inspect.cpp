@@ -231,6 +231,7 @@ bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXV_Document>& doc, Co
 }
 
 bool gSwallowUp = false;  // the mouse-down was ours: also swallow its mouse-up (the Editor selects on up)
+ULONGLONG gLastHighlightTick = 0;  // when we last showed a highlight (to ignore our own selection churn)
 
 void Consume(IEvent* event, IUIX_Event* uixEvent) {
     event->put_Handled(VARIANT_TRUE);
@@ -272,6 +273,7 @@ void OnMouse(IEvent* event, IUnknown* from) {
     }
     auto rows = sm::InspectRows(*model, *hit);
     if (rows.empty()) return;
+    gLastHighlightTick = GetTickCount64();
     ShowHighlight(doc.Get(), pageIndex, map.at(*hit));
     ShowInspectWindow(GetActiveWindow(), *hit, rows);
     Consume(event, uixEvent);
@@ -317,6 +319,15 @@ void RegisterInspect(IPXV_Inst* inst) {
         // Fallback: a document starting to view means the frame exists.
         Subscribe(inst, "e.document.viewingStarted", [](IEvent*, IUnknown*) { EnsureCommand(); });
         Subscribe(inst, "e.pagesView.mouse", OnMouse);
+        // Selecting anything else in the Editor drops the highlight. The event's exact name is undocumented
+        // (interface IPXV_DocSelChangedEvent); unknown names are logged and skipped by Subscribe.
+        for (const char* name : {"e.document.selChanged", "e.document.selectionChanged", "e.selection.changed"}) {
+            Subscribe(inst, name, [name](IEvent*, IUnknown*) {
+                if (GetTickCount64() - gLastHighlightTick < 400) return;  // our own click, not a new selection
+                LogLine("inspect: %s -> clearing highlight", name);
+                ClearHighlight();
+            });
+        }
         EnsureCommand();  // usually too early (no frame yet); harmless
     } catch (...) {
         LogLine("inspect: registration threw");

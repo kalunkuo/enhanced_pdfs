@@ -21,6 +21,16 @@ private:
     VARIANT_BOOL was_ = VARIANT_FALSE;
 };
 
+// The annots-inserted/deleted events do not repaint the view (verified: the highlight only appeared after a
+// zoom, and removed ones lingered). Invalidate the area explicitly; keep the cached page content.
+void Repaint(IPXV_Document* doc, ULONG_T pageIndex, const PXC_Rect& r) {
+    const float grow = 6.0f;  // border width + anti-aliasing
+    PXC_RectF area{static_cast<float>(r.left) - grow, static_cast<float>(r.bottom) - grow,
+                   static_cast<float>(r.right) + grow, static_cast<float>(r.top) + grow};
+    HRESULT hr = doc->InvalidatePageRects(pageIndex, &area, 1, PXV_InvalidatePage_KeepContentLayer, nullptr);
+    if (FAILED(hr)) doc->InvalidatePage(pageIndex, 0, nullptr);  // fall back to the whole page
+}
+
 bool IsOurs(IPXC_Annotation* annot) {
     BSTR name = nullptr;
     bool ours = SUCCEEDED(annot->get_Name(&name)) && name && std::wcscmp(name, kHighlightName) == 0;
@@ -43,8 +53,11 @@ void RemoveFrom(IPXV_Document* doc) {
         for (ULONG_T i = count; i > 0; --i) {
             ComPtr<IPXC_Annotation> annot;
             if (FAILED(page->GetAnnot(i - 1, annot.Put())) || !annot || !IsOurs(annot.Get())) continue;
+            PXC_Rect area{};
+            annot->get_Rect(&area);
             doc->FireAnnotDeletedEvent(annot.Get());
             page->RemoveAnnots(i - 1, 1);
+            Repaint(doc, p, area);
         }
     }
 }
@@ -112,7 +125,8 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
         annot->put_Rect(&rect);
         // Not selectable/movable by the user: ReadOnly (64) | Locked (128).
         annot->put_Flags(64 | 128);
-        doc->FireAnnotInsertedEvent(annot.Get());  // lets the Editor redraw; our collector skips the name
+        doc->FireAnnotInsertedEvent(annot.Get());  // keeps the Editor's annotation lists in sync
+        Repaint(doc, static_cast<ULONG_T>(pageIndex), rect);
 
         doc->AddRef();
         gDoc = doc;
