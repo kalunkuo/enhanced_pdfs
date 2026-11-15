@@ -81,7 +81,9 @@ public static class DecisionsWriter
     private static MemoryStream Serialize(IEnumerable<DecisionRow> rows)
     {
         var buffer = new MemoryStream();
-        ParquetSerializer.SerializeAsync(rows.ToList(), buffer, new ParquetOptions { CompressionMethod = CompressionMethod.Gzip }).GetAwaiter().GetResult();
+        var list = rows.ToList();
+        // Off the caller's SynchronizationContext (Revit's UI thread), as in ExportTables.Rows.
+        Task.Run(() => ParquetSerializer.SerializeAsync(list, buffer, new ParquetOptions { CompressionMethod = CompressionMethod.Gzip })).GetAwaiter().GetResult();
         buffer.Position = 0;
         return buffer;
     }

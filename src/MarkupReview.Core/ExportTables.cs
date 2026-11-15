@@ -72,7 +72,12 @@ public sealed class ExportTables
     internal static IList<T> Rows<T>(ReturnedPdf pdf, string name) where T : class, new()
     {
         if (!pdf.Attachments.TryGetValue(name, out var bytes)) return [];
-        using var stream = new MemoryStream(bytes);
-        return ParquetSerializer.DeserializeAsync<T>(stream).GetAwaiter().GetResult().Data;
+        // Off the caller's SynchronizationContext: Revit calls this on its UI thread, where blocking on
+        // Parquet.Net's awaits would deadlock.
+        return Task.Run(async () =>
+        {
+            using var stream = new MemoryStream(bytes);
+            return (await ParquetSerializer.DeserializeAsync<T>(stream)).Data;
+        }).GetAwaiter().GetResult();
     }
 }
