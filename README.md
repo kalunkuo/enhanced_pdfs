@@ -41,6 +41,7 @@ For example, ask a PDF reader that extracts text: **“What Fire Rating values a
 | `appearances.parquet` | Element membership per drawing or placed view |
 | `parameters.parquet` | Populated instance and type parameters, including Revit display values and raw typed values |
 | `schedule-cells.parquet` | Text Revit exposes for sheet schedules, when present |
+| `manifest.json` | The model-backed attachments above with row counts and SHA-256 hashes, the model's saved version GUID, linked models, Revit version, export time and the page-to-drawing list |
 
 Join appearances to drawings on `DrawingId` and to elements on `ElementKey`. An element shown on multiple pages has one element record and an appearance for each drawing in which it occurs. Join instance parameters using `OwnerKey = ElementKey` and type parameters using `OwnerKey = TypeKey`. Use the view and model identifiers alongside element IDs when checking linked elements. Share the enhanced PDF only with recipients who should receive its embedded model properties.
 
@@ -60,10 +61,16 @@ Requirements: [Claude Code](https://claude.com/claude-code) installed and signed
 
 ## Verify a PDF
 
-Run the verifier to check the page-to-drawing mapping, Parquet tables, and searchable text. Pass the native PDF for the same drawings and page order to compare every rendered page.
+Run the verifier to check the page-to-drawing mapping, Parquet tables, searchable text, and that every table still matches its hash in `manifest.json`. Attachments the manifest does not list (for example review markups other tools add) are reported as `other_attachments` and never fail verification. Pass the native PDF for the same drawings and page order to compare every rendered page.
 
 ```sh
 uv run --script scripts/verify_pdf.py enhanced.pdf --native revit-native.pdf
+```
+
+To check that the model data survives other tools, `scripts/roundtrip_check.py` re-saves the file through a zip archive, pypdf, PyMuPDF (full rewrite and incremental update with a markup) and the browser viewer's pdf-lib save, and verifies each result.
+
+```sh
+uv run --script scripts/roundtrip_check.py enhanced.pdf --out output/roundtrip --node-modules <folder with node_modules/pdf-lib>
 ```
 
 For an exact pixel comparison, use the native PDF from the same export run. Revit can print the export time in the title block, which changes between independent exports.
