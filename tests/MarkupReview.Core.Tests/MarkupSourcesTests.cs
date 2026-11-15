@@ -86,6 +86,22 @@ public sealed class MarkupSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Viewer_comment_on_a_multi_selection_links_every_element()
+    {
+        var fixture = new FixturePdf
+        {
+            ViewerJson = FixturePdf.ViewerAnnotations(new
+            {
+                id = "c3", page = 1, kind = "comment", from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                text = "both of these", elementKey = FixturePdf.WallKey, elementKeys = new[] { FixturePdf.WallKey, FixturePdf.DoorKey },
+            }),
+        };
+
+        var markup = Assert.Single(Read(fixture).Markups);
+        Assert.Equal([new MarkupLink(FixturePdf.WallKey, "linked"), new MarkupLink(FixturePdf.DoorKey, "linked")], markup.Links);
+    }
+
+    [Fact]
     public void Viewer_comment_replies_are_appended_to_the_text()
     {
         var fixture = new FixturePdf

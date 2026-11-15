@@ -88,6 +88,10 @@ public static partial class MarkupSources
             string? text = WithReplies(Str(a, "text"), a);
             var own = new List<MarkupLink>();
             if (Str(a, "elementKey") is { } key) own.Add(new MarkupLink(key, "linked"));
+            // A comment on a multi-selection lists every element (elementKey holds only the first).
+            if (a.TryGetProperty("elementKeys", out var keys) && keys.ValueKind == JsonValueKind.Array)
+                foreach (var k in keys.EnumerateArray().Where(k => k.ValueKind == JsonValueKind.String).Select(k => k.GetString()!))
+                    if (own.All(l => l.ElementKey != k)) own.Add(new MarkupLink(k, "linked"));
             // Revision clouds list what they cover; elements only partly inside are "overlapping".
             if (a.TryGetProperty("contained", out var contained) && contained.ValueKind == JsonValueKind.Array)
                 foreach (var c in contained.EnumerateArray())
