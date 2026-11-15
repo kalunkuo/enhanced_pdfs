@@ -101,6 +101,23 @@ public sealed class MarkupSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Non_ascii_digits_in_text_are_ignored_not_fatal()
+    {
+        var fixture = new FixturePdf
+        {
+            ViewerJson = FixturePdf.ViewerAnnotations(new
+            {
+                id = "v6", page = 1, kind = "comment",
+                from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                text = "١٢٣٤٥٦ ０１２３４５ and 676281",
+            }),
+        };
+
+        var markup = Assert.Single(Read(fixture).Markups);
+        Assert.Equal(FixturePdf.WallKey, Assert.Single(markup.Links).ElementKey);
+    }
+
+    [Fact]
     public void Tie_to_unknown_key_is_kept_with_missing_status()
     {
         var fixture = new FixturePdf

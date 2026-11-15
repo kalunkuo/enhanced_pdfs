@@ -36,7 +36,8 @@ public static partial class MarkupSources
     public const string AcrobatAnnotationsFile = "annotations.parquet";
     public const string AcrobatLinksFile = "annotation-links.parquet";
 
-    [GeneratedRegex(@"(?<!\d)\d{4,9}(?!\d)")]
+    // ASCII digits only: \d would match other scripts' digits, which long.Parse rejects.
+    [GeneratedRegex(@"(?<![0-9])[0-9]{4,9}(?![0-9])")]
     private static partial Regex ElementIdPattern();
 
     public static (IReadOnlyList<Markup> Markups, string Source) Read(ReturnedPdf pdf, ExportTables tables)
@@ -102,9 +103,12 @@ public static partial class MarkupSources
         if (string.IsNullOrEmpty(text)) return links;
         var known = links.Select(l => l.ElementKey).ToHashSet(StringComparer.Ordinal);
         foreach (Match match in ElementIdPattern().Matches(text))
-            foreach (var element in tables.ElementsById[long.Parse(match.Value)])
+        {
+            if (!long.TryParse(match.Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id)) continue;
+            foreach (var element in tables.ElementsById[id])
                 if (known.Add(element.ElementKey))
                     links.Add(new MarkupLink(element.ElementKey, "referenced"));
+        }
         return links;
     }
 

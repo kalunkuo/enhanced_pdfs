@@ -19,7 +19,12 @@ public sealed record PdfAnnot(int Page, string Id, string Subtype, string? Conte
 /// <summary>A returned enhanced PDF, read once into memory. The file is never modified.</summary>
 public sealed class ReturnedPdf
 {
-    private const int MaxNameTreeNodes = 10_000;
+    internal const int MaxNameTreeNodes = 10_000;
+    internal const long MaxAttachmentBytes = 256L * 1024 * 1024;
+    internal const long MaxTotalAttachmentBytes = 512L * 1024 * 1024;
+
+    private static InvalidDataException TooLarge(string name) =>
+        new($"Attachment '{name}' is larger than this review supports.");
     private static readonly HashSet<string> NonMarkupSubtypes = ["/Link", "/Widget", "/Popup"];
 
     public required string Path { get; init; }
@@ -67,15 +72,20 @@ public sealed class ReturnedPdf
         var root = names?.Elements.GetDictionary("/EmbeddedFiles");
         if (root is null) return result;
 
-        // Bounded walk: a malformed tree must not loop forever.
+        // Bounded walk: a malformed or cyclic tree must not loop or fan out without limit.
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance) { root };
         var pending = new Stack<PdfDictionary>([root]);
-        int visited = 0;
-        while (pending.Count > 0 && visited++ < MaxNameTreeNodes)
+        long total = 0;
+        while (pending.Count > 0)
         {
             var node = pending.Pop();
             if (node.Elements.GetArray("/Kids") is { } kids)
                 foreach (var kid in kids.Elements)
-                    if (Resolve(kid) is PdfDictionary child) pending.Push(child);
+                    if (Resolve(kid) is PdfDictionary child && seen.Add(child))
+                    {
+                        if (seen.Count > MaxNameTreeNodes) throw new InvalidDataException("The PDF's attachment list is too large or malformed.");
+                        pending.Push(child);
+                    }
 
             if (node.Elements.GetArray("/Names") is not { } entries) continue;
             for (int i = 0; i + 1 < entries.Elements.Count; i += 2)
@@ -83,7 +93,13 @@ public sealed class ReturnedPdf
                 if (Resolve(entries.Elements[i]) is not PdfString name) continue;
                 if (Resolve(entries.Elements[i + 1]) is not PdfDictionary spec) continue;
                 var stream = spec.Elements.GetDictionary("/EF")?.Elements.GetDictionary("/F")?.Stream;
-                if (stream is not null) result[name.Value] = stream.UnfilteredValue;
+                if (stream is null) continue;
+                // Encoded-size cap before decoding; decoded-size cap after (a deflate bomb is bounded by the encoded cap × ratio).
+                if (stream.Length > MaxAttachmentBytes) throw TooLarge(name.Value);
+                byte[] bytes = stream.UnfilteredValue;
+                total += bytes.Length;
+                if (bytes.Length > MaxAttachmentBytes || total > MaxTotalAttachmentBytes) throw TooLarge(name.Value);
+                result[name.Value] = bytes;
             }
         }
         return result;
