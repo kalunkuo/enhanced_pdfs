@@ -115,3 +115,11 @@
   --viewer-shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
   --viewer-warning-background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
 }
+
+/* Touch screens: compact 24px icon buttons are too small for a finger. One token change grows every
+   icon button, the toolbar control height and the tool rail together; glyphs keep their 16px size. */
+@media (pointer: coarse) {
+  :root {
+    --button-icon-size: var(--primitive-size-9);
+  }
+}

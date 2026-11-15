@@ -289,3 +289,54 @@ button, input { font: inherit; color: inherit; }
 @keyframes viewer-menu-row-in { from { opacity: 0; transform: translateY(var(--primitive-space-1)); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .filter-fields-toggle, .filter-fields-chevron, .filter-fields-body, .prop-section-toggle, .prop-section-chevron, .prop-section-body, .filter-option, .property-menu-input, .property-menu-toggle svg { transition-duration: .01ms !important; } }
 @media (prefers-reduced-motion: reduce) { .property-menu-list, .property-menu-list > button, .flyout, .dropdown, .dropdown .menu-item, .flyout .menu-item, .flyout .swatch, .flyout .icon-button { animation-duration: .01ms !important; } }
+
+/* ---- Touch screens ------------------------------------------------------------------------------
+   Bigger targets, native one-finger panning of the drawing in the select tool (drawing tools keep the
+   finger for themselves), and no browser pinch-zoom on the page area: PdfStage zooms the drawing instead. */
+@media (pointer: coarse) {
+    .tab { min-height: 40px; }
+    .corner { width: 14px; height: 14px; }
+    .stage { touch-action: pan-x pan-y; }
+    .page.tool-select > svg, .page.tool-pan > svg { touch-action: pan-x pan-y; }
+}
+
+/* ---- Small screens (phones, narrow windows) ----------------------------------------------------
+   The inspector stacks under the drawing and can be collapsed with the grabber; the tool rail becomes a
+   strip along the bottom of the page area; the document bar packs into two tidy rows. Nothing here applies
+   above 860px, so the desktop layout is untouched. */
+.panel-grabber, .docbar-break { display: none; }
+@media (max-width: 860px) {
+    .app, .main { overflow: hidden; }
+
+    /* Document bar: row one is the file (logo, upload, download, clear data, profile); row two is the page,
+       the select tool and zoom. Print and the pan tool are hidden: a finger pans, and nobody prints from a phone. */
+    .docbar { gap: var(--primitive-space-1); padding-inline: var(--primitive-space-3); }
+    .docbar .sep, .docbar .docbar-phone-hidden { display: none; }
+    .docbar-spacer, .docbar-clear, .docbar-account { order: 1; }
+    .docbar-break { display: block; flex-basis: 100%; height: 0; order: 2; }
+    .docbar-nav, .page-ctl, .docbar-tool, .docbar-zoom, .zoom-menu { order: 3; }
+    .page-ctl { margin-right: auto; }
+
+    /* Page area: no rail allowance on the right; room for the rail strip at the bottom. */
+    .stage { padding: var(--primitive-space-3) var(--primitive-space-3) calc(var(--viewer-rail-width) + 2 * var(--primitive-space-3)); }
+    .file-chip { top: var(--primitive-space-2); left: var(--primitive-space-2); max-width: calc(100% - 2 * var(--primitive-space-2)); }
+    .pick-status { bottom: calc(var(--viewer-rail-width) + 2 * var(--primitive-space-3)); }
+
+    /* Tool rail as a centred strip along the bottom edge; its menus open upward. */
+    .vtoolbar { top: auto; right: auto; bottom: var(--primitive-space-2); left: 50%; translate: -50% 0; width: auto; max-width: calc(100% - 2 * var(--primitive-space-2));
+        flex-direction: row; padding: var(--toolbar-padding); }
+    .vtoolbar .grip { display: none; }
+    .vtoolbar .flyout { right: auto; left: 0; top: auto; bottom: calc(100% + var(--primitive-space-2)); transform-origin: var(--primitive-space-3) calc(100% + 20px); }
+    .vtoolbar .tool-slot:last-child .flyout { left: auto; right: 0; transform-origin: calc(100% - var(--primitive-space-3)) calc(100% + 20px); }
+
+    /* Inspector under the drawing: collapsed (tabs only), half, or most of the screen. */
+    .main { grid-template-rows: minmax(0, 1fr) 45%; }
+    .main[data-panel='collapsed'] { grid-template-rows: minmax(0, 1fr) auto; }
+    .main[data-panel='full'] { grid-template-rows: minmax(0, 1fr) 82%; }
+    .main[data-panel='collapsed'] .side .panel { display: none; }
+    .side { border-left: 0; }
+    .side > .tabs { margin-top: 0; }
+    .panel-grabber { display: grid; place-items: center; width: 100%; height: 24px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
+    .panel-grabber::before { content: ''; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border); }
+    .panel-grabber:active { cursor: grabbing; }
+}
