@@ -226,6 +226,29 @@ internal sealed class ReviewController
         return error;
     }
 
+    /// <summary>
+    /// Ends the review without applying anything else: stops Claude, drops pending proposals, clears the preview
+    /// selection and closes the panel. Changes already approved stay in the model (each is its own undo step).
+    /// </summary>
+    public async Task EndReviewAsync()
+    {
+        Log($"end review: {Session?.Proposals.Count(p => p.Status == ProposalStatus.Approved) ?? 0} approved kept, " +
+            $"{Session?.Proposals.Count(p => p.Status == ProposalStatus.Pending) ?? 0} pending discarded");
+        Cancel();
+        Session = null;
+        Gateway = null;
+        Warning = null;
+        StartedAt = null;
+        LastThought = null;
+        Status = "Import a marked-up PDF to start a review.";
+        Changed?.Invoke();
+        await _dispatcher.InvokeAsync(app =>
+        {
+            Preview.Clear(app);
+            app.GetDockablePane(PaneId).Hide();
+        });
+    }
+
     public void Reject(Proposal proposal, string? reason)
     {
         Decide(proposal, ProposalStatus.Rejected, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());

@@ -29,7 +29,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private readonly TextBlock _activity = new() { Foreground = Ink, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed };
     private readonly TextBlock _thought = new() { Foreground = Muted, FontStyle = FontStyles.Italic, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0), Visibility = Visibility.Collapsed };
     private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly Button _cancel = SmallButton("Cancel");
+    private readonly Button _cancel = SmallButton("Stop Claude");
+    private readonly Button _end = SmallButton("End review");
     private readonly Button _save = SmallButton("Save review");
     private readonly StackPanel _filters = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
     private readonly StackPanel _cards = new();
@@ -51,7 +52,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
 
         _cancel.Click += (_, _) => _controller.Cancel();
         _save.Click += async (_, _) => await SaveAsync();
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save } };
+        _end.Click += async (_, _) => await EndReviewAsync();
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save, _end } };
         var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _filters } };
         _clock.Tick += (_, _) => UpdateActivity();
 
@@ -86,6 +88,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _warning.Text = _controller.Warning ?? "";
         _warning.Visibility = _controller.Warning is null ? Visibility.Collapsed : Visibility.Visible;
         _cancel.Visibility = _controller.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+        _end.Visibility = session is null ? Visibility.Collapsed : Visibility.Visible;
         _save.IsEnabled = session is not null && !_controller.IsRunning;
         UpdateActivity();
 
@@ -309,6 +312,28 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             _status.Text = $"Saved decisions to {path}";
         }
         catch (Exception e) { _status.Text = $"Could not save the review: {e.Message}"; }
+    }
+
+    private async Task EndReviewAsync()
+    {
+        var session = _controller.Session;
+        if (session is null) return;
+        int approved = session.Proposals.Count(p => p.Status == ProposalStatus.Approved);
+        int pending = session.Proposals.Count(p => p.Status == ProposalStatus.Pending);
+        string message = (approved > 0
+            ? $"{approved} approved change{(approved == 1 ? " stays" : "s stay")} in the model (Ctrl+Z reverts {(approved == 1 ? "it" : "them")}).\n"
+            : "Nothing has been applied to the model.\n")
+            + (pending > 0 ? $"{pending} pending proposal{(pending == 1 ? " is" : "s are")} discarded.\n" : "")
+            + (_controller.IsRunning ? "Claude will be stopped.\n" : "")
+            + "\nEnd this review?";
+        if (MessageBox.Show(Window.GetWindow(this), message, "End review", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+        _selected = null;
+        _rejecting = null;
+        _lastError = null;
+        _crops.Clear();
+        try { await _controller.EndReviewAsync(); }
+        catch (Exception e) { _status.Text = $"Could not close the review: {e.Message}"; }
     }
 
     private static Border Card(UIElement body, bool selected, Action onClick)
