@@ -26,6 +26,7 @@ import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import { clearBrowserData, fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import { demoFileFromLocation } from './lib/demo';
+import { formatExportTime } from './lib/provenance';
 import { initialPanelSize, matchesMedia, nextPanelSize, panelGesture, SHORT_LAYOUT, type PanelSize } from './lib/mobile';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
@@ -66,6 +67,18 @@ const DRAW_KINDS = new Set<string>(['pen', 'line', 'rect', 'ellipse']);
 const PERSIST_DELAY_MS = 300;
 // Review suggestions can be highlighted without turning them into accepted object links.
 const reviewKeys = (annotation: Annotation) => annotation.source?.linkState === 'suggested' ? annotation.source.suggestedElementKeys ?? [] : linkedKeys(annotation);
+
+/** Tooltip for the file chip: what the manifest says about the model data. */
+function fileChipTitle(doc: EnhancedPdf): string {
+    const p = doc.provenance;
+    if (!p) return `${doc.fileName}\nNo manifest: exported before provenance was recorded, so the tables cannot be verified.`;
+    const tables = `${p.tables.filter((t) => t.verified).length} of ${p.tables.length} tables verified`;
+    const lines = [doc.fileName, `${p.verified ? 'Model data verified' : 'Model data NOT verified'} · ${tables}`,
+        `Model: ${p.modelName}${p.linkedModels.length ? ` (+ ${p.linkedModels.join(', ')})` : ''}`,
+        `Exported: ${formatExportTime(p.exportedUtc)}${p.revitVersion ? ` · Revit ${p.revitVersion}` : ''}`];
+    if (p.savedVersion) lines.push(`Model version: ${p.savedVersion}`);
+    return lines.join('\n');
+}
 
 export function App() {
     const [doc, setDoc] = useState<EnhancedPdf | null>(null);
@@ -887,7 +900,12 @@ export function App() {
             </div>
             <main className="main" data-panel={panelSize}>
                 <div className="stage-wrap">
-                    {doc && <div className="file-chip" title={doc.fileName}>{doc.fileName}</div>}
+                    {doc && <div className="file-chip" title={fileChipTitle(doc)}>
+                        <span className="file-chip-name">{doc.fileName}</span>
+                        {doc.provenance && <span className={`file-chip-prov ${doc.provenance.verified ? 'is-verified' : 'is-unverified'}`}>
+                            {doc.provenance.verified ? '✓' : '!'} {doc.provenance.modelName} · {formatExportTime(doc.provenance.exportedUtc)}
+                        </span>}
+                    </div>}
                     {doc && pageData ? (
                         <PdfStage
                             pdf={doc.pdf}

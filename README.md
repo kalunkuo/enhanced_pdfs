@@ -28,7 +28,7 @@ Use `-RevitPath` for a non-default Revit installation. Use `-BuildDirectory` to 
 - **One drawing.** Open the view or sheet, click its drawing canvas, and select **Add-Ins → Enhanced PDFs → Export Enhanced PDF**.
 - **A set.** Select **Add-Ins → Enhanced PDFs → Export Sheet Set**, then choose **Project sheets** or a saved Revit view/sheet set. Check the drawings to include, choose a destination, and save one combined PDF. Project sheets appear in sheet-number order, with sheets containing live 3D views unchecked by default. Check those sheets individually or use **Select all** to include them. Saved sets start with every drawing checked in Revit's stored order.
 
-Use the viewer's search or extract the page text to find drawing names, element IDs, and common properties. Open the PDF attachments to read instance and type parameters exposed by Revit.
+Use the viewer's search or extract the page text to find drawing names, element IDs, UniqueIds, and common properties. The text layer starts with a short description of the file: the embedded tables, their join keys, the unit of `InternalValue`, and which identifier is unique across linked models, so a reader that only extracts page text (a person, a search index, a coding agent) knows the attachments exist and how to read them. Open the PDF attachments to read instance and type parameters exposed by Revit.
 
 For example, ask a PDF reader that extracts text: **“What Fire Rating values are assigned to the exterior walls on this drawing? Cite the Revit element IDs and distinguish blank ratings.”** The text layer includes each wall's Revit Function and Fire Rating, with a summary per view. A blank Fire Rating is reported as unspecified.
 
@@ -41,6 +41,7 @@ For example, ask a PDF reader that extracts text: **“What Fire Rating values a
 | `appearances.parquet` | Element membership per drawing or placed view |
 | `parameters.parquet` | Populated instance and type parameters, including Revit display values and raw typed values |
 | `schedule-cells.parquet` | Text Revit exposes for sheet schedules, when present |
+| `manifest.json` | The model-backed attachments above with row counts and SHA-256 hashes, the model's saved version GUID, linked models, Revit version, export time and the page-to-drawing list |
 
 Join appearances to drawings on `DrawingId` and to elements on `ElementKey`. An element shown on multiple pages has one element record and an appearance for each drawing in which it occurs. Join instance parameters using `OwnerKey = ElementKey` and type parameters using `OwnerKey = TypeKey`. Use the view and model identifiers alongside element IDs when checking linked elements. Share the enhanced PDF only with recipients who should receive its embedded model properties.
 
@@ -60,10 +61,16 @@ Requirements: [Claude Code](https://claude.com/claude-code) installed and signed
 
 ## Verify a PDF
 
-Run the verifier to check the page-to-drawing mapping, Parquet tables, and searchable text. Pass the native PDF for the same drawings and page order to compare every rendered page.
+Run the verifier to check the page-to-drawing mapping, Parquet tables, searchable text, and that every table still matches its hash in `manifest.json`. Attachments the manifest does not list (for example review markups other tools add) are reported as `other_attachments` and never fail verification. Pass the native PDF for the same drawings and page order to compare every rendered page.
 
 ```sh
 uv run --script scripts/verify_pdf.py enhanced.pdf --native revit-native.pdf
+```
+
+To check that the model data survives other tools, `scripts/roundtrip_check.py` re-saves the file through a zip archive, pypdf, PyMuPDF (full rewrite and incremental update with a markup) and the browser viewer's pdf-lib save, and verifies each result.
+
+```sh
+uv run --script scripts/roundtrip_check.py enhanced.pdf --out output/roundtrip --node-modules <folder with node_modules/pdf-lib>
 ```
 
 For an exact pixel comparison, use the native PDF from the same export run. Revit can print the export time in the title block, which changes between independent exports.

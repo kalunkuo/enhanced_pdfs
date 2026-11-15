@@ -12,6 +12,6 @@ export default defineConfig(({ mode }) => {
     return {
         plugins: [react(), agentApiPlugin(resolveAgentConfig(env))],
         server: { port: Number(process.env.DEV_PORT) || 5313, strictPort: true },
-        test: { include: ['tests/**/*.test.ts'] },
+        test: { include: ['tests/**/*.test.ts'], setupFiles: ['tests/setup.ts'] },
     };
 });

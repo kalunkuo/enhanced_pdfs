@@ -57,6 +57,24 @@ def verify(path, native=None, wall_id=None, rating=None, excluded_id=None, dpi=1
         check(len(files) == 1, f"Duplicate attachment {name}.")
         tables[name.removesuffix(".parquet")] = parquet.read_table(BytesIO(files[0])).to_pylist()
     check(required <= tables.keys(), "Required Parquet attachments are missing.")
+    table_names = {f"{name}.parquet" for name in tables}
+    other_attachments = sorted(name for name in attachments if name not in table_names | {"manifest.json"})
+
+    # manifest.json lists the model-backed tables with their hashes. Anything not listed there
+    # (review markups, links added by other tools) is a different layer and is only reported.
+    manifest = None
+    if "manifest.json" in attachments:
+        check(len(attachments["manifest.json"]) == 1, "Duplicate attachment manifest.json.")
+        manifest = json.loads(attachments["manifest.json"][0])
+        check(manifest.get("format") == "enhanced-pdf" and manifest.get("schemaVersion") == 1, "Unexpected manifest format.")
+        listed = {entry["name"]: entry for entry in manifest["tables"]}
+        check(set(listed) == table_names, "The manifest lists different tables than the PDF carries.")
+        for name, entry in listed.items():
+            blob = attachments[name][0]
+            check(entry["bytes"] == len(blob) and entry["sha256"] == hashlib.sha256(blob).hexdigest(),
+                  f"{name} does not match its hash in manifest.json.")
+            check(entry["rows"] == len(tables[name.removesuffix(".parquet")]), f"{name} row count differs from manifest.json.")
+        check(len(manifest["pages"]) == page_count, "The manifest page count differs from the PDF.")
 
     drawings = tables["drawings"]
     by_drawing = {row["DrawingId"]: row for row in drawings}
@@ -65,6 +83,12 @@ def verify(path, native=None, wall_id=None, rating=None, excluded_id=None, dpi=1
     root_by_page = {row["Page"]: row for row in roots}
     check(len(roots) == page_count and set(root_by_page) == set(range(1, page_count + 1)),
           "Expected one root drawing for each PDF page.")
+    if manifest is not None:
+        check(manifest["model"]["savedVersion"] == root_by_page[1]["SavedVersion"]
+              and manifest["exportedUtc"] == root_by_page[1]["ExportedUtc"],
+              "The manifest provenance differs from drawings.parquet.")
+        check([entry["drawingId"] for entry in manifest["pages"]] == [root_by_page[page]["DrawingId"] for page in sorted(root_by_page)],
+              "The manifest pages differ from the root drawings.")
     for row in drawings:
         root = root_by_page.get(row["Page"])
         check(root is not None and (row is root or row["ParentDrawingId"] == root["DrawingId"]),
@@ -102,12 +126,25 @@ def verify(path, native=None, wall_id=None, rating=None, excluded_id=None, dpi=1
     if excluded_id is not None:
         check(all(row["ElementId"] != excluded_id for row in data), "An excluded element is present in Parquet.")
 
+    unique_ids = {row["ElementId"]: row["UniqueId"] for row in data}
     found_rating = False
     for page_number, page in enumerate(reader.pages, 1):
         text = extract_bim_text(page, page_number)
         text_ids = {int(match) for match in re.findall(r"Element ID:\s*(\d+)\s*\|", text)}
         check(text_ids == element_ids_by_page[page_number],
               f"Hidden text element IDs differ from the Parquet table on page {page_number}.")
+        # The header describes the file for readers that only extract page text: it must name
+        # every embedded table and the join keys, and each element record carries its UniqueId.
+        header = text.split("Element ID:", 1)[0]
+        for name in tables:
+            check(f"{name}.parquet" in header, f"The text header on page {page_number} does not name {name}.parquet.")
+        check("OwnerKey" in header and "TypeKey" in header, f"The text header on page {page_number} lacks the join rules.")
+        if manifest is not None:
+            check("manifest.json" in header, f"The text header on page {page_number} does not name manifest.json.")
+        text_unique = dict(re.findall(r"Element ID:\s*(\d+)\s*\|\s*UniqueId:\s*([0-9a-f-]+)", text))
+        check(all(unique_ids.get(int(element_id)) == unique_id for element_id, unique_id in text_unique.items())
+              and len(text_unique) == len(text_ids),
+              f"Hidden text UniqueIds differ from the Parquet table on page {page_number}.")
         if wall_id in text_ids and not found_rating:
             wall_sections = re.split(r"(?=Element ID:\s*\d+\s*\|)", text)
             found_rating = any(re.match(wall_prefix, section) and re.search(rating_pattern, section)
@@ -119,6 +156,14 @@ def verify(path, native=None, wall_id=None, rating=None, excluded_id=None, dpi=1
         "revit_version": root_by_page[1]["RevitVersion"],
         "rows": {name: len(rows) for name, rows in tables.items()},
         "exterior_wall_ratings": dict(sorted(ratings.items())),
+        "manifest": None if manifest is None else {
+            "verified": True,
+            "saved_version": manifest["model"]["savedVersion"],
+            "exported_utc": manifest["exportedUtc"],
+            "generator": manifest["generator"],
+            "table_sha256": {entry["name"]: entry["sha256"] for entry in manifest["tables"]},
+        },
+        "other_attachments": other_attachments,
     }
     if page_count == 1:
         result.update(drawing=root_by_page[1]["Name"], sheet_number=root_by_page[1]["SheetNumber"])

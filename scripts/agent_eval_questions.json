@@ -1,0 +1,59 @@
+[
+  {
+    "id": "q1-wall-rating",
+    "question": "What is the fire rating of the wall with Revit element ID 676281?",
+    "expect": ["2 HR"],
+    "source": "hidden text and elements.parquet",
+    "note": "Snowdon Towers A101 baseline. Element line in the text layer carries Fire Rating."
+  },
+  {
+    "id": "q2-exterior-wall-counts",
+    "question": "How many exterior walls on this drawing have a 2 HR fire rating, and how many exterior walls have no fire rating assigned?",
+    "expect": ["16", "31"],
+    "source": "hidden text summary lines and elements.parquet (WallFunction, FireRating)"
+  },
+  {
+    "id": "q3-door-width",
+    "question": "What is the width of door 101A? Give the value in feet and inches.",
+    "expect": ["2' - 2\"", "26"],
+    "reject": [],
+    "source": "parameters.parquet only (type parameter Width, InternalValue 2.1667 ft, DisplayValue 2' - 2\")",
+    "note": "Either the display value or 26 inches passes. Tests attachment discovery and unit handling."
+  },
+  {
+    "id": "q4-wall-uniqueid",
+    "question": "What is the Revit UniqueId (the GUID-style identifier, not the integer element ID) of wall 676281?",
+    "expect": ["b0a2dd1a-b172-4911-a09e-5a29154cd7e2-000a51b9"],
+    "source": "elements.parquet only before step 1; hidden text after step 1"
+  },
+  {
+    "id": "q5-planting-schedule",
+    "question": "According to the planting schedule on this sheet, how many Hydrangea plants are on the Green Roof Hardscape level?",
+    "expect": ["19"],
+    "source": "hidden text schedule rows and schedule-cells.parquet"
+  },
+  {
+    "id": "q6-model-provenance",
+    "question": "Which Revit model file and which Revit version was this drawing exported from?",
+    "expect": ["Snowdon Towers Sample Architectural", "2025"],
+    "source": "hidden text header and drawings.parquet"
+  },
+  {
+    "id": "q7-rated-doors",
+    "question": "List the door marks on this drawing that have a fire rating other than NR, with their ratings.",
+    "expect": ["101D", "106A", "S11B", "90 MIN", "45 MIN"],
+    "source": "elements.parquet (Doors with FireRating) or parameters.parquet; the text layer only prints Fire Rating for walls today"
+  },
+  {
+    "id": "q8-door-count",
+    "question": "How many doors are drawn on this sheet?",
+    "expect": ["34"],
+    "source": "hidden text element lines (Category Doors) and elements.parquet"
+  },
+  {
+    "id": "q9-api-identifiers",
+    "question": "I want to select wall 676281 in Revit through its API. Give me every identifier from this file I could use for that, and say which one is safe if the project contains linked models.",
+    "expect": ["676281", "b0a2dd1a-b172-4911-a09e-5a29154cd7e2-000a51b9", "UniqueId"],
+    "source": "elements.parquet (UniqueId, ElementId, ModelKey); the MCP scenario"
+  }
+]
