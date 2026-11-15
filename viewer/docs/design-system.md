@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The functional React/TypeScript viewer displays a PDF and connects its element geometry to attached Parquet specifications. Application chrome uses an off-black canvas, white Manrope text, bright blue primary actions, bright red secondary emphasis, and pink, green, and yellow for contextual features. The PDF raster keeps its original colors and typography. Geometry outlines and annotations occupy separate layers aligned to document coordinates.
+The functional React/TypeScript viewer displays a PDF and connects its element geometry to attached Parquet specifications. Application chrome uses an off-black canvas, white Manrope text, bright blue primary actions, bright red secondary emphasis, and pink, green, and yellow for contextual features. The PDF raster keeps its original colors and typography. Geometry outlines and annotations occupy separate layers aligned to document coordinates. Annotations are drawn in the secondary red (`--color-annotation`) and turn gray when they are not tied to an object.
 
 ## Three token tiers
 

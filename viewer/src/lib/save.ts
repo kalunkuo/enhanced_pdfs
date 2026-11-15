@@ -191,7 +191,7 @@ function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): 
             // Box, then the leader and its dot when there is one. Untied boxes are gray, text included.
             const box = textBox(a);
             const seg = leaderSegment(a);
-            const ink = tied ? INK : UNTIED;
+            const ink = tied ? TIED : UNTIED; // red when tied, like the box and leader; gray when untied
             resources.Font = { F1: fonts.sans.ref };
             content = `${rgb(color)} RG 1 w ${dash}${X(box.x)} ${Y(box.y + box.h)} ${f(box.w)} ${f(box.h)} re S `;
             if (seg) {

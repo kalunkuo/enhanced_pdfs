@@ -13,6 +13,7 @@ import { Dialog } from './components/ui/Dialog';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
+import { elementLabel, elementTypeLabel } from './lib/elementLabel';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -186,7 +187,8 @@ export function App() {
     const labelFor = useCallback(
         (key: string) => {
             const e = doc?.elements.get(key);
-            return e ? (e.mark ?? e.name) : key;
+            // Drawn on the page, so just the type; the panel shows the ID (elementLabel).
+            return e ? elementTypeLabel(e) : key;
         },
         [doc],
     );
@@ -196,13 +198,13 @@ export function App() {
             if (a.kind === 'cloud') {
                 const names = (a.contained ?? []).map((c) => {
                     const el = doc?.elements.get(c.key);
-                    return el ? `${el.mark ?? el.name} (ID ${el.elementIdText ?? el.elementId})` : c.key;
+                    return el ? elementLabel(el) : c.key;
                 });
                 if (!names.length) return 'Untied: covers no objects';
                 return `Covers ${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
             }
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
-            return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementIdText ?? e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
+            return e ? `Tied to ${elementLabel(e)}` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
         [doc],
     );
