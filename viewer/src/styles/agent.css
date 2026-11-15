@@ -34,6 +34,26 @@
 .agent-message p { margin: 0; font-size: var(--text-label-size); line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-message.is-user { padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); }
 .agent-message.is-assistant { padding: 0 2px; }
+.agent-markdown { display: flex; flex-direction: column; gap: 10px; min-width: 0; font-size: var(--text-label-size); line-height: 1.75; overflow-wrap: anywhere; }
+.agent-markdown p { white-space: normal; }
+.agent-markdown :is(ul, ol) { display: flex; flex-direction: column; gap: 4px; margin: 0; padding-left: 20px; }
+.agent-markdown li { padding-left: 2px; }
+.agent-markdown li > :is(ul, ol) { margin-top: 4px; }
+.agent-markdown li::marker { color: var(--color-text-subtle); }
+.agent-markdown .agent-md-heading { margin: 6px 0 0; font-size: var(--text-label-size); font-weight: 700; line-height: 1.5; }
+.agent-markdown h3.agent-md-heading { font-size: calc(var(--text-label-size) + 2px); }
+.agent-markdown strong { font-weight: 700; }
+.agent-markdown a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+.agent-markdown code { padding: 1px 4px; border-radius: 4px; background: var(--color-surface-raised); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.9em; }
+.agent-markdown pre { margin: 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-canvas); line-height: 1.5; }
+.agent-markdown pre code { padding: 0; background: none; white-space: pre; overflow-wrap: normal; }
+.agent-markdown blockquote { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 12px; border-left: 2px solid var(--color-border); color: var(--color-text-muted); }
+.agent-markdown hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--color-border); }
+.agent-md-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.agent-md-table table { width: 100%; border-collapse: collapse; font-size: var(--primitive-font-size-xs); line-height: 1.5; }
+.agent-md-table :is(th, td) { padding: 6px 10px; border-bottom: 1px solid var(--color-border); text-align: left; vertical-align: top; overflow-wrap: normal; }
+.agent-md-table th { background: var(--color-surface-raised); font-weight: 600; white-space: nowrap; }
+.agent-md-table tr:last-child td { border-bottom: 0; }
 .agent-comment-citations { display: grid; gap: 8px; margin-top: 12px; }
 .agent-comment-citation { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-canvas); text-align: left; color: var(--color-text); cursor: pointer; }
 .agent-comment-citation:hover { background: var(--color-surface-raised); border-color: var(--color-primary); }

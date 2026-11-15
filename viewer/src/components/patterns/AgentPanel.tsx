@@ -3,6 +3,7 @@ import { executeDrawingAgent, type AgentContext, type AgentHighlight, type Drawi
 import { getAgentApiStatus, requestAgent, type AgentApiStatus } from '../../lib/agentApi';
 import type { AgentHostAction, AgentHostCallback } from '../../lib/agentWorkspace';
 import { ActionButton } from '../ui/ActionButton';
+import { AgentMarkdown } from './AgentMarkdown';
 import { Button, IconButton } from '../ui/Button';
 import '../../styles/agent.css';
 
@@ -340,7 +341,7 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                     <div className="agent-conversation" role="log" aria-label="Drawing conversation" aria-live="polite" aria-relevant="additions">
                         {messages.map((message) => <article key={message.id} className={`agent-message is-${message.role}`} aria-label={message.role === 'user' ? 'You' : 'Drawing agent'}>
                             <div className="agent-message-byline">{message.role === 'assistant' && <AgentGlyph small />}<strong>{message.role === 'user' ? 'You' : 'Drawing agent'}</strong><span>{message.state === 'pending' ? 'Sending… · ' : message.state === 'failed' ? 'Failed · ' : message.state === 'canceled' ? 'Canceled · ' : ''}Page {message.page}</span></div>
-                            <p>{message.text}</p>
+                            {message.role === 'assistant' ? <AgentMarkdown text={message.text} /> : <p>{message.text}</p>}
                             {!!message.comments?.length && <div className="agent-comment-citations">{message.comments.map((comment) => <button type="button" key={`${comment.source}-${comment.page}-${comment.id}`} className="agent-comment-citation" onClick={() => onSelectComment(comment)}>
                                 <span className="agent-comment-meta"><strong>{comment.author || 'Unknown author'}</strong><span>p. {comment.page} · {commentDate(comment)}</span></span>
                                 <span className="agent-comment-text">{comment.text}</span>
