@@ -25,6 +25,7 @@ import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
+import { demoFileFromLocation } from './lib/demo';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
 import { linkedKeys, linksSummary, withLinks } from './lib/links';
@@ -260,6 +261,30 @@ export function App() {
             },
             () => { if (!cancelled) setRestoring(false); },
         );
+        return () => { cancelled = true; };
+    }, [open]);
+
+    // /demo (or #demo) starts from the bundled Snowdon Towers A101 drawing instead of the remembered
+    // file. Claiming the open request here makes the session restore above stand down.
+    useEffect(() => {
+        const demo = demoFileFromLocation(window.location);
+        if (!demo) return;
+        const request = ++openRequest.current;
+        let cancelled = false;
+        setRestoring(false);
+        setLoading({ fileName: demo.fileName, fraction: 0, ceiling: stageCeiling('reading'), step: LOAD_STEPS.reading });
+        fetch(demo.url).then(
+            async (response) => {
+                if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+                const blob = await response.blob();
+                if (cancelled || request !== openRequest.current) return;
+                void open(new File([blob], demo.fileName, { type: 'application/pdf' }));
+            },
+        ).catch((e) => {
+            if (cancelled || request !== openRequest.current) return;
+            setLoading(null);
+            setError(`Could not load the demo drawing ${demo.fileName}: ${errorText(e)}`);
+        });
         return () => { cancelled = true; };
     }, [open]);
 

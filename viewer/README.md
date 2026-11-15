@@ -10,7 +10,7 @@ bun run typecheck
 bun run test
 ```
 
-The development server defaults to <http://localhost:5313/>. The application opens the functional viewer. A synthetic enhanced PDF for testing is at `public/demo/demo-enhanced.pdf`; open it from the **More actions** (⋯) menu → **Upload enhanced PDF**. Its metadata is illustrative.
+The development server defaults to <http://localhost:5313/>. The application opens the functional viewer. Open <http://localhost:5313/demo> (or `/#demo` on a static host that cannot route paths) to start straight from the bundled Snowdon Towers sheet A101, `public/demo/a101-first-floor-plan.pdf`, a real export from the Revit add-in; it replaces the remembered file for that browser. A synthetic enhanced PDF for testing is at `public/demo/demo-enhanced.pdf`; open it from the **More actions** (⋯) menu → **Upload enhanced PDF**. Its metadata is illustrative.
 
 ## Drawing agent demo
 
