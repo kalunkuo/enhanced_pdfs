@@ -7,3 +7,5 @@ output/
 tmp/
 viewer/node_modules/
 viewer/dist/
+.env*
+!.env.example

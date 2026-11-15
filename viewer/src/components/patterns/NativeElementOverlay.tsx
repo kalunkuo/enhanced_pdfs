@@ -11,11 +11,12 @@ export interface NativeElementOverlayProps {
     hoverKey: string | null;
     selectedKey: string | null;
     matchedKeys: ReadonlySet<string> | null;
+    elementColors?: ReadonlyMap<string, string> | null;
     drawingIds?: ReadonlySet<string> | null;
 }
 
 /** Native paint emphasis is independent of base rendering and markup hit targets. */
-export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, drawingIds = null }: NativeElementOverlayProps) {
+export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, elementColors, drawingIds = null }: NativeElementOverlayProps) {
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = ref.current;
@@ -32,6 +33,10 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
         const computedStyle = getComputedStyle(canvas);
         const color = computedStyle.getPropertyValue('--color-geometry-highlight').trim() || computedStyle.color;
         const selectedColor = computedStyle.getPropertyValue('--color-selection').trim() || color;
+        const resolveColor = (value: string) => {
+            const variable = /^var\((--[\w-]+)\)$/.exec(value);
+            return variable ? computedStyle.getPropertyValue(variable[1]!).trim() || color : value;
+        };
         const setTransform = (transform: NativePaintPart['toPage']) => context.setTransform(
             xScale * transform[0], yScale * transform[1], xScale * transform[2], yScale * transform[3], xScale * transform[4], yScale * transform[5],
         );
@@ -39,12 +44,14 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             if (!matchesDrawingScope(part.drawingId, drawingIds)) continue;
             const selected = part.elementKey === selectedKey;
             const hovered = part.elementKey === hoverKey;
-            if (!selected && !hovered && !matchedKeys?.has(part.elementKey)) continue;
+            const agentColor = elementColors?.get(part.elementKey);
+            if (!selected && !hovered && !agentColor && !matchedKeys?.has(part.elementKey)) continue;
             context.save();
             for (const clip of part.clips) { setTransform(clip.toPage); context.clip(clip.path, clip.rule); }
             setTransform(part.toPage);
-            context.strokeStyle = selected ? selectedColor : color;
-            context.fillStyle = selected ? selectedColor : color;
+            const emphasis = selected ? selectedColor : agentColor ? resolveColor(agentColor) : color;
+            context.strokeStyle = emphasis;
+            context.fillStyle = emphasis;
             context.globalAlpha = part.mode === 'fill' ? selected ? 0.28 : hovered ? 0.2 : 0.12 : selected ? 0.95 : hovered ? 0.8 : 0.55;
             const pageToLocalScale = Math.max(Math.hypot(part.fromPage[0], part.fromPage[1]), Math.hypot(part.fromPage[2], part.fromPage[3]));
             const halo = (selected ? 4 : hovered ? 3 : 2) / zoom * pageToLocalScale;
@@ -58,6 +65,6 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             else context.stroke(part.path);
             context.restore();
         }
-    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, drawingIds]);
+    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, elementColors, drawingIds]);
     return <canvas ref={ref} aria-hidden="true" style={{ pointerEvents: 'none' }} />;
 }

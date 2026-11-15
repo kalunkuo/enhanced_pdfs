@@ -29,6 +29,18 @@
   --color-warning: var(--color-tertiary-yellow);
   --color-error: var(--color-secondary);
 
+  /* Agent classifications always have matching text labels and counts. */
+  --color-agent-safe: var(--color-tertiary-green);
+  --color-agent-alert: var(--color-secondary);
+  --color-agent-equal: var(--color-primary);
+  --color-agent-unknown: var(--color-tertiary-yellow);
+  --color-agent-rating-1: var(--color-primary);
+  --color-agent-rating-2: var(--color-tertiary-pink);
+  --color-agent-rating-3: var(--color-secondary);
+  --color-agent-rating-4: var(--color-tertiary-green);
+  --color-agent-rating-5: var(--color-tertiary-yellow);
+  --color-agent-rating-6: var(--color-text-subtle);
+
   --space-control-gap: var(--primitive-space-2);
   --space-panel-padding: var(--primitive-space-4);
   --radius-control: var(--primitive-radius-1);

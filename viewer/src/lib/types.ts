@@ -42,6 +42,8 @@ export interface ParameterInfo {
     sharedGuid?: string;
     specId?: string;
     unitId?: string;
+    /** Preserve raw-value provenance: InternalValue uses Revit's internal units, not UnitId's display units. */
+    valueSource?: 'display' | 'text' | 'integer' | 'internal' | 'reference';
 }
 
 export interface DrawingInfo {
@@ -119,6 +121,8 @@ export interface Reply {
 
 export interface Annotation {
     id: string;
+    /** When a saved review comment was last edited, if recorded. */
+    modifiedAt?: string;
     /** 1-based page number. */
     page: number;
     kind: AnnotationKind;
