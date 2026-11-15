@@ -185,14 +185,15 @@ export function PdfStage(props: Props) {
         setPanning(false);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     };
-    const noteTool = tool === 'text' || tool === 'comment' || tool === 'signature';
-    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : noteTool ? 'tool-text' : 'tool-draw';
+    // Every annotation tool shares one cursor, which shows whether an object is under it (see review.css).
+    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : 'tool-review';
+    const hoverClass = !props.hoverKey || tool === 'pan' ? '' : tool === 'select' ? 'hovering' : 'over-object';
 
     return (
         <div className="stage" ref={wrapRef} onWheel={() => props.onCancelFocus?.()}>
             <div
                 ref={pageRef}
-                className={`page ${toolClass} ${props.hoverKey && tool === 'select' ? 'hovering' : ''}`}
+                className={`page ${toolClass} ${hoverClass}`}
                 style={{ width: page.width * zoom, height: page.height * zoom }}
                 onPointerDown={startPan}
                 onPointerMove={movePan}

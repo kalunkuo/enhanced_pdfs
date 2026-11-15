@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { avatarColor, initials } from '../../lib/comments';
-import { imageToDataUrl, type Profile } from '../../lib/profile';
+import type { Profile } from '../../lib/profile';
 import type { Annotation, PageData, Point } from '../../lib/types';
 
 export interface CommentLayerProps {
@@ -22,7 +22,7 @@ export interface CommentLayerProps {
     /** The element a dragged pin is over, for highlighting. */
     onDragTarget: (key: string | null, client: { x: number; y: number }) => void;
     /** `name` is the author's name as of this click, so a first-time name is not lost to stale state. */
-    onSend: (comment: { text: string; image?: string; at: Point; name: string }) => void;
+    onSend: (comment: { text: string; at: Point; name: string }) => void;
     onCancel: () => void;
 }
 
@@ -148,11 +148,8 @@ export function CommentLayer(props: CommentLayerProps) {
 function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at: Point; flip: boolean } & CommentLayerProps) {
     const [text, setText] = useState('');
     const [name, setName] = useState(profile.name);
-    const [image, setImage] = useState<string | undefined>();
     const [emojiOpen, setEmojiOpen] = useState(false);
-    const [problem, setProblem] = useState<string | null>(null);
     const area = useRef<HTMLTextAreaElement>(null);
-    const fileInput = useRef<HTMLInputElement>(null);
     const needsName = profile.name.trim() === '';
     const canSend = text.trim() !== '' && (!needsName || name.trim() !== '');
 
@@ -170,22 +167,13 @@ function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at
         if (!canSend) return;
         const author = (needsName ? name : profile.name).trim();
         if (needsName) onProfile({ ...profile, name: author });
-        onSend({ text: text.trim(), ...(image ? { image } : {}), at, name: author });
+        onSend({ text: text.trim(), at, name: author });
     };
     const onKeyDown = (event: ReactKeyboardEvent) => {
         if (event.key === 'Escape') onCancel();
         else if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             send();
-        }
-    };
-    const pick = async (file: File | undefined) => {
-        if (!file) return;
-        try {
-            setProblem(null);
-            setImage(await imageToDataUrl(file, 640));
-        } catch {
-            setProblem('That file could not be read as an image.');
         }
     };
 
@@ -197,13 +185,6 @@ function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at
                     <input className="cname" placeholder="Your name" aria-label="Your name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={onKeyDown} />
                 )}
                 <textarea ref={area} autoFocus rows={3} placeholder="Add a comment…" aria-label="Comment" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
-                {image && (
-                    <div className="cattach">
-                        <img src={image} alt="Attachment preview" />
-                        <button type="button" className="icon-btn" aria-label="Remove image" onClick={() => setImage(undefined)}>✕</button>
-                    </div>
-                )}
-                {problem && <div className="cproblem" role="alert">{problem}</div>}
                 <div className="cbar">
                     <div className="cemoji-wrap">
                         <button type="button" className="icon-btn" aria-label="Add emoji" aria-expanded={emojiOpen} onClick={() => setEmojiOpen(!emojiOpen)}>☺</button>
@@ -214,8 +195,6 @@ function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at
                         )}
                     </div>
                     <button type="button" className="icon-btn" aria-label="Mention" onClick={() => insert('@')}>@</button>
-                    <button type="button" className="icon-btn" aria-label="Attach image" onClick={() => fileInput.current?.click()}>🖼</button>
-                    <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = ''; }} />
                     <span className="spacer" />
                     <button type="submit" className="csend" aria-label="Send comment" disabled={!canSend}>
                         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>

@@ -159,7 +159,8 @@ export function MarkupLayer(props: MarkupLayerProps) {
             const last = active.points?.at(-1);
             const moved = !last || Math.hypot(point[0] - last[0], point[1] - last[1]) > 1.5 / zoom;
             updateDraft({ ...active, to: point, ...(active.points && moved ? { points: [...active.points, point] } : {}) });
-        } else if (tool === 'select') {
+        } else if (tool !== 'pan') {
+            // Every tool previews the object under the pointer the way Select does.
             props.onElementMove(point, { x: event.clientX, y: event.clientY });
         }
     };
@@ -391,7 +392,8 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
         : tied ? `↳ ${label ?? 'element'}` : 'untied';
     return (
         <g
-            style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}
+            className="markup-hit"
+            style={{ pointerEvents: interactive ? 'auto' : 'none' }}
             onPointerDown={(event) => { if (interactive) event.stopPropagation(); }}
             onClick={onClick}
         >

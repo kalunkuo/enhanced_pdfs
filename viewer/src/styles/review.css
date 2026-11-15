@@ -39,7 +39,7 @@
 .cpin.selected, .cpin.dragging { z-index: 2; }
 .cdrop { position: absolute; left: 0; top: calc(-1 * var(--drop)); width: var(--drop); height: var(--drop); display: grid; place-items: center; overflow: hidden;
     border-radius: 50% 50% 50% 0; background: var(--pin); color: #fff; font-size: 13px; font-weight: 600; line-height: 1;
-    pointer-events: auto; cursor: grab; touch-action: none; user-select: none; transform-origin: 0 100%;
+    pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%2331c6e8'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, grab; touch-action: none; user-select: none; transform-origin: 0 100%;
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); transition: transform 0.12s; }
 .cdrop img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 /* Untied: not attached to an object, so it is plain gray. */
@@ -50,7 +50,7 @@
 .cpin:focus-visible .cdrop { outline: 2px solid var(--ring); outline-offset: 2px; }
 .cpill { position: absolute; left: calc(var(--drop) + 6px); top: calc(-1 * var(--drop) + 3px); height: 26px; max-width: 260px; display: flex; align-items: center; gap: 6px;
     padding: 0 11px; border-radius: 13px; background: #fff; color: #18181b; font-size: 12px; white-space: nowrap; overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--pin) 50%, #fff); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); pointer-events: auto; cursor: grab; user-select: none; }
+    border: 1px solid color-mix(in srgb, var(--pin) 50%, #fff); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%2331c6e8'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, grab; user-select: none; }
 .cpin.untied .cpill { border-color: #d4d4d8; }
 .cpin.selected .cpill { border-color: var(--pin); box-shadow: 0 0 0 1px var(--pin), 0 2px 6px rgba(0, 0, 0, 0.25); }
 .cpin.untied.selected .cpill { border-color: #71717a; box-shadow: 0 0 0 1px #71717a, 0 2px 6px rgba(0, 0, 0, 0.25); }
@@ -71,9 +71,6 @@
     padding: 16px 20px 8px; border-radius: 22px 22px 0 0; }
 .ccard textarea::placeholder { color: #a1a1aa; }
 .cname { display: block; width: calc(100% - 32px); margin: 12px 16px 0; height: 34px; padding: 0 10px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fff; color: #18181b; font: inherit; }
-.cattach { position: relative; margin: 0 16px 8px; width: fit-content; }
-.cattach img { display: block; max-width: 100%; max-height: 120px; border-radius: 10px; }
-.cattach .icon-btn { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; }
 .cproblem { margin: 0 16px 8px; color: #dc2626; font-size: 12px; }
 .cbar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid #e4e4e7; }
 .cbar .icon-btn { color: #18181b; font-size: 20px; width: 36px; height: 36px; }
@@ -100,11 +97,8 @@
 .docbar-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .docbar-info .file-name { max-width: 28ch; }
 /* Thread in the Notes panel */
-/* An open note fills the panel: the message, tie and reply box use the full width, and the card stretches to the
-   panel's height with the reply box at the bottom. */
-.panel > .notes-list { min-height: 100%; display: flex; flex-direction: column; }
-.notes-list > li.note-open { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
-.thread { flex: 1 1 auto; padding: 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* An open note uses the full panel width, and is only as tall as its content. */
+.thread { padding: 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .tmsg { display: grid; gap: 8px; min-width: 0; }
 .thead { display: flex; align-items: center; gap: 10px; }
 .twho { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
@@ -112,10 +106,9 @@
 .twho .muted { font-size: 12px; }
 .tdel { width: 28px; height: 28px; flex: none; color: var(--muted-foreground); }
 .ttext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.timg { display: block; max-width: 100%; max-height: 240px; border-radius: calc(var(--radius) - 2px); }
 .treplies { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--border); display: grid; gap: 14px; }
 .treplies .avatar { width: 26px !important; height: 26px !important; font-size: 11px !important; }
-.treply { margin-top: auto; display: grid; gap: 8px; }
+.treply { display: grid; gap: 8px; }
 .treply textarea { width: 100%; resize: vertical; min-height: 72px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input);
     background: var(--background); color: var(--foreground); font: inherit; }
 .treply .tname { width: 100%; margin: 0; }
@@ -169,3 +162,14 @@
 .tie-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted-foreground); }
 .tie-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tie-meta { margin-left: auto; padding-left: 8px; font-size: 11px; white-space: nowrap; }
+
+/* Annotation tools show a faded blue text-insertion (I-beam) cursor over empty paper. Over an object it becomes a chat
+   bubble with "..." inside, the same teardrop as a comment pin with its tip on the pointer, and the object is
+   highlighted as with the Select tool. */
+.page.tool-review > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%2331c6e8'%20stroke-opacity='0.6'%20stroke-width='4.6'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'/%3E%3C/svg%3E") 12 12, text; }
+.page.tool-review.over-object > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cpath%20d='M2%2030V17A13%2013%200%200%201%2015%204A13%2013%200%200%201%2028%2017A13%2013%200%200%201%2015%2030Z'%20fill='%2331c6e8'%20stroke='%23ffffff'%20stroke-width='1.5'%20stroke-linejoin='round'/%3E%3Ccircle%20cx='9'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='15'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='21'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3C/svg%3E") 2 30, text; }
+
+/* Select tool: a blue arrow by default and a blue pointing hand over an object (also over a markup). The arrow's
+   hotspot is its tip; the hand's is its fingertip. */
+.page.tool-select > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%20stroke-linejoin='round'%20stroke-linecap='round'%3E%3Cpath%20d='M8%205v18l4.6-4.1%203.2%207%203-1.4-3.1-6.8H21z'%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='5.4'/%3E%3Cpath%20d='M8%205v18l4.6-4.1%203.2%207%203-1.4-3.1-6.8H21z'%20fill='%2331c6e8'%20stroke='%2331c6e8'%20stroke-width='2.8'/%3E%3C/svg%3E") 7 4, default; }
+.page.tool-select.hovering > svg, .markup-hit { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%2331c6e8'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, pointer; }

@@ -58,7 +58,7 @@ Reusable React components and SVG icons live in `src/components/ui/`, with share
 The functional viewer is `src/App.tsx`. Specialized compositions in `src/components/patterns/` connect design controls to document state. `DocBar` keeps page entry, navigation, fit modes, and zoom presets. `Toolbar` keeps drawing, annotation colors, and delete actions. `PdfStage`, `PdfCanvas`, overlays, and `MarkupLayer` keep rendering, geometry picking, and annotation behavior. Inspector panels retain real Parquet data, filters, and object IDs. Do not replace those with sample records or generic controls that omit existing actions.
 
 - Center the PDF on the off-black stage; use a neutral shadow to separate paper and chrome.
-- Outline matched geometry in blue and selected geometry in red without obscuring fine drawing lines. Also show the element ID or label.
+- Outline matched geometry in blue, and selected geometry in the same blue with a stronger fill and a thicker outline, without obscuring fine drawing lines. Also show the element ID or label.
 - Use green only for a verified metadata link, yellow for ambiguous or missing information, and explicit words for every status.
 - Let the inspector move below the page at narrow widths before reducing the PDF's readable size.
 - Keep annotation and metadata write operations distinct and label the target of each save.
