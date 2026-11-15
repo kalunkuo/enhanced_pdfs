@@ -24,6 +24,10 @@ interface Props {
     /** Tie an annotation to an object, or pass null to untie it. */
     onTie: (annotationId: string, elementKey: string | null) => void;
     onReply: (annotationId: string, reply: { text: string; name: string }) => void;
+    /** Hovering a note previews the objects it is linked to (or a cloud covers) on the canvas. */
+    onPreview?: (keys: ReadonlySet<string> | null) => void;
+    onEdit: (annotationId: string, text: string) => void;
+    onEditReply: (annotationId: string, replyId: string, text: string) => void;
     onDelete: (annotationId: string) => void;
     /** Show an object's properties, from the tie chip. */
     onOpenElement: (elementKey: string) => void;
@@ -87,7 +91,7 @@ function LinkedObjects({ keys, elements, onOpen }: { keys: readonly string[]; el
     );
 }
 
-export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete, onOpenElement }: Props) {
+export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onEdit, onEditReply, onPreview, onDelete, onOpenElement }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
     // Selecting a markup on the page brings its open note to the top of the panel (scroll-margin-top leaves a little room).
@@ -97,6 +101,11 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
     }, [selectedId]);
 
     if (annotations.length === 0) return <div className="panel-empty">No annotations yet. Pick a tool and draw on the PDF.</div>;
+    const previewHandlers = (a: Annotation) => {
+        const keys = a.kind === 'cloud' ? (a.contained ?? []).map((c) => c.key) : linkedKeys(a);
+        const show = () => { if (keys.length) onPreview?.(new Set(keys)); };
+        return { onPointerEnter: show, onPointerLeave: () => onPreview?.(null), onFocus: show, onBlur: () => onPreview?.(null) };
+    };
     return (
         <ul className="list notes-list">
             {annotations.map((a) => {
@@ -113,9 +122,9 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     ? <span className="chip tied" style={e ? { color: categoryColor(e.category) } : undefined}>↳ {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
                 return (
-                    <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined}>
+                    <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined} {...previewHandlers(a)}>
                         {selected && a.kind === 'comment' ? (
-                            <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onDelete={onDelete}>
+                            <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onEdit={onEdit} onEditReply={onEditReply} onDelete={onDelete}>
                                 <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
                                 {linkList}
                             </CommentThread>

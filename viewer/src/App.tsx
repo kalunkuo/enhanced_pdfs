@@ -393,7 +393,15 @@ export function App() {
         setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
     }, [profile.photo]);
 
+    const editComment = useCallback((id: string, text: string) => {
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, text, modifiedAt: new Date().toISOString() } : a)));
+    }, []);
+    const editReply = useCallback((id: string, replyId: string, text: string) => {
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: (a.replies ?? []).map((r) => (r.id === replyId ? { ...r, text } : r)) } : a)));
+    }, []);
+
     const deleteById = useCallback((id: string) => {
+        setPreviewKeys(null);
         setAnnotations((list) => list.filter((a) => a.id !== id));
         setSelectedAnnotationId((current) => (current === id ? null : current));
     }, []);
@@ -683,6 +691,7 @@ export function App() {
                                 onProfile: setProfile,
                                 labelFor,
                                 linksLabel,
+                                onPreview: setPreviewKeys,
                                 onSelect: (id) => {
                                     setSelectedAnnotationId(id);
                                     setComposer(null);
@@ -764,6 +773,9 @@ export function App() {
                                 onProfile={setProfile}
                                 onTie={tieAnnotation}
                                 onReply={sendReply}
+                                onEdit={editComment}
+                                onEditReply={editReply}
+                                onPreview={setPreviewKeys}
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
                                 onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKeys(linkedKeys(a)); }}

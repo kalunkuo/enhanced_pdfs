@@ -20,6 +20,7 @@ export const CircleIcon = icon(<circle cx="12" cy="12" r="8" />);
 export const CloudIcon = icon(<path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8.5 4.5 4.5 0 0 1 17.5 18z" />);
 export const UploadIcon = icon(<path d="M12 16V4M7 9l5-5 5 5M4 20h16" />);
 export const TrashIcon = icon(<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" />);
+export const PencilIcon = icon(<path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" />);
 export const PlusIcon = icon(<path d="M12 5v14M5 12h14" />);
 export const MinusIcon = icon(<path d="M5 12h14" />);
 export const FitIcon = icon(<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />);
