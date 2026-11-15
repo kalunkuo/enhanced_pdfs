@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton } from '../ui/Button';
-import { Logo } from '../ui/Logo';
+import { Logo } from '../ui';
 import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon, UploadIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
@@ -22,14 +22,13 @@ interface Props {
     onZoomIn: () => void;
     onZoomOut: () => void;
     onUpload: () => void;
-    onOpenDemo: () => void;
     /** File name and status, shown before the upload buttons. */
     info?: ReactNode;
     /** Your profile, shown after the upload buttons. */
     account?: ReactNode;
 }
 
-/** The document bar: save, print, pages, select and pan, zoom, then demo and upload at the far right. Laid out like Acrobat's. */
+/** The document bar: save, print, pages, select and pan, zoom, then upload at the far right. Laid out like Acrobat's. */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
@@ -50,7 +49,6 @@ export function DocBar(p: Props) {
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
             <span className="docbar-spacer" />
             {p.info && <div className="docbar-info">{p.info}</div>}
-            <Button variant="ghost" onClick={p.onOpenDemo}>Open demo drawing</Button>
             <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
             {p.account}
         </div>

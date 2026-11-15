@@ -2,6 +2,8 @@
 
 Browser app (React, TypeScript, Vite) that opens an enhanced PDF from the Revit add-in, lets you hover and click elements on the drawing, and annotate it. Everything runs client-side. Design rules: `docs/design-system.md`.
 
+The optional drawing-agent API is the exception: `server/openaiAgent.ts` and `server/agentMiddleware.ts` run only in the local Vite dev/preview server. Credentials come from ignored `.env.local` or server environment variables, never `VITE_*`, browser code, or storage. Only prompts, bounded conversation history, and aggregate page counts go to the model; actual drawing actions execute against current client-side data through `src/lib/agentApi.ts`. Missing credentials keep Local demo available. API failures must stay explicit rather than silently changing modes. See `README.md` for setup.
+
 ```sh
 bun install
 bun run dev        # http://localhost:5313, or DEV_PORT=NNNN bun run dev
@@ -50,10 +52,10 @@ Native capture supports bounded Path2D fills/strokes and explicit clips on the b
 
 ## Layers and parallel ownership
 
-Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from its published shared baseline for annotation/review tools. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
+Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` after `viewer-v1` merged in PR #6). Feature branches, including Yam's annotation/review tools, start from `viewer-v2` and open PRs against it. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
-- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
+- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook. It renders a full-page base raster capped at ~4 MP (this is the capture render, so its scale stops changing once zoom passes the cap), plus a full-resolution detail tile covering only the visible area and 10% margin, re-rendered after scroll/zoom settles. Do not go back to rasterizing the whole page at zoom × DPR.
 - `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
 - Drawing/view filters use stable `DrawingId` membership. Apply the same scope to picking, highlights, coverage, appearance counts, and focus bounds; never borrow an element's plan ink to locate its schedule membership.
 - `navigation.ts` fits existing page-space bounds. `PdfStage` applies a focus request after zoom layout, at most once per request. Preserve padding/centering, exclude DPR from scroll math, and cancel stale requests when the user changes context or navigates manually.
@@ -64,6 +66,10 @@ Codex owns the shared refactor and integration on `viewer-v1`. Yam branches from
 ## Annotations and object IDs
 
 Every annotation carries an optional `elementKey` (the object ID). It is set automatically from the element under the annotation's anchor point, and can be changed or cleared in the Notes tab ("Object ID" select).
+
+## Session recovery
+
+`src/lib/session.ts` keeps the open file and review state in IndexedDB so a reload reopens where the user left off: annotations, page, selection, filters, zoom mode, inspector tab, draw kind, and highlight color. State is keyed to the file's SHA-256 fingerprint and discarded on mismatch; opening a new file replaces the remembered one. Storage failures show a status line and never block viewing. Add new persisted fields to `SessionState` and `parseSessionState`, which validates each field and falls back to defaults.
 
 ## Gotchas
 

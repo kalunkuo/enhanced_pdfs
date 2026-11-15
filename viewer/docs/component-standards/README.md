@@ -4,6 +4,7 @@ The files in this folder define reusable React/TypeScript viewer controls in `sr
 
 | Component | Standard | Viewer use or library purpose |
 | --- | --- | --- |
+| Logo | [logo.md](logo.md) | Document bar wordmark |
 | Panel | [panel.md](panel.md) | Inspector layout reference |
 | Dialog | [dialog.md](dialog.md) | Reusable modal control |
 | Tooltip | [tooltip.md](tooltip.md) | Reusable action hint |

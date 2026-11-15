@@ -6,6 +6,7 @@ export * from './Field';
 export * from './FlyoutMenu';
 export * from './Icon';
 export * from './IconButton';
+export * from './Logo';
 export * from './MetadataRows';
 export * from './PageNavigation';
 export * from './ProgressBar';

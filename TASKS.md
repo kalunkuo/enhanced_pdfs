@@ -1,23 +1,23 @@
 # Viewer tasks and ownership
 
-Build on `viewer-v1`. The viewer already uses React, strict TypeScript, Vite, Bun, and PDF.js; no framework migration or React-PDF wrapper is required. Everything remains open source and client-side.
+Build on `viewer-v2`, the current viewer integration branch (cut from `main` after PR #6). The viewer already uses React, strict TypeScript, Vite, Bun, and PDF.js; no framework migration or React-PDF wrapper is required. Everything remains open source and client-side.
 
 `geometry.parquet` is **not a dependency** for this work. The primary geometry route is native PDF marked content such as `/ViewRegion...` and `/Element...`, joined to the existing BIM attachments. Geometry tables remain an optional compatibility path for older synthetic demos.
 
 ## Shared baseline before branching
 
-**Codex owns the shared refactor and final integration.** The shared baseline merged into `viewer-v1` in PR #2. Yam branches from updated `viewer-v1`. Carlos's BIM work is isolated on `codex/carlos-bim-interaction`; Yam does not need to repeat the shared refactor or edit that branch.
+**Codex owns the shared refactor and final integration.** The shared baseline merged into `viewer-v1` in PR #2; `viewer-v1` (including Carlos's BIM work from `codex/carlos-bim-interaction`, PRs #3 and #4) merged into `main` in PR #6, and those branches have been deleted. New feature branches start from `viewer-v2`.
 
 | ID | Owner | Status | Deliverable and acceptance |
 | --- | --- | --- | --- |
-| R0 | Codex | Merged in PR #2 | Split `PdfStage` into a composition layer, `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Existing tools, save/reload, zoom/pan, and selection remain the baseline. The shared baseline is available on `viewer-v1`. |
+| R0 | Codex | Merged in PR #2 | Split `PdfStage` into a composition layer, `PdfCanvas`, `ElementOverlay`, and `MarkupLayer`. Existing tools, save/reload, zoom/pan, and selection remain the baseline. The shared baseline is on `main` and `viewer-v2`. |
 | R1 | Codex | Merged in PR #2 | Typed page presentation, coordinate conversions, abortable render-capture hooks, and one element-picker interface shared by click selection and annotation auto-ties. The existing saved annotation coordinate format is preserved. |
 | R2 | Codex | After both tracks | Integrate Yam's branch; check real native-tag geometry, markups, attachment-preserving export, and page/zoom/rotation behavior together. |
 
 For Yam's new checkout:
 
 ```sh
-gh repo clone AXELWOHLIN/enhanced_pdfs enhanced_pdfs-yam -- --branch viewer-v1
+gh repo clone AXELWOHLIN/enhanced_pdfs enhanced_pdfs-yam -- --branch viewer-v2
 cd enhanced_pdfs-yam
 git switch -c yam/viewer-markups
 cd viewer
@@ -25,7 +25,7 @@ bun install --frozen-lockfile
 bun run dev
 ```
 
-For an existing checkout, update `viewer-v1` to the merged baseline before creating the feature branch. Do not branch from removed `viewer-v2` or the pre-refactor commit. Both feature branches open PRs against `viewer-v1`.
+For an existing checkout, run `git fetch --prune origin` and `git switch viewer-v2` (then `git pull`) before creating the feature branch. Do not branch from the deleted `viewer-v1`, the earlier `viewer-v2` from closed PR #1, or the pre-refactor commit. Feature branches open PRs against `viewer-v2`. Yam's existing `viewer-markups-comment` (PR #5, against `main`) needs the latest `main` merged in to resolve its conflicts.
 
 ## Yam: markup and review tools
 
@@ -94,7 +94,7 @@ Use browser checks for gestures and rendering, not only unit tests. Check the re
 
 ## BIM milestone validation
 
-C1-C5 merged into `viewer-v1` in PR #3. Carlos's branch now adds C6-C7 on that merged baseline. The original Snowdon A101 enhanced PDF, without a geometry table, resolves 1,237 native groups into 1,099 elements and captures 18,123 painted path parts. Wall 676281 retains its eight disconnected strokes; its opening is not a wall hit.
+C1-C5 merged into `viewer-v1` in PR #3, and C6-C7 in PR #4; all of it reached `main` in PR #6. The original Snowdon A101 enhanced PDF, without a geometry table, resolves 1,237 native groups into 1,099 elements and captures 18,123 painted path parts. Wall 676281 retains its eight disconnected strokes; its opening is not a wall hit.
 
 Browser checks on that actual file passed for picking, zoom/pan, overlap cycling, and Walls + Exterior + 2 HR filtering (16 matched, 16 locatable). Planting returns 117 metadata records with 13 locatable appearances; the remaining records stay inspectable without invented locations. A note tied to real wall 676281 survived PDF save/reopen, and all five original Parquet attachments remained byte-identical.
 

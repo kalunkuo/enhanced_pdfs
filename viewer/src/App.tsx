@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DocBar } from './components/patterns/DocBar';
+import { AgentPanel } from './components/patterns/AgentPanel';
 import { ElementList } from './components/patterns/ElementList';
 import { FilterPanel } from './components/patterns/FilterPanel';
 import { HoverCard } from './components/patterns/HoverCard';
@@ -21,16 +22,18 @@ import { createNativeGeometryCapture, type NativeGeometry } from './lib/nativeGe
 import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
+import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
 import { useProfile } from './lib/profile';
 import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
+import type { AgentContext, AgentHighlight, DrawingComment } from './lib/drawingAgent';
+import { readPdfComments, viewerComments } from './lib/drawingComments';
 
-type Tab = 'properties' | 'elements' | 'notes';
-const TABS: readonly Tab[] = ['properties', 'elements', 'notes'];
+type Tab = 'agent' | 'properties' | 'elements' | 'notes';
+const TABS: readonly Tab[] = ['agent', 'properties', 'elements', 'notes'];
 const KEYS: Record<string, Tool | 'draw'> = { v: 'select', c: 'comment', h: 'highlight', d: 'draw', t: 'text', s: 'signature' };
-const LOAD_STEPS: Record<LoadStage | 'download' | 'page', string> = {
-    download: 'Downloading demo drawing',
+const LOAD_STEPS: Record<LoadStage | 'page', string> = {
     reading: 'Reading file',
     parsing: 'Parsing PDF',
     attachments: 'Extracting model data',
@@ -46,6 +49,9 @@ type Loading = { fileName: string; fraction: number; ceiling: number; step: stri
 const REVEAL_MS = 1500;
 const stageCeiling = (stage: LoadStage) => LOAD_STAGE_SPAN[stage][1] * LOADER_SHARE;
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const DRAW_KINDS = new Set<string>(['pen', 'line', 'rect', 'ellipse']);
+// Review state is written this long after the last change, and immediately when the page hides.
+const PERSIST_DELAY_MS = 300;
 
 export function App() {
     const [doc, setDoc] = useState<EnhancedPdf | null>(null);
@@ -63,7 +69,12 @@ export function App() {
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
     const [zoom, setZoom] = useState(1);
-    const [tab, setTab] = useState<Tab>('properties');
+    const [tab, setTab] = useState<Tab>('agent');
+    const [documentSession, setDocumentSession] = useState(0);
+    const [agentHighlight, setAgentHighlight] = useState<AgentHighlight | null>(null);
+    const [pdfComments, setPdfComments] = useState<DrawingComment[]>([]);
+    const [commentsStatus, setCommentsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [selectedPdfComment, setSelectedPdfComment] = useState<DrawingComment | null>(null);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -71,6 +82,9 @@ export function App() {
     const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
     const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
     const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+    // Fingerprint of the open file; review state is remembered only once this is known.
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [restoring, setRestoring] = useState(true);
     const nextFocusId = useRef(0);
     const drawingScope = useMemo(() => getDrawingScope(filters), [filters]);
     const nativeSource = pageData?.nativeTags;
@@ -96,7 +110,8 @@ export function App() {
     useEffect(() => () => { void doc?.dispose?.(); }, [doc]);
     useEffect(() => () => { openRequest.current++; }, []);
 
-    const open = useCallback(async (file: File) => {
+    /** `restore` reapplies a remembered review; without it the file opens fresh and becomes the remembered file. */
+    const open = useCallback(async (file: File, restore?: Pick<SessionState, 'fingerprint'> & Partial<SessionState>) => {
         const request = ++openRequest.current;
         setError(null);
         setLoading({ fileName: file.name, fraction: 0, ceiling: stageCeiling('reading'), step: LOAD_STEPS.reading });
@@ -104,23 +119,42 @@ export function App() {
             const next = await loadEnhancedPdf(file, ({ stage, fraction }) => {
                 if (request === openRequest.current) setLoading({ fileName: file.name, fraction: fraction * LOADER_SHARE, ceiling: stageCeiling(stage), step: LOAD_STEPS[stage] });
             });
+            const fingerprint = await fingerprintBytes(next.bytes).catch(() => null);
             if (request !== openRequest.current) { await next.dispose?.(); return; }
+            let rememberFailure: string | null = null;
+            if (fingerprint && !restore) {
+                await saveSessionFile({ fingerprint, fileName: file.name, blob: file }).catch((e) => { rememberFailure = errorText(e); });
+                if (request !== openRequest.current) { await next.dispose?.(); return; }
+            }
+            // State recorded for a different file revision is never applied.
+            const state = restore && restore.fingerprint === fingerprint ? restore : null;
+            const annotations = (state?.annotations ?? next.savedAnnotations).filter((a) => a.page <= next.pageCount);
             awaitingFirstPage.current = next;
             setLoading({ fileName: file.name, fraction: LOADER_SHARE, ceiling: 0.99, step: LOAD_STEPS.page });
-            nextId.current = 1 + next.savedAnnotations.length;
+            nextId.current = nextAnnotationNumber(annotations);
             setDoc(next);
-            setPage(1);
+            setSessionId(rememberFailure ? null : fingerprint);
+            setPage(state?.page ? Math.min(next.pageCount, state.page) : 1);
             setPageData(null);
             setNativeGeometry(null);
-            setFilters(EMPTY_FILTERS);
+            setFilters(state?.filters ?? EMPTY_FILTERS);
             setFocusRequest(null);
-            setAnnotations(next.savedAnnotations);
-            setSelectedKey(null);
-            setSelectedAnnotationId(null);
+            setAnnotations(annotations);
+            setSelectedKey(state?.selectedKey && next.elements.has(state.selectedKey) ? state.selectedKey : null);
+            setSelectedAnnotationId(state?.selectedAnnotationId && annotations.some((a) => a.id === state.selectedAnnotationId) ? state.selectedAnnotationId : null);
             setHover(null);
-            setZoomMode({ kind: 'fit-width' });
-            setTab('properties');
-            setStatus(next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null);
+            setZoomMode(state?.zoomMode ?? { kind: 'fit-width' });
+            setTab(state?.tab ?? 'agent');
+            setDocumentSession((session) => session + 1);
+            setAgentHighlight(null);
+            setPdfComments([]);
+            setSelectedPdfComment(null);
+            if (state?.drawKind && DRAW_KINDS.has(state.drawKind)) setDrawKind(state.drawKind as DrawKind);
+            if (state?.highlightColor && HIGHLIGHT_COLORS.some((c) => c.value === state.highlightColor)) setHighlightColor(state.highlightColor);
+            setStatus(
+                rememberFailure ? `This drawing will not be kept after a reload: ${rememberFailure}`
+                : !restore && next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null,
+            );
         } catch (e) {
             if (request === openRequest.current) {
                 setLoading(null);
@@ -135,17 +169,53 @@ export function App() {
         window.setTimeout(() => setLoading((current) => (current?.revealing ? null : current)), reduced ? 0 : REVEAL_MS);
     }, []);
 
-    const openDemo = async () => {
-        setLoading({ fileName: 'demo-enhanced.pdf', fraction: 0, ceiling: 0.05, step: LOAD_STEPS.download });
-        try {
-            const response = await fetch('/demo/demo-enhanced.pdf');
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            await open(new File([await response.blob()], 'demo-enhanced.pdf', { type: 'application/pdf' }));
-        } catch (e) {
-            setLoading(null);
-            setError(`Could not open the demo drawing: ${errorText(e)}`);
-        }
-    };
+    // Reopen the remembered file and review after a reload.
+    useEffect(() => {
+        let cancelled = false;
+        const request = openRequest.current;
+        loadSession().then(
+            (session) => {
+                if (cancelled) return;
+                setRestoring(false);
+                // The user already opened something else while storage was being read.
+                if (!session || request !== openRequest.current) return;
+                void open(new File([session.file.blob], session.file.fileName, { type: 'application/pdf' }), session.state ?? { fingerprint: session.file.fingerprint });
+            },
+            () => { if (!cancelled) setRestoring(false); },
+        );
+        return () => { cancelled = true; };
+    }, [open]);
+
+    const sessionState = useMemo<SessionState | null>(() => sessionId ? {
+        version: SESSION_VERSION, fingerprint: sessionId, page, annotations, selectedKey, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor,
+    } : null, [sessionId, page, annotations, selectedKey, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor]);
+    const pendingState = useRef<SessionState | null>(null);
+    const persistWarned = useRef(false);
+    const flushState = useCallback(() => {
+        const state = pendingState.current;
+        pendingState.current = null;
+        if (!state) return;
+        saveSessionState(state).catch((e) => {
+            if (persistWarned.current) return;
+            persistWarned.current = true;
+            setStatus(`Changes will not be kept after a reload: ${errorText(e)}`);
+        });
+    }, []);
+    useEffect(() => {
+        if (!sessionState) return;
+        pendingState.current = sessionState;
+        const timer = window.setTimeout(flushState, PERSIST_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [sessionState, flushState]);
+    useEffect(() => {
+        const onHide = () => { if (document.visibilityState === 'hidden') flushState(); };
+        window.addEventListener('pagehide', flushState);
+        document.addEventListener('visibilitychange', onHide);
+        return () => {
+            window.removeEventListener('pagehide', flushState);
+            document.removeEventListener('visibilitychange', onHide);
+        };
+    }, [flushState]);
 
     // Page navigation clears the old interaction surface before this resolves.
     useEffect(() => {
@@ -168,6 +238,17 @@ export function App() {
         };
     }, [doc, page]);
 
+    useEffect(() => {
+        let cancelled = false;
+        setPdfComments([]);
+        setCommentsStatus('loading');
+        if (doc) void readPdfComments(doc.pdf, page, doc.bytes).then(
+            (comments) => { if (!cancelled) { setPdfComments(comments); setCommentsStatus('ready'); } },
+            () => { if (!cancelled) setCommentsStatus('error'); },
+        );
+        return () => { cancelled = true; };
+    }, [doc, page]);
+
     const goToPage = useCallback(
         (n: number) => {
             if (!doc) return;
@@ -180,6 +261,9 @@ export function App() {
             setHover(null);
             setSelectedKey(null);
             setSelectedAnnotationId(null);
+            setAgentHighlight(null);
+            setSelectedPdfComment(null);
+            setTab('agent');
         },
         [doc, page],
     );
@@ -212,14 +296,19 @@ export function App() {
     const selectElement = useCallback((key: string | null) => {
         setFocusRequest(null);
         setSelectedKey(key);
+        setSelectedPdfComment(null);
+        setComposerAt(null);
         if (key) {
             setTab('properties');
             const drawingIds = new Set(doc?.appearances?.filter((appearance) => appearance.elementKey === key).map((appearance) => appearance.drawingId));
             const drawings = doc?.drawings?.filter((drawing) => drawingIds.has(drawing.id) && matchesDrawingScope(drawing.id, drawingScope)) ?? [];
             const target = drawings.find((drawing) => drawing.page === page) ?? drawings[0];
-            if (target && target.page !== page) { setPage(target.page); setFocusRequest(null); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
+            if (target && target.page !== page) { setPage(target.page); setAgentHighlight(null); setFocusRequest(null); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
+        } else if (!hasActiveFilters(filters)) {
+            // Properties is empty with nothing selected and no filters, so fall back to the agent.
+            setTab((current) => (current === 'properties' ? 'agent' : current));
         }
-    }, [doc, page, drawingScope]);
+    }, [doc, page, drawingScope, filters]);
 
     const onHover = useCallback((key: string | null, at: { x: number; y: number }) => {
         setHover((h) => (key ? { key, ...at } : h === null ? h : null));
@@ -348,6 +437,42 @@ export function App() {
         return () => window.removeEventListener('keydown', onKey);
     }, [doc, page, drawKind, deleteSelected, goToPage, save, print]);
 
+    // Hold Space to pan temporarily; releasing restores the previous tool.
+    const toolRef = useRef(tool);
+    toolRef.current = tool;
+    const spacePanFrom = useRef<Tool | null>(null);
+    useEffect(() => {
+        if (!doc) return;
+        const release = () => {
+            const previous = spacePanFrom.current;
+            if (previous === null) return;
+            spacePanFrom.current = null;
+            if (toolRef.current === 'pan') setTool(previous);
+        };
+        const onDown = (e: KeyboardEvent) => {
+            if (e.code !== 'Space' || e.metaKey || e.ctrlKey || e.altKey) return;
+            if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
+            e.preventDefault();
+            if (e.repeat || spacePanFrom.current !== null || toolRef.current === 'pan') return;
+            spacePanFrom.current = toolRef.current;
+            setTool('pan');
+        };
+        const onUp = (e: KeyboardEvent) => {
+            if (e.code !== 'Space' || spacePanFrom.current === null) return;
+            e.preventDefault();
+            release();
+        };
+        window.addEventListener('keydown', onDown);
+        window.addEventListener('keyup', onUp);
+        window.addEventListener('blur', release);
+        return () => {
+            window.removeEventListener('keydown', onDown);
+            window.removeEventListener('keyup', onUp);
+            window.removeEventListener('blur', release);
+            release();
+        };
+    }, [doc]);
+
     const elementList = useMemo(() => (doc ? [...doc.elements.values()] : []), [doc, pageData]);
     const filterContext = useMemo(() => ({ drawings: doc?.drawings ?? [], appearances: doc?.appearances ?? [] }), [doc]);
     const matchedElements = useMemo(() => filterElements(elementList, doc?.parameters ?? new Map(), filters, filterContext), [elementList, doc, filters, filterContext]);
@@ -361,8 +486,25 @@ export function App() {
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
 
+    const agentContext = useMemo<AgentContext | null>(() => {
+        if (!doc || !pageData) return null;
+        const pageKeys = new Set([
+            ...(pageData.elementKeys ?? []),
+            ...(pageData.nativeTags?.resolvedElementKeys ?? []),
+            ...pageData.shapes.map((shape) => shape.elementKey),
+        ]);
+        const scopedKeys = drawingScope ? new Set((doc.appearances ?? []).filter((appearance) => matchesDrawingScope(appearance.drawingId, drawingScope)).map((appearance) => appearance.elementKey)) : null;
+        const elements = elementList.filter((element) => pageKeys.has(element.key) && (!scopedKeys || scopedKeys.has(element.key)));
+        return {
+            elements, parameters: doc.parameters, pageNumber: pageData.number,
+            scopeKey: drawingScope ? JSON.stringify([...drawingScope].sort()) : 'all-views',
+            locatableKeys: new Set(elements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).map((element) => element.key)),
+            comments: [...pdfComments, ...viewerComments(pageAnnotations)], commentsStatus,
+        };
+    }, [doc, pageData, elementList, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus]);
+
     const cancelFocus = useCallback(() => setFocusRequest(null), []);
-    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setFocusRequest(null); }, []);
+    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setAgentHighlight(null); setFocusRequest(null); }, []);
     const changeZoomMode = useCallback((next: ZoomMode) => { setFocusRequest(null); setZoomMode(next); }, []);
     const changeTool = useCallback((next: Tool) => { setFocusRequest(null); setTool(next); }, []);
     const focusComplete = useCallback((request: FocusRequest, located: boolean) => {
@@ -380,6 +522,27 @@ export function App() {
         if (!pageData || !locatableCount) return;
         setTool('select');
         setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: matchedKeys, drawingIds: drawingScope });
+    };
+
+    const applyAgentHighlight = (highlight: AgentHighlight | null) => {
+        setAgentHighlight(highlight);
+        setSelectedKey(null);
+        setSelectedAnnotationId(null);
+        setFocusRequest(null);
+        setTool('select');
+        setComposerAt(null);
+    };
+    const fitAgentHighlights = () => {
+        if (!pageData || !agentHighlight) return;
+        setTool('select');
+        setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: agentHighlight.elementKeys, drawingIds: drawingScope });
+    };
+    const selectComment = (comment: DrawingComment) => {
+        goToPage(comment.page);
+        setSelectedPdfComment(comment.source === 'pdf' ? comment : null);
+        setSelectedAnnotationId(comment.source === 'viewer' ? comment.annotationId ?? comment.id : null);
+        setSelectedKey(comment.elementKey ?? null);
+        setTab('notes');
     };
 
     return (
@@ -401,7 +564,6 @@ export function App() {
                 onZoomIn={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
                 onUpload={() => fileInput.current?.click()}
-                onOpenDemo={() => void openDemo()}
                 info={
                     <>
                         {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
@@ -436,10 +598,7 @@ export function App() {
                             onZoomMode={setZoomMode}
                             onHover={onHover}
                             onSelectElement={selectElement}
-                            onSelectAnnotation={(id) => {
-                                setSelectedAnnotationId(id);
-                                if (id) setTab('notes');
-                            }}
+                            onSelectAnnotation={(id) => { setSelectedAnnotationId(id); if (id) { setSelectedPdfComment(null); setTab('notes'); } }}
                             onAddAnnotation={addAnnotation}
                             onMoveAnnotation={moveAnnotation}
                             coverOf={(cloud) => elementsInCloud(cloud, regionSources)}
@@ -454,7 +613,7 @@ export function App() {
                                     setSelectedAnnotationId(id);
                                     setComposerAt(null);
                                     setSelectedKey(annotations.find((a) => a.id === id)?.elementKey ?? null);
-                                    if (id) setTab('notes');
+                                    if (id) { setSelectedPdfComment(null); setTab('notes'); }
                                 },
                                 onMove: moveComment,
                                 onDragTarget: (key, client) => onHover(key, client),
@@ -466,6 +625,7 @@ export function App() {
                             createCapture={createCapture}
                             geometry={geometry}
                             matchedKeys={hasActiveFilters(filters) ? matchedKeys : null}
+                            elementColors={agentHighlight?.colors}
                             drawingIds={drawingScope}
                             focusRequest={focusRequest}
                             onFocusComplete={focusComplete}
@@ -475,8 +635,8 @@ export function App() {
                         <div className="stage">
                             <div className="empty">
                                 <div>
-                                    <p><strong>{doc ? 'Loading page…' : 'Upload an enhanced PDF to begin.'}</strong></p>
-                                    {!doc && <p>Hover an element for a quick summary, click it for every parameter, and annotate the drawing.</p>}
+                                    <p><strong>{doc ? 'Loading page…' : restoring ? 'Restoring previous session…' : 'Upload an enhanced PDF to begin.'}</strong></p>
+                                    {!doc && !restoring && <p>Hover an element for a quick summary, click it for every parameter, and annotate the drawing.</p>}
                                 </div>
                             </div>
                         </div>
@@ -498,19 +658,29 @@ export function App() {
                 <aside className="side">
                     <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
                         value: t,
-                        label: t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties',
+                        label: t === 'agent' ? 'Agent' : t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? 'Elements' :'Properties',
                     }))} />
-                    <div className="panel" role="tabpanel">
-                        {!doc ? (
+                    <div className="panel" role="tabpanel" aria-label={tab === 'agent' ? 'Agent' : tab === 'properties' ? 'Properties' : tab === 'elements' ? 'Elements' : 'Notes'}>
+                        <div className="agent-panel-host" hidden={tab !== 'agent'}>
+                            <AgentPanel context={agentContext} sessionKey={`${documentSession}:${page}`} active={tab === 'agent'} onHighlight={applyAgentHighlight} activeHighlight={agentHighlight} onFitHighlights={fitAgentHighlights} onSelectComment={selectComment} />
+                        </div>
+                        {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
                             <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
                         ) : tab === 'elements' ? (
                             <>
                                 <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={changeFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} context={filterContext} pageNumber={page} onFitMatches={fitMatches} />
-                                <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} onLocate={locateElement} />
+                                {hasActiveFilters(filters) && <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} onLocate={locateElement} />}
                             </>
                         ) : (
+                            <>
+                            {selectedPdfComment && <section className="pdf-comment-context">
+                                <span className="chip">PDF review comment · page {selectedPdfComment.page}</span>
+                                <p>{selectedPdfComment.text}</p>
+                                <div className="muted">{selectedPdfComment.author ?? 'Author not recorded'} · {selectedPdfComment.modifiedAt ?? selectedPdfComment.createdAt ?? 'Date not recorded'}</div>
+                                <p className="muted">Embedded in the source PDF.</p>
+                            </section>}
                             <NotesList
                                 annotations={annotations}
                                 elements={doc.elements}
@@ -521,8 +691,9 @@ export function App() {
                                 onReply={sendReply}
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
-                                onSelect={(a) => { goToPage(a.page); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
+                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
                             />
+                            </>
                         )}
                     </div>
                 </aside>
