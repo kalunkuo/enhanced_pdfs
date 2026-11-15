@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createAgentMiddleware, parseAgentRequest, type AgentServerConfig } from '../server/agentMiddleware';
+import { clampConcurrency, createAgentMiddleware, parseAgentRequest, type AgentServerConfig } from '../server/agentMiddleware';
 import { AgentProviderError, type planAgentRequest } from '../server/openaiAgent';
 
 const config: AgentServerConfig = { apiKey: 'server-only-test-key', model: 'test-model' };
@@ -190,5 +190,48 @@ describe('status reflects whether the credential works', () => {
     it('keeps a key whose check is inconclusive or accepted', async () => {
         expect(await (await fetch(`${await serveWith(async () => null)}/api/agent/status`)).json()).toMatchObject({ configured: true });
         expect(await (await fetch(`${await serveWith(async () => true)}/api/agent/status`)).json()).toMatchObject({ configured: true });
+    });
+});
+
+describe('concurrency cap', () => {
+    async function serveCapped(maxConcurrent: number | undefined) {
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const plan = vi.fn(async () => { await gate; return { message: 'Done.', actions: [] }; });
+        const middleware = createAgentMiddleware(config, { plan, maxConcurrent, verifyKey: async () => null });
+        const server = createServer((request, response) => middleware(request, response, () => { response.writeHead(404); response.end(); }));
+        servers.push(server);
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const address = server.address();
+        if (!address || typeof address === 'string') throw new Error('Missing test server address');
+        return { base: `http://127.0.0.1:${address.port}`, release: () => release(), plan };
+    }
+
+    it('turns away the request past the cap and admits it again once a slot frees', async () => {
+        const { base, release, plan } = await serveCapped(1);
+        const first = post(base, input);
+        await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(1));
+        const second = await post(base, input);
+        expect(second.status).toBe(429);
+        expect(await second.json()).toEqual({ error: 'The drawing agent is busy. Wait for the current request to finish.' });
+        release();
+        expect((await first).status).toBe(200);
+        expect((await post(base, input)).status).toBe(200);
+    });
+
+    it('serves many visitors at once when the host raises the cap', async () => {
+        const { base, release, plan } = await serveCapped(64);
+        const pending = Array.from({ length: 20 }, () => post(base, input));
+        await vi.waitFor(() => expect(plan).toHaveBeenCalledTimes(20));
+        release();
+        expect((await Promise.all(pending)).map((response) => response.status)).toEqual(Array.from({ length: 20 }, () => 200));
+    });
+
+    it('keeps the cap within 1..256 and falls back when unset', () => {
+        expect(clampConcurrency(undefined, 2)).toBe(2);
+        expect(clampConcurrency(Number.NaN, 2)).toBe(2);
+        expect(clampConcurrency(0, 2)).toBe(1);
+        expect(clampConcurrency(7.9, 2)).toBe(7);
+        expect(clampConcurrency(10_000, 2)).toBe(256);
     });
 });

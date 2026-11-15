@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHostedAgentHandler, hostedBody, sameSiteRequest } from '../server/hostedAgent';
+import { createHostedAgentHandler, hostedBody, sameSiteRequest, hostedConcurrency } from '../server/hostedAgent';
 import { RequestError } from '../server/agentMiddleware';
 import type { planAgentRequest } from '../server/agentProvider';
 
@@ -100,5 +100,17 @@ describe('hosted agent HTTP API', () => {
     it('answers 404 for any other path', async () => {
         const { base } = await serve();
         expect((await fetch(`${base}/api/other`)).status).toBe(404);
+    });
+});
+
+describe('hostedConcurrency', () => {
+    it('defaults to 64 per instance and accepts AGENT_MAX_CONCURRENT between 1 and 256', () => {
+        expect(hostedConcurrency({})).toBe(64);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: '8' })).toBe(8);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: ' 1 ' })).toBe(1);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: '9999' })).toBe(256);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: '0' })).toBe(64);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: 'many' })).toBe(64);
+        expect(hostedConcurrency({ AGENT_MAX_CONCURRENT: '-5' })).toBe(64);
     });
 });
