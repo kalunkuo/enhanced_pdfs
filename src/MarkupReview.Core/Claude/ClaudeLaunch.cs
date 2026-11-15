@@ -14,7 +14,9 @@ public static class ClaudeLaunch
         Your tools are read-only on the model: you can only stage proposals; the reviewer approves or rejects each one in Revit.
 
         1. Call list_markups.
-        2. For every markup: call get_element for its elements (and get_parameter_options or list_types when you need valid values).
+        2. Work through the markups one at a time; the reviewer starts approving as soon as your first proposal arrives.
+           Finish each markup (its proposals or its note) before you look at the next markup.
+           For each one: call get_element for its elements (and get_parameter_options or list_types when you need valid values).
            - If the markup's text states or clearly implies a parameter value or a type for one of its elements, call
              propose_change with that exact value and a one-line reason that quotes the markup's words.
              A markup over several elements may need several proposals.

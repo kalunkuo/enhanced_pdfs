@@ -24,11 +24,17 @@ public sealed class ImportCommand : IExternalCommand
             Filter = "PDF files (*.pdf)|*.pdf",
             CheckFileExists = true,
         };
-        if (dialog.ShowDialog() != Forms.DialogResult.OK) return Result.Cancelled;
+        // Owned by Revit's main window so the picker opens on top of it instead of behind it.
+        if (dialog.ShowDialog(new RevitWindow(commandData.Application.MainWindowHandle)) != Forms.DialogResult.OK) return Result.Cancelled;
 
         string? error = controller.Start(commandData.Application, dialog.FileName);
         if (error is null) return Result.Succeeded;
         TaskDialog.Show("Markup review", error);
         return Result.Cancelled;
+    }
+
+    private sealed class RevitWindow(IntPtr handle) : Forms.IWin32Window
+    {
+        public IntPtr Handle { get; } = handle;
     }
 }

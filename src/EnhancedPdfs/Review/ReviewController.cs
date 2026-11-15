@@ -30,6 +30,16 @@ internal sealed class ReviewController
     public string? Warning { get; private set; }
     public string? WorkDir { get; private set; }
 
+    /// <summary>When Claude was launched; the pane shows elapsed time while <see cref="IsRunning"/>.</summary>
+    public DateTimeOffset? StartedAt { get; private set; }
+    /// <summary>Claude's latest short progress message ("Checking the door's available types…").</summary>
+    public string? LastThought { get; private set; }
+    /// <summary>How many element lookups Claude has made this run.</summary>
+    public int ElementsChecked { get; private set; }
+    /// <summary>True until Claude's first tool call arrives (process start-up and sign-in).</summary>
+    public bool IsStarting => IsRunning && _toolCalls == 0;
+    private int _toolCalls;
+
     /// <summary>Raised on any thread when proposals, notes or status change; the pane marshals to its dispatcher.</summary>
     public event Action? Changed;
 
@@ -39,6 +49,18 @@ internal sealed class ReviewController
     public string? Start(UIApplication app, string pdfPath)
     {
         if (IsRunning) return "A review is still running. Finish or cancel it first.";
+        OpenLog();
+        Log($"import {pdfPath}");
+        try { return StartLogged(app, pdfPath); }
+        catch (Exception e)
+        {
+            Log($"import failed: {e}");
+            return $"The import failed: {e.GetBaseException().Message}\n\nDetails: {Path.Combine(WorkDir!, "review.log")}";
+        }
+    }
+
+    private string? StartLogged(UIApplication app, string pdfPath)
+    {
         var document = app.ActiveUIDocument?.Document;
         if (document is null || document.IsFamilyDocument) return "Open the Revit project the PDF was exported from.";
 
@@ -46,24 +68,31 @@ internal sealed class ReviewController
         ExportTables tables;
         IReadOnlyList<Markup> markups;
         string source;
+        var clock = Stopwatch.StartNew();
         try
         {
             pdf = ReturnedPdf.Open(pdfPath);
+            Log($"pdf opened: pages={pdf.PageCount} attachments={string.Join(",", pdf.Attachments.Keys)} ({clock.ElapsedMilliseconds} ms)");
             tables = ExportTables.Load(pdf);
+            Log($"tables: model={tables.ModelName} key={tables.ModelKey} elements={tables.ElementsByKey.Count} ({clock.ElapsedMilliseconds} ms)");
             (markups, source) = MarkupSources.Read(pdf, tables);
+            Log($"markups: {markups.Count} from {source} ({clock.ElapsedMilliseconds} ms)");
         }
         catch (Exception e) when (e is InvalidDataException or IOException or PdfSharp.PdfSharpException)
         {
+            Log($"pdf unreadable: {e}");
             return $"This PDF could not be read: {e.Message}";
         }
 
         var gateway = new RevitModelGateway(_dispatcher, document);
+        Log($"open model: title={document.Title} key={gateway.ModelKey}");
         if (!string.Equals(tables.ModelKey, gateway.ModelKey, StringComparison.Ordinal))
             return $"This PDF was exported from another model ('{tables.ModelName}'). Open that project and import again.";
         if (markups.Count == 0)
             return "This PDF has no markups to review.";
 
         string? claude = ClaudeLaunch.Find();
+        Log($"claude: {claude ?? "not found"}");
         if (claude is null)
             return "Claude Code was not found. Install it (https://claude.com/claude-code) and run `claude auth login` once, then import again.";
 
@@ -76,31 +105,43 @@ internal sealed class ReviewController
         Session.NoteAdded += _ => Changed?.Invoke();
         Session.Finished += summary => SetStatus($"Claude finished: {summary}");
 
-        Launch(claude);
         app.GetDockablePane(PaneId).Show();
+        Launch(claude);
+        Log("claude launched");
         return null;
+    }
+
+    /// <summary>One folder per import, created first so even a failed import leaves a log. latest.txt points at it.</summary>
+    private void OpenLog()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "EnhancedPdfs-review");
+        WorkDir = Path.Combine(root, DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6]);
+        Directory.CreateDirectory(WorkDir);
+        lock (this) { _log?.Dispose(); _log = new StreamWriter(Path.Combine(WorkDir, "review.log")) { AutoFlush = true }; }
+        File.WriteAllText(Path.Combine(root, "latest.txt"), WorkDir);
     }
 
     private void Launch(string claudePath)
     {
-        WorkDir = Path.Combine(Path.GetTempPath(), "EnhancedPdfs-review", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6]);
-        Directory.CreateDirectory(WorkDir);
-        _log = new StreamWriter(Path.Combine(WorkDir, "review.log")) { AutoFlush = true };
-        _log.WriteLine($"pdf={Session!.Pdf.Path} source={Session.Source} markups={Session.Markups.Count}");
 
         string pipe = "enhancedpdfs-review-" + Guid.NewGuid().ToString("N");
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         string bridge = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "MarkupReview.Bridge.exe");
         _cancel = new CancellationTokenSource();
         var cancel = _cancel.Token;
-        var tools = new ReviewTools(Session, Gateway!);
+        var tools = new ReviewTools(Session!, Gateway!);
         _ = PipeHost.RunAsync(pipe, token, stream => McpServer.RunAsync(stream, stream, tools, cancel), cancel)
             .ContinueWith(t => Log($"pipe host ended: {t.Exception?.GetBaseException().Message ?? "ok"}"), TaskScheduler.Default);
 
-        var info = ClaudeLaunch.Build(claudePath, bridge, pipe, token, WorkDir);
+        Log($"bridge: {bridge} exists={File.Exists(bridge)} pipe={pipe}");
+        var info = ClaudeLaunch.Build(claudePath, bridge, pipe, token, WorkDir!);
         _claude = Process.Start(info) ?? throw new InvalidOperationException("Claude Code did not start.");
         _claude.StandardInput.Close();
-        SetStatus("Claude is reading the markups…");
+        StartedAt = DateTimeOffset.Now;
+        LastThought = null;
+        ElementsChecked = 0;
+        _toolCalls = 0;
+        SetStatus("Starting Claude…");
         _ = Task.Run(() => PumpOutput(_claude, cancel));
         _ = Task.Run(async () => Log("stderr: " + await _claude.StandardError.ReadToEndAsync()));
     }
@@ -118,7 +159,15 @@ internal sealed class ReviewController
                 {
                     switch (e)
                     {
-                        case ToolCall call: SetStatus(Describe(call.Name)); break;
+                        case ToolCall call:
+                            _toolCalls++;
+                            if (call.Name == "get_element") ElementsChecked++;
+                            SetStatus(Describe(call.Name));
+                            break;
+                        case Thinking thought:
+                            LastThought = thought.Text.Length > 160 ? thought.Text[..159] + "…" : thought.Text;
+                            Changed?.Invoke();
+                            break;
                         case MarkupReview.Core.Claude.Result result:
                             sawResult = true;
                             if (result.IsError) SetStatus($"Claude stopped: {result.Subtype}. Proposals so far are kept.");

@@ -56,6 +56,13 @@ public sealed class ClaudeLaunchTests : IDisposable
     }
 
     [Fact]
+    public void Prompt_asks_to_finish_each_markup_before_the_next()
+    {
+        // The reviewer starts approving while Claude works, so proposals must arrive one markup at a time.
+        Assert.Contains("before you look at the next markup", Build().ArgumentList[1]);
+    }
+
+    [Fact]
     public void Prompt_names_every_review_tool()
     {
         string prompt = Build().ArgumentList[1];

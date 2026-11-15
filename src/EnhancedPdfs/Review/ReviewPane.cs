@@ -24,6 +24,11 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private readonly TextBlock _progress = new() { Foreground = Muted, Margin = new Thickness(0, 2, 0, 0) };
     private readonly TextBlock _status = new() { Foreground = Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) };
     private readonly TextBlock _warning = new() { Foreground = Red, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+    // Live activity while Claude works: moving bar, elapsed time, Claude's own progress line, counters.
+    private readonly ProgressBar _busy = new() { IsIndeterminate = true, Height = 4, Margin = new Thickness(0, 6, 0, 0), Foreground = Accent, BorderThickness = new Thickness(0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock _activity = new() { Foreground = Ink, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock _thought = new() { Foreground = Muted, FontStyle = FontStyles.Italic, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0), Visibility = Visibility.Collapsed };
+    private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Button _cancel = SmallButton("Cancel");
     private readonly Button _save = SmallButton("Save review");
     private readonly StackPanel _filters = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 4) };
@@ -32,6 +37,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private Filter _filter = Filter.All;
     private string? _selected;
     private string? _rejecting;
+    private string _rejectText = ""; // survives the list rebuilding when new proposals arrive mid-review
     private string? _lastError;
     private bool _refreshQueued;
 
@@ -46,7 +52,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _cancel.Click += (_, _) => _controller.Cancel();
         _save.Click += async (_, _) => await SaveAsync();
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save } };
-        var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, buttons, _filters } };
+        var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _filters } };
+        _clock.Tick += (_, _) => UpdateActivity();
 
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(header, Dock.Top);
@@ -80,6 +87,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _warning.Visibility = _controller.Warning is null ? Visibility.Collapsed : Visibility.Visible;
         _cancel.Visibility = _controller.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         _save.IsEnabled = session is not null && !_controller.IsRunning;
+        UpdateActivity();
 
         _cards.Children.Clear();
         _filters.Children.Clear();
@@ -99,8 +107,47 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         foreach (var p in proposals.Where(Matches)) _cards.Children.Add(ProposalCard(session, p));
         if (_filter is Filter.All or Filter.Notes)
             foreach (var n in notes) _cards.Children.Add(NoteCard(session, n));
-        if (_cards.Children.Count == 0)
-            _cards.Children.Add(new TextBlock { Text = _controller.IsRunning ? "Waiting for Claude's first proposal…" : "Nothing here.", Foreground = Muted, Margin = new Thickness(10) });
+        if (_controller.IsRunning)
+            _cards.Children.Add(Placeholder(proposals.Count + notes.Count == 0
+                ? $"Analyzing {session.Markups.Count} markup{(session.Markups.Count == 1 ? "" : "s")}…"
+                : "Looking for more changes…"));
+        else if (_cards.Children.Count == 0)
+            _cards.Children.Add(new TextBlock { Text = "Nothing here.", Foreground = Muted, Margin = new Thickness(10) });
+    }
+
+    /// <summary>Runs on every refresh and every second while Claude works, so the timer keeps moving between events.</summary>
+    private void UpdateActivity()
+    {
+        bool running = _controller.IsRunning;
+        var show = running ? Visibility.Visible : Visibility.Collapsed;
+        _busy.Visibility = show;
+        _activity.Visibility = show;
+        if (running && !_clock.IsEnabled) _clock.Start();
+        if (!running && _clock.IsEnabled) _clock.Stop();
+
+        string? thought = running ? _controller.LastThought : null;
+        _thought.Text = thought is null ? "" : $"“{thought}”";
+        _thought.Visibility = thought is null ? Visibility.Collapsed : Visibility.Visible;
+        if (!running) return;
+
+        var elapsed = _controller.StartedAt is { } t ? DateTimeOffset.Now - t : TimeSpan.Zero;
+        string time = $"{(int)elapsed.TotalMinutes}:{elapsed.Seconds:00}";
+        var session = _controller.Session;
+        _activity.Text = _controller.IsStarting
+            ? $"{time} · starting Claude Code and signing in (usually 5–15 s)…"
+            : $"{time} · {_controller.ElementsChecked} element{(_controller.ElementsChecked == 1 ? "" : "s")} checked · " +
+              $"{session?.Proposals.Count ?? 0} proposal{(session?.Proposals.Count == 1 ? "" : "s")} · {session?.Notes.Count ?? 0} note{(session?.Notes.Count == 1 ? "" : "s")}";
+    }
+
+    /// <summary>A pulsing skeleton card where the next proposal will appear.</summary>
+    private static UIElement Placeholder(string text)
+    {
+        static Border Bar(double width) => new() { Height = 8, Width = width, CornerRadius = new CornerRadius(4), Background = Hex("#E9ECEF"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) };
+        var body = new StackPanel { Children = { new TextBlock { Text = text, Foreground = Muted }, Bar(180), Bar(240), Bar(140) } };
+        var card = new Border { Child = body, Padding = new Thickness(10, 10, 10, 12), BorderBrush = Line, BorderThickness = new Thickness(0, 0, 0, 1) };
+        var pulse = new System.Windows.Media.Animation.DoubleAnimation(1.0, 0.35, TimeSpan.FromSeconds(0.9)) { AutoReverse = true, RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever };
+        card.BeginAnimation(OpacityProperty, pulse);
+        return card;
     }
 
     private bool Matches(Proposal p) => _filter switch
@@ -180,10 +227,12 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     {
         if (_rejecting == p.Id)
         {
-            var reason = new TextBox { Margin = new Thickness(0, 6, 0, 4), MinHeight = 22 };
+            var reason = new TextBox { Margin = new Thickness(0, 6, 0, 4), MinHeight = 22, Text = _rejectText };
+            reason.TextChanged += (_, _) => _rejectText = reason.Text;
+            reason.Loaded += (_, _) => { reason.Focus(); reason.CaretIndex = reason.Text.Length; };
             var confirm = SmallButton("Reject");
             confirm.Foreground = Red;
-            confirm.Click += (_, _) => { _controller.Reject(p, reason.Text); _rejecting = null; };
+            confirm.Click += (_, _) => { _rejecting = null; _rejectText = ""; _controller.Reject(p, reason.Text); };
             var back = SmallButton("Back");
             back.Click += (_, _) => { _rejecting = null; Refresh(); };
             return new StackPanel { Children = { new TextBlock { Text = "Reason (optional):", Margin = new Thickness(0, 8, 0, 0) }, reason, new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, back } } } };
@@ -196,7 +245,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             _lastError = await _controller.ApproveAsync(p);
             Refresh();
         };
-        reject.Click += (_, _) => { _rejecting = p.Id; Refresh(); };
+        reject.Click += (_, _) => { _rejecting = p.Id; _rejectText = ""; Refresh(); };
         var grid = new WpfGrid { Margin = new Thickness(0, 8, 0, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
