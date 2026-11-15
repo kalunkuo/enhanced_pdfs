@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createAgentMiddleware, readJson, RequestError, type AgentMiddlewareOptions } from './agentMiddleware';
-import { resolveAgentConfig } from './agentConfig';
+import { createAgentMiddleware, readJson, RequestError, type AgentMiddlewareOptions } from './agentMiddleware.ts';
+import { resolveAgentConfig } from './agentConfig.ts';
 
 /**
  * The drawing agent as a hosted serverless function (Vercel, `api/agent.ts` and `api/agent/status.ts`).
@@ -39,9 +39,12 @@ export function sameSiteRequest(request: IncomingMessage): boolean {
 
 /** Vercel's Node runtime parses JSON bodies before the handler runs; anywhere else the stream is read. */
 export async function hostedBody(request: IncomingMessage & { body?: unknown }): Promise<unknown> {
-    if (request.body === undefined) return readJson(request);
+    // On Vercel `body` is a getter that throws on malformed JSON.
+    let body: unknown;
+    try { body = request.body; }
+    catch { throw new RequestError(400, 'The agent request is not valid JSON.'); }
+    if (body === undefined) return readJson(request);
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) throw new RequestError(415, 'Send agent requests as JSON.');
-    let body: unknown = request.body;
     if (typeof body === 'string') {
         try { body = JSON.parse(body); }
         catch { throw new RequestError(400, 'The agent request is not valid JSON.'); }

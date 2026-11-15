@@ -1,8 +1,8 @@
-import type { AgentAction, AgentApiRequest, AgentApiResponse, AgentChatTurn, AgentModelContext } from './agentApi';
-import { appendAgentObservation, boundedObservationData, observationBytes, type AgentObservation } from './agentObservations';
-import { highlightElementKeys, type AgentContext, type AgentElementGroup, type AgentResult, type DrawingComment } from './drawingAgent';
-import { inspectDrawing, inspectDrawingElements, queryDrawingElements, type DrawingQueryResult } from './drawingQuery';
-import type { AgentHostAction, AgentHostCallback } from './agentWorkspace';
+import type { AgentAction, AgentApiRequest, AgentApiResponse, AgentChatTurn, AgentModelContext } from './agentApi.ts';
+import { appendAgentObservation, boundedObservationData, observationBytes, type AgentObservation } from './agentObservations.ts';
+import { highlightElementKeys, type AgentContext, type AgentElementGroup, type AgentResult, type DrawingComment } from './drawingAgent.ts';
+import { inspectDrawing, inspectDrawingElements, queryDrawingElements, type DrawingQueryResult } from './drawingQuery.ts';
+import type { AgentHostAction, AgentHostCallback } from './agentWorkspace.ts';
 
 const MAX_ROUNDS = 8;
 const LEGACY_TOOLS = new Set(['color_walls_by_fire_rating', 'compare_door_widths', 'highlight_elements', 'latest_comments', 'clear_highlights']);

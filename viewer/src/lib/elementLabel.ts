@@ -1,4 +1,4 @@
-import type { ElementInfo } from './types';
+import type { ElementInfo } from './types.ts';
 
 /**
  * How an object is named wherever it is tied to something: its type, then its ID ("Wall 51"). The family and

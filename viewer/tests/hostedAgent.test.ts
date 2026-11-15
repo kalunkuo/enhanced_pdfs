@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHostedAgentHandler, hostedBody, sameSiteRequest } from '../server/hostedAgent';
@@ -83,6 +84,17 @@ describe('hosted agent HTTP API', () => {
         const denied = await fetch(`${base}/api/agent`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://other.example' }, body: JSON.stringify(input) });
         expect(denied.status).toBe(403);
         expect(plan).toHaveBeenCalledTimes(1);
+    });
+
+    // Vercel runs api/*.ts with Node's strip-only TypeScript loader: relative imports need their .ts
+    // extension and classes cannot use parameter properties, or the function dies at startup.
+    const nativeTs = !process.versions.bun && Number(process.versions.node.split('.')[0]) >= 23;
+    it.skipIf(!nativeTs)("loads under Node's native TypeScript loader, as Vercel runs the api/ files", () => {
+        for (const file of ['./api/agent.ts', './api/agent/status.ts']) {
+            const out = execFileSync(process.execPath, ['--input-type=module', '-e', `import('${file}').then((m) => console.log(typeof m.default))`],
+                { cwd: process.cwd(), encoding: 'utf8', timeout: 30_000 });
+            expect(out.trim()).toBe('function');
+        }
     });
 
     it('answers 404 for any other path', async () => {

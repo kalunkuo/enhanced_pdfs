@@ -1,7 +1,9 @@
 /** Sanitized provider failures are the only upstream errors returned by the HTTP boundary. */
 export class AgentProviderError extends Error {
-    constructor(message: string, public readonly status: number) {
+    public readonly status: number;
+    constructor(message: string, status: number) {
         super(message);
+        this.status = status;
         this.name = 'AgentProviderError';
     }
 }
