@@ -9,6 +9,7 @@ export interface NativeElementOverlayProps {
     width: number;
     height: number;
     hoverKey: string | null;
+    previewKeys?: ReadonlySet<string> | null;
     selectedKeys: ReadonlySet<string> | null;
     matchedKeys: ReadonlySet<string> | null;
     elementColors?: ReadonlyMap<string, string> | null;
@@ -16,7 +17,7 @@ export interface NativeElementOverlayProps {
 }
 
 /** Native paint emphasis is independent of base rendering and markup hit targets. */
-export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKeys, matchedKeys, elementColors, drawingIds = null }: NativeElementOverlayProps) {
+export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, previewKeys, selectedKeys, matchedKeys, elementColors, drawingIds = null }: NativeElementOverlayProps) {
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = ref.current;
@@ -41,10 +42,13 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
         const setTransform = (transform: NativePaintPart['toPage']) => context.setTransform(
             xScale * transform[0], yScale * transform[1], xScale * transform[2], yScale * transform[3], xScale * transform[4], yScale * transform[5],
         );
-        for (const part of geometry.parts) {
+        // Hovered and previewed objects are drawn last, so they sit on top of the selected ones.
+        const isHovered = (key: string) => key === hoverKey || !!previewKeys?.has(key);
+        const ordered = [...geometry.parts.filter((part) => !isHovered(part.elementKey)), ...geometry.parts.filter((part) => isHovered(part.elementKey))];
+        for (const part of ordered) {
             if (!matchesDrawingScope(part.drawingId, drawingIds)) continue;
             const selected = !!selectedKeys?.has(part.elementKey);
-            const hovered = part.elementKey === hoverKey;
+            const hovered = isHovered(part.elementKey);
             const agentColor = elementColors?.get(part.elementKey);
             if (!selected && !hovered && !agentColor && !matchedKeys?.has(part.elementKey)) continue;
             context.save();
@@ -66,6 +70,6 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             else context.stroke(part.path);
             context.restore();
         }
-    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKeys, matchedKeys, elementColors, drawingIds]);
+    }, [geometry, pageNumber, zoom, width, height, hoverKey, previewKeys, selectedKeys, matchedKeys, elementColors, drawingIds]);
     return <canvas ref={ref} aria-hidden="true" style={{ pointerEvents: 'none' }} />;
 }
