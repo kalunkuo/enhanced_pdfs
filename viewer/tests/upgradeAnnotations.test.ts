@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { linkedKeys } from '../src/lib/links';
+import { linkedKeys, withLinks } from '../src/lib/links';
 import { upgradePageAnnotations, type AnnotationUpgradeContext } from '../src/lib/upgradeAnnotations';
 import type { Annotation, ElementInfo, ImportedAnnotationSource } from '../src/lib/types';
 
@@ -12,12 +12,12 @@ function context(patch: Partial<AnnotationUpgradeContext> = {}): AnnotationUpgra
 }
 
 describe('existing PDF markup catch-up', () => {
-    it('links a unique exact painted-path hit and leaves the original source geometry unchanged', () => {
+    it('suggests a unique exact painted-path hit without activating links or changing source geometry', () => {
         const original = note();
         const result = upgradePageAnnotations([original], context());
-        expect(linkedKeys(result.annotations[0]!)).toEqual(['wall-a']);
-        expect(result.annotations[0]!.source).toMatchObject({ ...source, linkState: 'linked', linkMethod: 'geometry' });
-        expect(result).toMatchObject({ linked: 1, ambiguous: 0, unlinked: 0, pending: 0 });
+        expect(linkedKeys(result.annotations[0]!)).toEqual([]);
+        expect(result.annotations[0]!.source).toMatchObject({ ...source, linkState: 'suggested', linkMethod: 'geometry', suggestedElementKeys: ['wall-a'] });
+        expect(result).toMatchObject({ linked: 0, suggested: 1, ambiguous: 0, unlinked: 0, pending: 0 });
         expect(original.source!.linkState).toBe('pending');
         expect(original.elementKey).toBeUndefined();
     });
@@ -27,7 +27,8 @@ describe('existing PDF markup catch-up', () => {
         const arrow = note({}, { shape: 'arrow', subtype: 'Line', bounds: [0, 0, 30, 30], anchor: [25, 25] });
         const result = upgradePageAnnotations([arrow], context({ picker }));
         expect(picker).toHaveBeenCalledWith([25, 25], 0);
-        expect(linkedKeys(result.annotations[0]!)).toEqual(['door-a']);
+        expect(linkedKeys(result.annotations[0]!)).toEqual([]);
+        expect(result.annotations[0]!.source!.suggestedElementKeys).toEqual(['door-a']);
     });
 
     it('leaves multiple precise candidates for review rather than choosing by array order', () => {
@@ -43,14 +44,15 @@ describe('existing PDF markup catch-up', () => {
         expect(result.annotations[0]!.source).toMatchObject({ linkState: 'ambiguous', candidateKeys: ['wall-a'] });
     });
 
-    it('links every area member with at least half its drawn extent covered', () => {
+    it('suggests every area member with at least half its drawn extent covered', () => {
         const areaNote = note({}, { shape: 'area', subtype: 'Square', bounds: [0, 0, 25, 30] });
         const result = upgradePageAnnotations([areaNote], context({ bounds: [
             ...context().bounds,
             { elementKey: 'metadata', drawingId: 'plan', bounds: [0, 0, 1000, 1000] },
         ] }));
-        expect(linkedKeys(result.annotations[0]!)).toEqual(['door-a', 'wall-a']);
-        expect(result.linked).toBe(1);
+        expect(linkedKeys(result.annotations[0]!)).toEqual([]);
+        expect(result.annotations[0]!.source!.suggestedElementKeys).toEqual(['door-a', 'wall-a']);
+        expect(result.suggested).toBe(1);
         expect(result.annotations[0]!.source!.candidateKeys).toBeUndefined();
     });
 
@@ -68,16 +70,17 @@ describe('existing PDF markup catch-up', () => {
             { elementKey: 'wall-a', drawingId: 'plan', bounds: [0, 0, 10, 10] },
             { elementKey: 'wall-a', drawingId: 'detail', bounds: [100, 100, 120, 120] },
         ];
-        expect(linkedKeys(upgradePageAnnotations([note({}, { shape: 'area', bounds: [0, 0, 10, 10] })], context({ bounds })).annotations[0]!)).toEqual(['wall-a']);
+        expect(upgradePageAnnotations([note({}, { shape: 'area', bounds: [0, 0, 10, 10] })], context({ bounds })).annotations[0]!.source!.suggestedElementKeys).toEqual(['wall-a']);
         const otherView = note({}, { shape: 'area', drawingId: 'detail', bounds: [0, 0, 10, 10] });
         expect(upgradePageAnnotations([otherView], context({ bounds })).annotations[0]!.source!.linkState).toBe('unlinked');
         const pointOtherView = note({}, { drawingId: 'detail' });
         expect(upgradePageAnnotations([pointOtherView], context({ bounds })).annotations[0]!.source!.linkState).toBe('unlinked');
     });
 
-    it('separates text references from actual geometric links', () => {
+    it('keeps text references separate from proposed geometric matches', () => {
         const result = upgradePageAnnotations([note({ text: 'Check this wall; see door 745963 and wall 676281.' })], context());
-        expect(linkedKeys(result.annotations[0]!)).toEqual(['wall-a']);
+        expect(linkedKeys(result.annotations[0]!)).toEqual([]);
+        expect(result.annotations[0]!.source!.suggestedElementKeys).toEqual(['wall-a']);
         expect(result.annotations[0]!.source!.referencedElementKeys).toEqual(['door-a']);
     });
 
@@ -141,7 +144,8 @@ describe('existing PDF markup catch-up', () => {
         expect(upgradePageAnnotations(originals, context({ geometryReady: false })).annotations).toBe(originals);
         const ready = upgradePageAnnotations([current, other], context());
         expect(ready.annotations[1]).toBe(other);
-        expect(ready.linked).toBe(1);
+        expect(ready.linked).toBe(0);
+        expect(ready.suggested).toBe(1);
         expect(ready.pending).toBe(0);
     });
 
@@ -152,7 +156,7 @@ describe('existing PDF markup catch-up', () => {
         const viewer = { ...note({ id: 'viewer' }), source: undefined };
         const result = upgradePageAnnotations([plugin, manual, cleared, viewer], context());
         expect(result.annotations).toEqual([plugin, manual, cleared, viewer]);
-        expect(result).toMatchObject({ linked: 2, unlinked: 1, ambiguous: 0, pending: 0 });
+        expect(result).toMatchObject({ linked: 2, suggested: 0, unlinked: 1, ambiguous: 0, pending: 0 });
         result.annotations.forEach((annotation, index) => expect(annotation).toBe([plugin, manual, cleared, viewer][index]));
     });
 
@@ -162,5 +166,15 @@ describe('existing PDF markup catch-up', () => {
         expect(second).toEqual(first);
         expect(second.annotations).toBe(first.annotations);
         expect(second.annotations[0]).toBe(first.annotations[0]);
+    });
+
+    it('counts accepted manual links separately and never replaces them with later suggestions', () => {
+        const proposed = upgradePageAnnotations([note()], context()).annotations[0]!;
+        const { suggestedElementKeys, ...source } = proposed.source!;
+        const accepted = withLinks({ ...proposed, source: { ...source, linkState: 'linked' as const, linkMethod: 'manual' as const } }, suggestedElementKeys!);
+        const result = upgradePageAnnotations([accepted], context({ picker: () => [{ elementKey: 'door-a' }] }));
+        expect(linkedKeys(result.annotations[0]!)).toEqual(['wall-a']);
+        expect(result.annotations[0]).toBe(accepted);
+        expect(result).toMatchObject({ linked: 1, suggested: 0, pending: 0 });
     });
 });

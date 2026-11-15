@@ -16,4 +16,22 @@ describe('recovering reviews after imported markup support', () => {
         expect(recoverReviewAnnotations([imported], [edited], [imported.id])).toEqual([edited]);
         expect(recoverReviewAnnotations([imported])).toEqual([imported]);
     });
+
+    it('requires acceptance of legacy geometry auto-links from both saved PDFs and browser recovery', () => {
+        const automatic = { ...imported, elementKey: 'wall', elementKeys: ['wall', 'door'], source: { ...imported.source!, linkState: 'linked' as const, linkMethod: 'geometry' as const } };
+        for (const recovered of [recoverReviewAnnotations([automatic]), recoverReviewAnnotations([imported], [automatic], [imported.id])]) {
+            expect(recovered[0]).toMatchObject({ source: { linkState: 'suggested', linkMethod: 'geometry', suggestedElementKeys: ['wall', 'door'] } });
+            expect(recovered[0]!.elementKey).toBeUndefined();
+            expect(recovered[0]!.elementKeys).toBeUndefined();
+        }
+        expect(automatic.elementKey).toBe('wall');
+    });
+
+    it('keeps accepted plugin links and pending suggestions stable during recovery', () => {
+        const plugin = { ...imported, elementKey: 'wall', source: { ...imported.source!, linkState: 'linked' as const, linkMethod: 'plugin' as const } };
+        const proposed = { ...imported, id: 'suggested', source: { ...imported.source!, linkState: 'suggested' as const, linkMethod: 'geometry' as const, suggestedElementKeys: ['door'] } };
+        expect(recoverReviewAnnotations([], [plugin, proposed])).toEqual([plugin, proposed]);
+        expect(recoverReviewAnnotations([], [plugin, proposed])[0]).toBe(plugin);
+        expect(recoverReviewAnnotations([], [plugin, proposed])[1]).toBe(proposed);
+    });
 });

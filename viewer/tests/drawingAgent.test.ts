@@ -1,11 +1,120 @@
 import { describe, expect, it } from 'vitest';
-import { executeDrawingAgent, parseWidthInches, type AgentContext, type DrawingComment } from '../src/lib/drawingAgent';
+import { executeDrawingAgent, highlightElementKeys, highlightElementsByCategory, parseWidthInches, type AgentContext, type DrawingComment } from '../src/lib/drawingAgent';
 import type { ElementInfo, ParameterInfo } from '../src/lib/types';
 import { buildParameters } from '../src/lib/tables';
 
 const element = (key: string, category = 'Doors', more: Partial<ElementInfo> = {}): ElementInfo => ({ key, category, name: key, elementId: Number(key.replace(/\D/g, '')) || 1, ...more });
 const parameter = (value: string, more: Partial<ParameterInfo> = {}): ParameterInfo => ({ name: 'Width', scope: 'Instance', value, ...more });
 const context = (more: Partial<AgentContext> = {}): AgentContext => ({ elements: [], parameters: new Map(), comments: [], pageNumber: 1, locatableKeys: new Set(), ...more });
+
+describe('highlighting arbitrary local query results', () => {
+    const elements = [element('e1', 'Columns'), element('e2', 'Walls'), element('e3', 'Walls'), element('e4', 'Furniture')];
+    const c = context({ elements, locatableKeys: new Set(['e1', 'e2', 'e4', 'not-on-this-page']) });
+
+    it('uses valid result identities once and separates metadata from mapped geometry', () => {
+        const result = highlightElementKeys(c, ['e1', 'e1', 'e3', 'not-on-this-page', 'unknown'], { color: 'green', title: 'Query matches' });
+        expect(result.highlight!.title).toBe('Query matches');
+        expect([...result.highlight!.elementKeys]).toEqual(['e1']);
+        expect([...result.highlight!.colors]).toEqual([['e1', '#22c55e']]);
+        expect(result.highlight!.legend).toEqual([{ label: 'Columns', color: '#22c55e', count: 1 }]);
+        expect(result.message).toContain('2 matching elements on page 1; 1 can be highlighted');
+        expect(result.message).toContain('1 have no mapped geometry');
+    });
+
+    it('colors by supplied actual result groups across category boundaries', () => {
+        const groups = [{ label: '2 HR', elementKeys: new Set(['e1', 'e2', 'unknown']) }, { label: 'Unspecified', elementKeys: new Set(['e3']) }];
+        const result = highlightElementKeys(c, ['e1', 'e2', 'e3'], { groups, title: 'Fire Rating' });
+        expect(result.highlight!.colors.get('e1')).toBe(result.highlight!.colors.get('e2'));
+        expect(result.highlight!.legend).toEqual([{ label: '2 HR', color: result.highlight!.colors.get('e1'), count: 2 }]);
+        expect(result.message).toContain('3 matching elements on page 1; 2 can be highlighted');
+        expect([...groups[0]!.elementKeys]).toEqual(['e1', 'e2', 'unknown']);
+    });
+
+    it('keeps unmatched result members visible in a separate group without admitting extra keys', () => {
+        const result = highlightElementKeys(c, ['e1', 'e2'], { color: 'orange', groups: [{ label: 'Requested value', elementKeys: new Set(['e1', 'e4']) }] });
+        expect(new Set(result.highlight!.elementKeys)).toEqual(new Set(['e1', 'e2']));
+        expect(result.highlight!.legend).toEqual(expect.arrayContaining([{ label: 'Requested value', color: '#f97316', count: 1 }, { label: 'Other matches', color: '#f97316', count: 1 }]));
+        expect(result.highlight!.colors.has('e4')).toBe(false);
+    });
+
+    it('reports overlapping groups explicitly and never double-counts their overlay members', () => {
+        const result = highlightElementKeys(c, ['e1', 'e2'], { groups: [{ label: 'A', elementKeys: new Set(['e1', 'e2']) }, { label: 'B', elementKeys: new Set(['e2']) }] });
+        expect(result.highlight!.legend).toEqual(expect.arrayContaining([expect.objectContaining({ label: 'A', count: 1 }), expect.objectContaining({ label: 'Multiple groups', count: 1 })]));
+        expect(result.highlight!.legend.reduce((sum, group) => sum + group.count, 0)).toBe(2);
+        expect(result.message).toContain('1 matching element belongs to multiple supplied result groups');
+    });
+
+    it('supports empty matches, metadata-only results, safe colors, and stable default grouping', () => {
+        expect(highlightElementKeys(c, ['unknown'], {}).highlight).toBeNull();
+        const metadata = highlightElementKeys(c, ['e3'], {});
+        expect(metadata.highlight!.colors.size).toBe(0);
+        expect(metadata.highlight!.legend).toEqual([]);
+        expect(metadata.message).toContain('1 matching element on page 1; 0 can be highlighted');
+        expect(() => highlightElementKeys(c, ['e1'], { color: 'cyan' as 'blue' })).toThrow('Unsupported category highlight color');
+        const first = highlightElementKeys(c, ['e1', 'e2', 'e4'], {});
+        const reordered = highlightElementKeys({ ...c, elements: [...elements].reverse() }, ['e4', 'e2', 'e1'], {});
+        expect(first.highlight!.legend).toEqual(reordered.highlight!.legend);
+        expect([...first.highlight!.colors]).toEqual([...reordered.highlight!.colors]);
+    });
+});
+
+describe('arbitrary category highlighting', () => {
+    const elements = [element('c1', 'Columns'), element('c2', 'Structural Columns'), element('c3', 'Structural Columns'), element('f1', 'Furniture'), element('w1', 'Walls')];
+    const c = context({ elements, locatableKeys: new Set(['c1', 'c2', 'f1', 'w1', 'out-of-scope']) });
+
+    it('highlights only scoped and locatable matches while reporting metadata coverage separately', () => {
+        const result = highlightElementsByCategory(c, ['Columns', 'Structural Columns'], 'red');
+        expect([...result.highlight!.elementKeys]).toEqual(['c1', 'c2']);
+        expect([...result.highlight!.colors]).toEqual([['c1', '#ef4444'], ['c2', '#ef4444']]);
+        expect(result.highlight!.legend).toEqual([{ label: 'Columns', color: '#ef4444', count: 1 }, { label: 'Structural Columns', color: '#ef4444', count: 1 }]);
+        expect(result.message).toContain('3 matching elements on page 1; 2 can be highlighted, 1 have no mapped geometry');
+    });
+
+    it('matches normalized whole categories and singular aliases without substring expansion', () => {
+        expect([...highlightElementsByCategory(c, ['  sTRuctural   column  '], 'blue').highlight!.elementKeys]).toEqual(['c2']);
+        expect([...highlightElementsByCategory(c, ['column'], 'blue').highlight!.elementKeys]).toEqual(['c1']);
+        expect(highlightElementsByCategory(c, ['col'], 'blue').highlight).toBeNull();
+        expect([...highlightElementsByCategory(c, ['Furniture'], 'pink').highlight!.elementKeys]).toEqual(['f1']);
+    });
+
+    it('supports all specified colors and stable category colors independent of element order', () => {
+        for (const color of ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink'] as const) {
+            expect(highlightElementsByCategory(c, ['Columns'], color).highlight!.colors.get('c1')).toMatch(/^#[0-9a-f]{6}$/);
+        }
+        const first = highlightElementsByCategory(c, ['Columns', 'Furniture'], null).highlight!;
+        const reordered = highlightElementsByCategory({ ...c, elements: [...elements].reverse() }, ['Furniture', 'Columns'], null).highlight!;
+        expect([...first.colors]).toEqual([...reordered.colors]);
+        expect(() => highlightElementsByCategory(c, ['Columns'], 'cyan' as 'blue')).toThrow('Unsupported category highlight color');
+    });
+
+    it('returns an empty overlay when all matched metadata lacks drawing geometry', () => {
+        const result = highlightElementsByCategory({ ...c, locatableKeys: new Set() }, ['Structural Columns'], null);
+        expect(result.highlight!.colors.size).toBe(0);
+        expect(result.highlight!.elementKeys.size).toBe(0);
+        expect(result.highlight!.legend).toEqual([]);
+        expect(result.message).toContain('2 matching elements on page 1; 0 can be highlighted');
+    });
+
+    it('routes broad category nouns using the actual catalog, including qualified columns', () => {
+        expect([...executeDrawingAgent('Highlight all columns blue', c).highlight!.elementKeys]).toEqual(['c1', 'c2']);
+        expect([...executeDrawingAgent('Highlight structural columns green', c).highlight!.elementKeys]).toEqual(['c2']);
+        expect([...executeDrawingAgent('Show all furniture in purple', c).highlight!.elementKeys]).toEqual(['f1']);
+        const framing = context({ elements: [element('beam', 'Structural Framing')], locatableKeys: new Set(['beam']) });
+        expect([...executeDrawingAgent('Highlight framing orange', framing).highlight!.elementKeys]).toEqual(['beam']);
+    });
+
+    it.each(['Highlight columns wider than 12 inches', 'Highlight columns > 12 inches', 'Highlight columns on level 2', 'Highlight columns with fire rating 2 HR', 'Highlight columns made of steel', 'Highlight doors taller than 80 inches', 'Highlight columns and doors wider than 36 inches'])('does not silently drop unsupported predicates from %s', (prompt) => {
+        const result = executeDrawingAgent(prompt, { ...c, elements: [...elements, element('d1', 'Doors')] });
+        expect(result).not.toHaveProperty('highlight');
+        expect(result.message).toContain('without the property or size filter');
+    });
+
+    it('routes explicit wall colors separately from fire ratings and refuses conflicting colors', () => {
+        expect(executeDrawingAgent('Color all walls yellow', c).highlight!.colors.get('w1')).toBe('#eab308');
+        expect(executeDrawingAgent('Highlight columns red and blue', c)).not.toHaveProperty('highlight');
+        expect(executeDrawingAgent('Highlight walls by fire rating', c).highlight!.title).toBe('Walls by fire rating');
+    });
+});
 
 describe('door dimensions', () => {
     it.each([

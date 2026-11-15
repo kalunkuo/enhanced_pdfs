@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString, type PDFObject } from 'pdf-lib';
-import { cleanImportedSource } from './annotationSource';
+import { cleanImportedSource, normalizeImportedSuggestion } from './annotationSource';
 import { parsePdfDate } from './drawingComments';
 import { withLinks } from './links';
 import { collectViewerOwnedNames, isViewerOwnedAnnotation, listPdfAnnotationEntries } from './pdfAnnotationOwnership';
@@ -125,6 +125,7 @@ const identity = (page: number, ref: string) => `${page}:${ref}`;
 export async function importPdfAnnotations(
     pdf: Pdf, bytes: Uint8Array, existing: readonly Annotation[], tables: ReadonlyMap<string, readonly Row[]>, elements: ReadonlyMap<string, ElementInfo>,
 ): Promise<{ annotations: Annotation[]; importedCount: number; warnings: string[] }> {
+    existing = existing.map(normalizeImportedSuggestion);
     const warnings = new Set<string>();
     let document: PDFDocument;
     try { document = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }); }
@@ -217,9 +218,11 @@ export async function importPdfAnnotations(
             matchedOld.add(previous);
             const old = previous.source!;
             const retainedKeys = (previous.elementKeys ?? (previous.elementKey ? [previous.elementKey] : [])).filter((key) => elements.has(key));
-            const preserve = old.linkMethod === 'manual' || geometryEqual(old, source);
+            // Explicit corrections win; a validated plugin link supersedes an older geometry suggestion.
+            const preserve = old.linkMethod === 'manual' || (!restored.keys.length && geometryEqual(old, source));
             if (preserve) {
                 source = { ...old, ...source, linkState: old.linkState, ...(old.linkMethod ? { linkMethod: old.linkMethod } : {}),
+                    ...(old.suggestedElementKeys ? { suggestedElementKeys: old.suggestedElementKeys.filter((key) => elements.has(key)) } : {}),
                     ...(old.candidateKeys ? { candidateKeys: old.candidateKeys.filter((key) => elements.has(key)) } : {}) };
                 imported = withLinks(imported, retainedKeys);
                 if (old.linkState === 'linked' && !retainedKeys.length) {
@@ -230,7 +233,7 @@ export async function importPdfAnnotations(
             if (previous.replies?.length) imported.replies = previous.replies.filter((reply) => !reply.source || entries.some((candidate) => candidate.page === entry.page &&
                 (candidate.ref === reply.source!.ref || (!!reply.source!.name && byName.get(identity(entry.page, reply.source!.name))?.length === 1 && pdfText(lookup(candidate.dict, 'NM')) === reply.source!.name))));
         } else if (restored.keys.length) imported = withLinks(imported, restored.keys);
-        imported.source = source;
+        imported = normalizeImportedSuggestion({ ...imported, source });
         annotations.push(imported);
         importedByEntry.set(entry, imported);
     }

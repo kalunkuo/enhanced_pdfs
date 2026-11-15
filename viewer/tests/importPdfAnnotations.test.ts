@@ -225,6 +225,39 @@ describe('existing PDF markup import', () => {
         expect(second.annotations[0]).toMatchObject({ id: old.id, text: 'Changed in another PDF editor', elementKey: 'door-a', source: { linkState: 'linked', linkMethod: 'manual', bounds: [50, 100, 90, 140] } });
     });
 
+    it('reopens prior geometric auto-links as suggestions and preserves unaccepted suggestions', async () => {
+        const doc = await fixture();
+        markup(doc);
+        const first = (await read(doc)).annotations[0]!;
+        const legacy = withLinks({ ...first, source: { ...first.source!, linkState: 'linked' as const, linkMethod: 'geometry' as const, referencedElementKeys: ['door-a'] } }, ['wall-a']);
+        const reopened = await read(doc, [legacy]);
+        expect(reopened.annotations[0]).toMatchObject({ source: { linkState: 'suggested', linkMethod: 'geometry', suggestedElementKeys: ['wall-a'], referencedElementKeys: ['door-a'] } });
+        expect(reopened.annotations[0]!.elementKey).toBeUndefined();
+        expect(reopened.annotations[0]!.elementKeys).toBeUndefined();
+        expect((await read(doc, reopened.annotations)).annotations).toEqual(reopened.annotations);
+        expect(legacy.elementKey).toBe('wall-a');
+    });
+
+    it('prefers freshly validated plugin links over geometric suggestions while manual corrections win', async () => {
+        const doc = await fixture();
+        markup(doc, { NM: PDFString.of('ep-native') });
+        const first = (await read(doc)).annotations[0]!;
+        const automatic = withLinks({ ...first, source: { ...first.source!, linkState: 'linked' as const, linkMethod: 'geometry' as const } }, ['door-a']);
+        const data = tables([
+            ['annotations', [{ AnnotationId: 'ep-native', Page: 1, Status: 'Open', SchemaVersion: 1 }]],
+            ['annotation-links', [{ AnnotationId: 'ep-native', ElementKey: 'wall-a', ElementId: 676281, Relation: 'linked' }]],
+        ]);
+        const plugin = (await read(doc, [automatic], elements, data)).annotations[0]!;
+        expect(plugin).toMatchObject({ elementKey: 'wall-a', source: { linkState: 'linked', linkMethod: 'plugin' } });
+        expect(plugin.source!.suggestedElementKeys).toBeUndefined();
+        const manual = { ...automatic, source: { ...automatic.source!, linkMethod: 'manual' as const } };
+        expect((await read(doc, [manual], elements, data)).annotations[0]).toMatchObject({ elementKey: 'door-a', source: { linkState: 'linked', linkMethod: 'manual' } });
+        const cleared = withLinks({ ...manual, source: { ...manual.source, linkState: 'unlinked' as const } }, []);
+        const reopenedClear = (await read(doc, [cleared], elements, data)).annotations[0]!;
+        expect(reopenedClear.source).toMatchObject({ linkState: 'unlinked', linkMethod: 'manual' });
+        expect(reopenedClear.elementKey).toBeUndefined();
+    });
+
     it('does not transfer source links to a different named markup that reuses a PDF object reference', async () => {
         const doc = await fixture();
         const note = markup(doc, { NM: PDFString.of('old-source') });

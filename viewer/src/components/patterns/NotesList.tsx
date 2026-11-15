@@ -104,7 +104,8 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
 
     if (annotations.length === 0) return <div className="panel-empty">No annotations yet. Pick a tool and draw on the PDF.</div>;
     const previewHandlers = (a: Annotation) => {
-        const keys = a.kind === 'cloud' ? (a.contained ?? []).map((c) => c.key) : linkedKeys(a);
+        const keys = a.kind === 'cloud' ? (a.contained ?? []).map((c) => c.key)
+            : a.source?.linkState === 'suggested' ? (a.source.suggestedElementKeys ?? []).filter((key) => elements.has(key)) : linkedKeys(a);
         const show = () => { if (keys.length) onPreview?.(new Set(keys)); };
         return { onPointerEnter: show, onPointerLeave: () => onPreview?.(null), onFocus: show, onBlur: () => onPreview?.(null) };
     };
@@ -115,6 +116,9 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                 const selected = a.id === selectedId;
                 const covered = a.contained?.length ?? 0;
                 const links = linkedKeys(a);
+                const suggested = a.source?.linkState === 'suggested' ? [...new Set(a.source.suggestedElementKeys ?? [])].filter((key) => elements.has(key)) : [];
+                const title = a.source ? a.source.linkState === 'linked' ? 'Smart comment' : `Imported ${a.source.subtype}` : NAMES[a.kind];
+                const sourceStatus = !a.source ? '' : a.source.linkState === 'linked' ? a.source.linkMethod === 'manual' ? 'accepted' : 'linked' : suggested.length ? 'upgrade available' : a.source.linkState === 'pending' ? 'matching' : 'needs review';
                 const linkList = links.length > 1 && <LinkedObjects keys={links} elements={elements} onOpen={onOpenElement} />;
                 const chip = a.kind === 'cloud'
                     ? (covered ? <span className="chip tied">covers {covered} object{covered === 1 ? '' : 's'}</span> : <span className="chip untied">no objects</span>)
@@ -122,7 +126,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     ? <span className="chip tied">↳ {linksSummary(links, elements)}</span>
                     : a.elementKey
                     ? <span className="chip tied" style={e ? { color: categoryColor(e.category) } : undefined}>↳ {e ? elementLabel(e) : a.elementKey}</span>
-                    : <span className="chip untied">untied</span>;
+                    : <span className="chip untied">{suggested.length ? `${suggested.length} proposed object${suggested.length === 1 ? '' : 's'}` : a.source ? 'not upgraded' : 'untied'}</span>;
                 return (
                     <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined} {...previewHandlers(a)}>
                         {selected && a.kind === 'comment' ? (
@@ -152,8 +156,8 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                             <>
                                 <button aria-current={selected} onClick={() => onSelect(a)}>
                                     <span className="note-head">
-                                        <strong>{a.source ? `Imported ${a.source.subtype}` : NAMES[a.kind]}</strong>
-                                        <span className="muted">p. {a.page}{a.source && a.source.linkState !== 'linked' ? ' · needs review' : ''}</span>
+                                        <strong>{title}</strong>
+                                        <span className="muted">p. {a.page}{sourceStatus ? ` · ${sourceStatus}` : ''}</span>
                                         {a.kind === 'comment' && (
                                             <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'}</span>
                                         )}

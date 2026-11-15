@@ -54,7 +54,8 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             context.save();
             for (const clip of part.clips) { setTransform(clip.toPage); context.clip(clip.path, clip.rule); }
             setTransform(part.toPage);
-            const emphasis = hovered ? hoverColor : selected ? selectedColor : agentColor ? resolveColor(agentColor) : color;
+            // Selection strengthens the requested color without hiding grouped agent results.
+            const emphasis = hovered ? hoverColor : agentColor ? resolveColor(agentColor) : selected ? selectedColor : color;
             context.strokeStyle = emphasis;
             context.fillStyle = emphasis;
             context.globalAlpha = part.mode === 'fill' ? hovered ? 0.36 : selected ? 0.28 : 0.12 : hovered ? 1 : selected ? 0.95 : 0.55;

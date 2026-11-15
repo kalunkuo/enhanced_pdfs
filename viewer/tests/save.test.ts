@@ -9,6 +9,7 @@ import { parseSessionState } from '../src/lib/session';
 import { parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
 import { MARKUPS_FILE, MARKUP_LINKS_FILE, MARKUP_REPLIES_FILE } from '../src/lib/markupTables';
+import { linkedKeys, withLinks } from '../src/lib/links';
 
 const ANNOTATIONS: Annotation[] = [
     { id: 'a1', page: 1, kind: 'rect', from: [100, 100], to: [160, 140], elementKey: 'w1' },
@@ -261,6 +262,60 @@ async function importedSource(options: { named?: boolean; rotated?: boolean; nes
 const decodedAppearance = (dict: PDFDict) => new TextDecoder().decode(decodePDFRawStream(dict.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRawStream).decode());
 
 describe('imported PDF markups and ownership', () => {
+    it('exports smart links only after accepting a suggested upgrade, retaining source data through two reopens', async () => {
+        const { bytes, annotation, originalFiles } = await importedSource();
+        const originalRoot = (await annots(bytes, 0)).find((dict) => subtype(dict) === 'Polygon')!;
+        const model = new Map([
+            ['w1', { key: 'w1', elementId: 676281, elementIdText: '676281', category: 'Walls', name: 'Wall 676281' }],
+            ['door-smart', { key: 'door-smart', elementId: 745963, elementIdText: '745963', category: 'Doors', name: 'Door 745963' }],
+        ]);
+        const suggested = withLinks({ ...annotation, source: { ...annotation.source!, linkState: 'suggested', suggestedElementKeys: ['w1', 'door-smart'] } }, []);
+        const suggestedBytes = await buildAnnotatedPdf(bytes, [suggested], describe_, { originalAnnotations: [annotation], elements: model });
+        const suggestedFiles = await attachments(suggestedBytes);
+        const parquet = async (files: Map<string, Uint8Array[]>, file: string) => parquetReadObjects({ file: files.get(file)![0]!.slice().buffer, compressors });
+        const [savedSuggestion] = parseAnnotations(suggestedFiles.get(ANNOTATIONS_FILE)![0]!);
+        expect(savedSuggestion!.source).toMatchObject({ linkState: 'suggested', suggestedElementKeys: ['w1', 'door-smart'] });
+        expect(linkedKeys(savedSuggestion!)).toEqual([]);
+        expect(await parquet(suggestedFiles, MARKUP_LINKS_FILE)).toEqual([]);
+        expect(await parquet(suggestedFiles, MARKUPS_FILE)).toMatchObject([{ ElementKey: null, LinkCount: 0 }]);
+
+        const pdf = { numPages: 1, getPage: async () => ({ getViewport: () => ({ convertToViewportPoint: (x: number, y: number) => [x, 300 - y] }) }) } as unknown as Parameters<typeof importPdfAnnotations>[0];
+        const reopenedSuggestion = await importPdfAnnotations(pdf, suggestedBytes, [savedSuggestion!], new Map(), model);
+        expect(linkedKeys(reopenedSuggestion.annotations[0]!)).toEqual([]);
+        expect(reopenedSuggestion.annotations[0]!.source).toMatchObject({ linkState: 'suggested', suggestedElementKeys: ['w1', 'door-smart'] });
+        const accepted = withLinks({ ...reopenedSuggestion.annotations[0]!, source: { ...reopenedSuggestion.annotations[0]!.source!,
+            linkState: 'linked', linkMethod: 'manual', suggestedElementKeys: [] } }, ['w1', 'door-smart']);
+        let savedBytes = suggestedBytes;
+        let current: Annotation[] = [accepted];
+        let originalInventory = reopenedSuggestion.annotations;
+        for (let save = 0; save < 2; save++) {
+            savedBytes = await buildAnnotatedPdf(savedBytes, current, describe_, { originalAnnotations: originalInventory, elements: model });
+            const files = await attachments(savedBytes);
+            const restoredJson = parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!);
+            expect(linkedKeys(restoredJson[0]!)).toEqual(['w1', 'door-smart']);
+            expect(restoredJson[0]!.source).toMatchObject({ linkState: 'linked', linkMethod: 'manual' });
+            expect(await parquet(files, MARKUP_LINKS_FILE)).toMatchObject([
+                { MarkupId: annotation.id, ElementKey: 'w1', ElementId: 676281n, Resolved: true },
+                { MarkupId: annotation.id, ElementKey: 'door-smart', ElementId: 745963n, Resolved: true },
+            ]);
+            expect(await parquet(files, MARKUPS_FILE)).toMatchObject([{ ElementKey: 'w1', LinkCount: 2 }]);
+            for (const [name, content] of originalFiles) expect(files.get(name)).toEqual([content]);
+            const savedNative = await annots(savedBytes, 0);
+            expect(savedNative).toHaveLength(4);
+            const savedRoot = savedNative.find((dict) => subtype(dict) === 'Polygon')!;
+            expect(savedRoot.toString()).toBe(originalRoot.toString());
+            const savedAppearance = savedRoot.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRawStream;
+            const originalAppearance = originalRoot.lookup(PDFName.of('AP'), PDFDict).lookup(PDFName.of('N')) as PDFRawStream;
+            expect(savedAppearance.getContents()).toEqual(originalAppearance.getContents());
+            const reopened = await importPdfAnnotations(pdf, savedBytes, restoredJson, new Map(), model);
+            expect(reopened.annotations).toHaveLength(1);
+            expect(linkedKeys(reopened.annotations[0]!)).toEqual(['w1', 'door-smart']);
+            expect(reopened.annotations[0]!.source).toMatchObject({ linkState: 'linked', linkMethod: 'manual' });
+            current = reopened.annotations;
+            originalInventory = reopened.annotations;
+        }
+    });
+
     it('preserves long native reply Contents through session recovery and save', async () => {
         const { bytes, annotation } = await importedSource();
         const document = await PDFDocument.load(bytes);

@@ -138,8 +138,10 @@ export interface ImportedAnnotationSource {
     anchor: Point;
     shape: 'area' | 'point' | 'arrow';
     drawingId?: string;
-    linkState: 'pending' | 'linked' | 'unlinked' | 'ambiguous' | 'metadata-only';
+    linkState: 'pending' | 'suggested' | 'linked' | 'unlinked' | 'ambiguous' | 'metadata-only';
     linkMethod?: 'plugin' | 'geometry' | 'manual';
+    /** Confident geometric matches awaiting review; these are not active object links. */
+    suggestedElementKeys?: string[];
     candidateKeys?: string[];
     referencedElementKeys?: string[];
 }

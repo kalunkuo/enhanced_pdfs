@@ -18,6 +18,7 @@ export interface AnnotationUpgradeContext {
 export interface AnnotationUpgradeResult {
     annotations: Annotation[];
     linked: number;
+    suggested: number;
     ambiguous: number;
     /** Includes metadata-only notes, which have no located object to link. */
     unlinked: number;
@@ -90,8 +91,8 @@ function textReferences(annotation: Annotation, context: AnnotationUpgradeContex
 
 /**
  * Catch up imported notes only after the real page geometry is ready. These are geometric
- * associations, not a claim about the author's intent. Ambiguous and bounds-only point
- * matches are left for explicit review rather than becoming authoritative object ties.
+ * suggestions awaiting explicit acceptance, not a claim about the author's intent.
+ * Ambiguous and bounds-only point matches remain separate review candidates.
  */
 export function upgradePageAnnotations(annotations: readonly Annotation[], context: AnnotationUpgradeContext): AnnotationUpgradeResult {
     const located = appearances(context);
@@ -128,22 +129,24 @@ export function upgradePageAnnotations(annotations: readonly Annotation[], conte
         const refs = textReferences(annotation, context, byId, linked);
         candidates = unique([...candidates, ...refs.ambiguous]).filter((key) => !linked.includes(key));
         const referencesOnly = refs.references.length > 0 && refs.references.every((key) => !scopedKeys.has(key));
-        const linkState: ImportedAnnotationSource['linkState'] = linked.length ? 'linked' : candidates.length ? 'ambiguous' : referencesOnly ? 'metadata-only' : 'unlinked';
-        const { candidateKeys: _oldCandidates, referencedElementKeys: _oldReferences, ...rest } = source;
+        const linkState: ImportedAnnotationSource['linkState'] = linked.length ? 'suggested' : candidates.length ? 'ambiguous' : referencesOnly ? 'metadata-only' : 'unlinked';
+        const { suggestedElementKeys: _oldSuggested, candidateKeys: _oldCandidates, referencedElementKeys: _oldReferences, ...rest } = source;
         changed = true;
         return withLinks({
             ...annotation,
             source: { ...rest, linkState, linkMethod: 'geometry' as const,
+                ...(linked.length ? { suggestedElementKeys: linked } : {}),
                 ...(candidates.length ? { candidateKeys: candidates } : {}),
                 ...(refs.references.length ? { referencedElementKeys: refs.references } : {}) },
-        }, linked);
+        }, []);
     });
     // React consumers can avoid another state update when a recapture has no pending work.
-    const result: AnnotationUpgradeResult = { annotations: changed ? output : annotations as Annotation[], linked: 0, ambiguous: 0, unlinked: 0, pending: 0 };
+    const result: AnnotationUpgradeResult = { annotations: changed ? output : annotations as Annotation[], linked: 0, suggested: 0, ambiguous: 0, unlinked: 0, pending: 0 };
     for (const annotation of output) {
         if (!annotation.source || annotation.page !== context.pageNumber) continue;
         switch (annotation.source.linkState) {
             case 'linked': result.linked++; break;
+            case 'suggested': result.suggested++; break;
             case 'ambiguous': result.ambiguous++; break;
             case 'pending': result.pending++; break;
             default: result.unlinked++;

@@ -40,6 +40,67 @@ describe('API-selected drawing actions', () => {
         expect(() => parseAgentApiResponse({ message: 'ok', actions: [], apiKey: 'secret' })).toThrow();
     });
 
+    it('normalizes category highlighting while preserving the first category spelling and explicit color', () => {
+        const categories = [' Columns ', 'Structural Columns', 'columns', ' STRUCTURAL COLUMNS '];
+        expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories, color: 'red' } })).toEqual({
+            name: 'highlight_elements', arguments: { categories: ['Columns', 'Structural Columns'], color: 'red' },
+        });
+        expect(categories).toEqual([' Columns ', 'Structural Columns', 'columns', ' STRUCTURAL COLUMNS ']);
+        expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns'], color: null } })).toEqual({
+            name: 'highlight_elements', arguments: { categories: ['Columns'], color: null },
+        });
+    });
+
+    it('accepts the category and palette boundaries without accepting arbitrary CSS colors', () => {
+        const categories = Array.from({ length: 20 }, (_, index) => `${index}${'x'.repeat(158)}`);
+        for (const color of ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink', null]) {
+            expect(parseAgentAction({ name: 'highlight_elements', arguments: { categories, color } })).toMatchObject({
+                name: 'highlight_elements', arguments: { categories, color },
+            });
+        }
+    });
+
+    it('rejects malformed or oversized category highlighting requests before exposing an action', () => {
+        for (const args of [
+            {}, { categories: ['Columns'] }, { color: 'red' },
+            { categories: [], color: 'red' },
+            { categories: Array.from({ length: 21 }, () => 'Columns'), color: 'red' },
+            { categories: 'Columns', color: 'red' },
+            { categories: [7], color: 'red' },
+            { categories: ['Columns', null], color: 'red' },
+            { categories: ['  '], color: 'red' },
+            { categories: ['x'.repeat(161)], color: 'red' },
+            { categories: ['Columns'], color: 'RED' },
+            { categories: ['Columns'], color: '#ff0000' },
+            { categories: ['Columns'], color: 7 },
+            { categories: ['Columns'], color: 'red', elementKeys: ['invented-column'] },
+        ]) expect(() => parseAgentAction({ name: 'highlight_elements', arguments: args })).toThrow('unsupported response');
+        expect(() => parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns'], color: 'red' }, code: 'run me' })).toThrow('unsupported response');
+    });
+
+    it('highlights both column categories from local records while distinguishing unmapped geometry', () => {
+        const c = context({
+            elements: [...context().elements,
+                { key: 'column-architectural', elementId: 91, category: 'Columns', name: 'Round column' },
+                { key: 'column-structural', elementId: 92, category: 'Structural Columns', name: 'Steel column' },
+                { key: 'column-metadata-only', elementId: 93, category: 'Structural Columns', name: 'Undrawn column' },
+                { key: 'furniture-not-column', elementId: 94, category: 'Furniture', name: 'Columns display' },
+            ],
+            locatableKeys: new Set(['private-wall-key', 'column-architectural', 'column-structural']),
+        });
+        const action = parseAgentAction({ name: 'highlight_elements', arguments: { categories: ['Columns', 'Structural Columns'], color: 'red' } });
+        const result = executeAgentAction(action, c);
+        expect(result.highlight?.elementKeys).toEqual(new Set(['column-architectural', 'column-structural']));
+        expect(result.highlight?.colors.has('column-metadata-only')).toBe(false);
+        expect(result.highlight?.colors.has('furniture-not-column')).toBe(false);
+        expect(result.highlight?.colors.has('private-wall-key')).toBe(false);
+        expect([...result.highlight!.colors.values()]).toEqual(['#ef4444', '#ef4444']);
+        expect(result.highlight?.legend.reduce((count, entry) => count + entry.count, 0)).toBe(2);
+        expect(result.message).toContain('3 matching elements');
+        expect(result.message).toContain('2 can be highlighted');
+        expect(result.message).toContain('no mapped geometry');
+    });
+
     it('uses typed local execution for NR/unspecified ratings, numeric widths, notes and clear', () => {
         const c = context({ elements: [...context().elements, { key: 'wall-unknown', elementId: 88, category: 'Walls', name: 'Wall' }] });
         expect([...executeAgentAction({ name: 'color_walls_by_fire_rating', arguments: { rating: 'NR' } }, c).highlight!.elementKeys]).toEqual(['private-wall-key']);
@@ -79,6 +140,28 @@ describe('API transport and local source authority', () => {
 
     it('rejects unsupported status payloads', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => json({ configured: true, provider: 'openai', model: 'x', key: 'secret' })));
+        await expect(getAgentApiStatus()).rejects.toThrow('unsupported response');
+    });
+
+    it('accepts Bedrock model and inference profile identifiers without receiving credentials', async () => {
+        const model = `arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/${'profile-'.repeat(20)}`;
+        vi.stubGlobal('fetch', vi.fn(async () => json({ configured: true, provider: 'bedrock', model })));
+        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'bedrock', model });
+    });
+
+    it('accepts an unconfigured Bedrock service before a model has been selected', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => json({ configured: false, provider: 'bedrock', model: '' })));
+        expect(await getAgentApiStatus()).toEqual({ configured: false, provider: 'bedrock', model: '' });
+    });
+
+    it.each([
+        { configured: true, provider: 'bedrock', model: '' },
+        { configured: true, provider: 'bedrock', model: 'x'.repeat(2049) },
+        { configured: true, provider: 'openai', model: 'x'.repeat(101) },
+        { configured: true, provider: 'unknown', model: 'model' },
+        { configured: false, provider: 'bedrock', model: '', token: 'private-token' },
+    ])('rejects malformed or secret-bearing connection metadata %#', async (status) => {
+        vi.stubGlobal('fetch', vi.fn(async () => json(status)));
         await expect(getAgentApiStatus()).rejects.toThrow('unsupported response');
     });
 
@@ -136,7 +219,7 @@ describe('API transport and local source authority', () => {
     });
 
     it.each([
-        [401, 'key was rejected'], [403, 'key was rejected'], [429, 'usage limit'],
+        [401, 'access was rejected'], [403, 'access was rejected'], [429, 'usage limit'],
         [503, 'not configured'], [504, 'timed out'], [413, 'shorter request'], [500, 'could not complete'],
     ])('shows a safe error for status %s without returning upstream secrets', async (status, expected) => {
         vi.stubGlobal('fetch', vi.fn(async () => json({ error: 'sk-secret-provider-key-and-raw-server-stack' }, status as number)));

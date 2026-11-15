@@ -16,8 +16,8 @@ afterEach(async () => {
     })));
 });
 
-async function serve(serverConfig = config, plan: typeof planAgentRequest = vi.fn(async () => ({ message: 'What width should I use?', actions: [] }))) {
-    const middleware = createAgentMiddleware(serverConfig, { plan });
+async function serve(serverConfig = config, plan: typeof planAgentRequest = vi.fn(async () => ({ message: 'What width should I use?', actions: [] })), timeoutMs?: number) {
+    const middleware = createAgentMiddleware(serverConfig, { plan, timeoutMs });
     const server = createServer((request, response) => middleware(request, response, () => { response.writeHead(404); response.end(); }));
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -44,6 +44,15 @@ describe('agent request boundary', () => {
             { ...input, context: { ...input.context, categories: [{ name: 'Walls', count: -1 }] } },
         ]) expect(() => parseAgentRequest(value)).toThrow();
     });
+
+    it('accepts optional bounded observations while rejecting malformed, unknown, and oversized facts', () => {
+        const observations = [{ id: 'o1', tool: 'query_elements', data: { resultId: 'r1', total: 2, rows: [{ key: 'actual-wall', category: 'Walls' }] } }];
+        expect(parseAgentRequest({ ...input, observations }).observations).toEqual(observations);
+        for (const value of [null, [{ id: 'o1', tool: 'run_script', data: {} }], [{ id: 'o1', tool: 'inspect_drawing', data: { value: 'x'.repeat(13_000) } }],
+            [{ id: 'o1', tool: 'inspect_drawing', data: {} }, { id: 'o1', tool: 'inspect_drawing', data: {} }]]) {
+            expect(() => parseAgentRequest({ ...input, observations: value })).toThrow('Invalid or oversized');
+        }
+    });
 });
 
 describe('local agent HTTP API', () => {
@@ -54,6 +63,22 @@ describe('local agent HTTP API', () => {
         const status = await response.json();
         expect(status).toEqual({ configured: true, provider: 'openai', model: 'test-model' });
         expect(JSON.stringify(status)).not.toContain(config.apiKey);
+    });
+
+    it('reports the selected Bedrock provider without disclosing its token or accepting incomplete settings', async () => {
+        const bedrock: AgentServerConfig = { provider: 'bedrock', apiKey: 'test-bedrock-private', region: 'us-east-1', model: 'us.anthropic.claude-opus-5-5' };
+        const base = await serve(bedrock);
+        const status = await (await fetch(`${base}/api/agent/status`)).json();
+        expect(status).toEqual({ configured: true, provider: 'bedrock', model: bedrock.model });
+        expect(JSON.stringify(status)).not.toContain(bedrock.apiKey);
+        expect(JSON.stringify(status)).not.toContain('region');
+        const plan = vi.fn<typeof planAgentRequest>();
+        const incomplete = await serve({ ...bedrock, region: '' }, plan);
+        expect(await (await fetch(`${incomplete}/api/agent/status`)).json()).toMatchObject({ configured: false, provider: 'bedrock' });
+        const rejected = await post(incomplete, input);
+        expect(rejected.status).toBe(503);
+        expect(await rejected.text()).not.toContain(bedrock.apiKey);
+        expect(plan).not.toHaveBeenCalled();
     });
 
     it('keeps the no-key demo usable and avoids calling the provider', async () => {
@@ -127,5 +152,17 @@ describe('local agent HTTP API', () => {
         const failure = await post(base, input);
         expect(failure.status).toBe(502);
         expect(await failure.text()).not.toContain(config.apiKey);
+    });
+
+    it('aborts the provider at the request deadline and returns a sanitized timeout', async () => {
+        let cancelled = false;
+        const plan = vi.fn<typeof planAgentRequest>().mockImplementation(async (_input, _config, options) => new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => { cancelled = true; reject(new Error(`Interrupted transport with ${config.apiKey}`)); }, { once: true });
+        }));
+        const base = await serve(config, plan, 50);
+        const response = await post(base, input);
+        expect(response.status).toBe(504);
+        expect(cancelled).toBe(true);
+        expect(await response.text()).not.toContain(config.apiKey);
     });
 });
