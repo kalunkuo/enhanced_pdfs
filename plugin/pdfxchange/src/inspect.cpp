@@ -319,15 +319,12 @@ void RegisterInspect(IPXV_Inst* inst) {
         // Fallback: a document starting to view means the frame exists.
         Subscribe(inst, "e.document.viewingStarted", [](IEvent*, IUnknown*) { EnsureCommand(); });
         Subscribe(inst, "e.pagesView.mouse", OnMouse);
-        // Selecting anything else in the Editor drops the highlight. The event's exact name is undocumented
-        // (interface IPXV_DocSelChangedEvent); unknown names are logged and skipped by Subscribe.
-        for (const char* name : {"e.document.selChanged", "e.document.selectionChanged", "e.selection.changed"}) {
-            Subscribe(inst, name, [name](IEvent*, IUnknown*) {
-                if (GetTickCount64() - gLastHighlightTick < 400) return;  // our own click, not a new selection
-                LogLine("inspect: %s -> clearing highlight", name);
-                ClearHighlight();
-            });
-        }
+        // Selecting anything else in the Editor drops the highlight. Name from the Editor's own registry
+        // (self-test `eventnames`, Editor 10.8.4; see docs/pdfxchange-event-names-10.8.4.txt).
+        Subscribe(inst, "e.docSelection.changed", [](IEvent*, IUnknown*) {
+            if (GetTickCount64() - gLastHighlightTick < 400) return;  // our own click, not a new selection
+            ClearHighlight();
+        });
         EnsureCommand();  // usually too early (no frame yet); harmless
     } catch (...) {
         LogLine("inspect: registration threw");
