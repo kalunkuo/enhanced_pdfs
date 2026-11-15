@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { categoryColor } from '../../lib/categoryColor';
 import { elementLabel } from '../../lib/elementLabel';
-import { linkedKeys } from '../../lib/links';
+import { linkedKeys, linksSummary } from '../../lib/links';
 import { searchObjects } from '../../lib/objectSearch';
 import type { Annotation, ElementInfo } from '../../lib/types';
 import { CheckIcon, ChevronDownIcon } from '../ui/icons';
@@ -50,7 +50,7 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
     return (
         <div className="tie-tag" ref={root}>
             <button className={`chip ${tied ? 'tied' : 'untied'} tie-button`} aria-haspopup="listbox" aria-expanded={open} title="Change what this note is tied to" style={tied && current && links.length <= 1 ? { color: categoryColor(current.category) } : undefined} onClick={() => setOpen(!open)}>
-                {links.length > 1 ? `↳ ${links.length} objects` : tied ? `↳ ${current ? elementLabel(current) : annotation.elementKey}` : 'untied'}
+                {links.length > 1 ? `↳ ${linksSummary(links, elements)}` : tied ? `↳ ${current ? elementLabel(current) : annotation.elementKey}` : 'untied'}
                 <ChevronDownIcon />
             </button>
             {open && (
