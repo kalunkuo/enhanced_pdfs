@@ -28,8 +28,10 @@ describe('server-only Amazon Bedrock planner', () => {
         expect(body.toolConfig.tools[0].toolSpec.inputSchema.json).toMatchObject({ additionalProperties: false, required: ['rating'], properties: { rating: { type: ['string', 'null'] } } });
         expect(JSON.stringify(body)).not.toContain(config.apiKey);
         expect(JSON.stringify(body)).not.toContain('strict');
-        expect(JSON.stringify(body)).not.toContain('maxLength');
-        expect(JSON.stringify(body)).not.toContain('maximum');
+        // Bounds the server enforces must reach the model, or it asks for e.g. 50 rows and is refused.
+        const query = body.toolConfig.tools.find((entry: { toolSpec: { name: string } }) => entry.toolSpec.name === 'query_elements').toolSpec.inputSchema.json;
+        expect(query.properties.limit).toMatchObject({ type: 'integer', minimum: 1, maximum: 25 });
+        expect(JSON.stringify(body)).not.toContain('exclusiveMinimum');
     });
 
     it('discards opaque adaptive reasoning and unverified action prose', async () => {
