@@ -26,6 +26,7 @@ import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import { clearBrowserData, fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import { demoFileFromLocation } from './lib/demo';
+import { initialPanelSize, matchesMedia, nextPanelSize, panelGesture, SHORT_LAYOUT, type PanelSize } from './lib/mobile';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
 import { linkedKeys, linksSummary, withLinks } from './lib/links';
@@ -86,6 +87,16 @@ export function App() {
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
     const [zoom, setZoom] = useState(1);
     const [tab, setTab] = useState<Tab>('agent');
+    // On small screens the inspector sits under the drawing; the grabber resizes it (see lib/mobile.ts and app.css).
+    const [panelSize, setPanelSize] = useState<PanelSize>(() => initialPanelSize(matchesMedia(SHORT_LAYOUT)));
+    const grabberStart = useRef<number | null>(null);
+    const previousTab = useRef(tab);
+    // Anything that switches tabs (picking an element, adding a note) also brings a collapsed panel back.
+    useEffect(() => {
+        if (previousTab.current === tab) return;
+        previousTab.current = tab;
+        setPanelSize((current) => (current === 'collapsed' ? 'half' : current));
+    }, [tab]);
     const [documentSession, setDocumentSession] = useState(0);
     const [agentHighlight, setAgentHighlight] = useState<AgentHighlight | null>(null);
     const [pdfComments, setPdfComments] = useState<DrawingComment[]>([]);
@@ -874,7 +885,7 @@ export function App() {
                 </section>}
                 {upgradeWarning && <StatusMessage tone="warning" variant="banner" title={upgradeWarning} />}
             </div>
-            <main className="main">
+            <main className="main" data-panel={panelSize}>
                 <div className="stage-wrap">
                     {doc && <div className="file-chip" title={doc.fileName}>{doc.fileName}</div>}
                     {doc && pageData ? (
@@ -971,7 +982,20 @@ export function App() {
                     />
                 </div>
                 <aside className="side" data-doc={doc ? 'open' : 'none'}>
-                    <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
+                    <button
+                        type="button"
+                        className="panel-grabber"
+                        aria-label={panelSize === 'collapsed' ? 'Expand panel' : panelSize === 'half' ? 'Enlarge panel' : 'Collapse panel'}
+                        onPointerDown={(e) => { grabberStart.current = e.clientY; e.currentTarget.setPointerCapture(e.pointerId); }}
+                        onPointerUp={(e) => {
+                            const start = grabberStart.current;
+                            grabberStart.current = null;
+                            if (start === null) return;
+                            setPanelSize((current) => nextPanelSize(current, panelGesture(e.clientY - start)));
+                        }}
+                        onPointerCancel={() => { grabberStart.current = null; }}
+                    />
+                    <SegmentedControl label="Inspector" value={tab} onChange={(next) => { setTab(next); setPanelSize((current) => (current === 'collapsed' ? 'half' : current)); }} options={TABS.map((t) => ({
                         value: t,
                         label: t === 'agent' ? 'Agent' : t === 'notes' ? 'Notes' : t === 'elements' ? 'Elements' :'Properties',
                     }))} />

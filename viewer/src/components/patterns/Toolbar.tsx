@@ -3,6 +3,7 @@ import type { AnnotationKind } from '../../lib/types';
 import { IconButton } from '../ui/Button';
 import { CircleIcon, CloudIcon, CommentIcon, DrawIcon, HighlightIcon, LineIcon, MoreIcon, RectIcon, SelectIcon, SignatureIcon, TextBoxIcon, TrashIcon } from '../ui/icons';
 import type { Tool } from './PdfStage';
+import { matchesMedia } from '../../lib/mobile';
 
 export type DrawKind = Extract<AnnotationKind, 'pen' | 'line' | 'rect' | 'ellipse' | 'cloud'>;
 
@@ -59,6 +60,12 @@ export function Toolbar(p: Props) {
     const DrawCurrent = DRAW_KINDS.find((d) => d.kind === p.drawKind)!.Icon;
     const isDraw = DRAW_KINDS.some((d) => d.kind === p.tool);
     const choose = (t: Tool) => { setMenu(null); p.onTool(t); };
+    // The corner triangle that opens a tool's options is too small for a finger: on touch screens,
+    // tapping the already active tool opens them instead.
+    const chooseOrOpen = (t: Tool, active: boolean, options: Menu) => {
+        if (active && matchesMedia('(pointer: coarse)')) setMenu(menu === options ? null : options);
+        else choose(t);
+    };
 
     return (
         <div className="vtoolbar" ref={rail} role="toolbar" aria-orientation="vertical" aria-label="Annotation tools">
@@ -67,7 +74,7 @@ export function Toolbar(p: Props) {
             <IconButton label="Add comment (C)" pressed={p.tool === 'comment'} disabled={p.disabled} onClick={() => choose('comment')}><CommentIcon /></IconButton>
 
             <div className="tool-slot">
-                <IconButton label="Highlight (H)" pressed={p.tool === 'highlight'} disabled={p.disabled} onClick={() => choose('highlight')}>
+                <IconButton label="Highlight (H)" pressed={p.tool === 'highlight'} disabled={p.disabled} onClick={() => chooseOrOpen('highlight', p.tool === 'highlight', 'highlight')}>
                     <HighlightIcon />
                 </IconButton>
                 <button className="corner" aria-label="Highlight color" aria-expanded={menu === 'highlight'} disabled={p.disabled} onClick={() => setMenu(menu === 'highlight' ? null : 'highlight')} />
@@ -82,7 +89,7 @@ export function Toolbar(p: Props) {
             </div>
 
             <div className="tool-slot">
-                <IconButton label="Draw (D)" pressed={isDraw} disabled={p.disabled} onClick={() => choose(p.drawKind)}><DrawCurrent /></IconButton>
+                <IconButton label="Draw (D)" pressed={isDraw} disabled={p.disabled} onClick={() => chooseOrOpen(p.drawKind, isDraw, 'draw')}><DrawCurrent /></IconButton>
                 <button className="corner" aria-label="Drawing shapes" aria-expanded={menu === 'draw'} disabled={p.disabled} onClick={() => setMenu(menu === 'draw' ? null : 'draw')} />
                 {menu === 'draw' && (
                     <div className="flyout" role="menu">
