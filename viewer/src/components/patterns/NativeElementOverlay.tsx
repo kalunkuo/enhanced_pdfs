@@ -33,6 +33,7 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
         const computedStyle = getComputedStyle(canvas);
         const color = computedStyle.getPropertyValue('--color-geometry-highlight').trim() || computedStyle.color;
         const selectedColor = computedStyle.getPropertyValue('--color-selection').trim() || color;
+        const hoverColor = computedStyle.getPropertyValue('--color-hover').trim() || selectedColor;
         const resolveColor = (value: string) => {
             const variable = /^var\((--[\w-]+)\)$/.exec(value);
             return variable ? computedStyle.getPropertyValue(variable[1]!).trim() || color : value;
@@ -49,12 +50,12 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             context.save();
             for (const clip of part.clips) { setTransform(clip.toPage); context.clip(clip.path, clip.rule); }
             setTransform(part.toPage);
-            const emphasis = selected ? selectedColor : agentColor ? resolveColor(agentColor) : color;
+            const emphasis = hovered ? hoverColor : selected ? selectedColor : agentColor ? resolveColor(agentColor) : color;
             context.strokeStyle = emphasis;
             context.fillStyle = emphasis;
-            context.globalAlpha = part.mode === 'fill' ? selected ? 0.28 : hovered ? 0.2 : 0.12 : selected ? 0.95 : hovered ? 0.8 : 0.55;
+            context.globalAlpha = part.mode === 'fill' ? hovered ? 0.36 : selected ? 0.28 : 0.12 : hovered ? 1 : selected ? 0.95 : 0.55;
             const pageToLocalScale = Math.max(Math.hypot(part.fromPage[0], part.fromPage[1]), Math.hypot(part.fromPage[2], part.fromPage[3]));
-            const halo = (selected ? 4 : hovered ? 3 : 2) / zoom * pageToLocalScale;
+            const halo = (hovered || selected ? 4 : 2) / zoom * pageToLocalScale;
             context.lineWidth = part.stroke.width + halo;
             context.lineCap = part.stroke.cap;
             context.lineJoin = part.stroke.join;
