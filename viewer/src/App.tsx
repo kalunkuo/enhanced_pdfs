@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DocBar } from './components/patterns/DocBar';
+import { AgentPanel } from './components/patterns/AgentPanel';
 import { ElementList } from './components/patterns/ElementList';
 import { FilterPanel } from './components/patterns/FilterPanel';
 import { HoverCard } from './components/patterns/HoverCard';
 import { NotesList } from './components/patterns/NotesList';
+import { ProfileMenu } from './components/patterns/ProfileMenu';
 import { PdfStage, clampZoom, type Tool, type ZoomMode } from './components/patterns/PdfStage';
 import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
@@ -11,6 +13,8 @@ import { SegmentedControl } from './components/ui/SegmentedControl';
 import { Dialog } from './components/ui/Dialog';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
+import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
+import { elementLabel, elementTypeLabel } from './lib/elementLabel';
 import { createShapePicker, tieWithPicker } from './lib/hit';
 import { elementLocations } from './lib/coverage';
 import { EMPTY_FILTERS, filterElements, getDrawingScope, hasActiveFilters, matchesDrawingScope, type FilterState } from './lib/filters';
@@ -19,10 +23,14 @@ import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
 import type { FocusRequest } from './lib/navigation';
-import type { Annotation, EnhancedPdf, PageData } from './lib/types';
+import { withAuthorship } from './lib/comments';
+import { useProfile } from './lib/profile';
+import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
+import type { AgentContext, AgentHighlight, DrawingComment } from './lib/drawingAgent';
+import { readPdfComments, viewerComments } from './lib/drawingComments';
 
-type Tab = 'properties' | 'elements' | 'notes';
-const TABS: readonly Tab[] = ['properties', 'elements', 'notes'];
+type Tab = 'agent' | 'properties' | 'elements' | 'notes';
+const TABS: readonly Tab[] = ['agent', 'properties', 'elements', 'notes'];
 const KEYS: Record<string, Tool | 'draw'> = { v: 'select', c: 'comment', h: 'highlight', d: 'draw', t: 'text', s: 'signature' };
 const LOAD_STEPS: Record<LoadStage | 'download' | 'page', string> = {
     download: 'Downloading demo drawing',
@@ -52,11 +60,18 @@ export function App() {
     const [loading, setLoading] = useState<Loading | null>(null);
     const awaitingFirstPage = useRef<EnhancedPdf | null>(null);
     const [tool, setTool] = useState<Tool>('select');
+    const [profile, setProfile] = useProfile();
+    const [composerAt, setComposerAt] = useState<Point | null>(null);
     const [drawKind, setDrawKind] = useState<DrawKind>('pen');
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
     const [zoom, setZoom] = useState(1);
-    const [tab, setTab] = useState<Tab>('properties');
+    const [tab, setTab] = useState<Tab>('agent');
+    const [documentSession, setDocumentSession] = useState(0);
+    const [agentHighlight, setAgentHighlight] = useState<AgentHighlight | null>(null);
+    const [pdfComments, setPdfComments] = useState<DrawingComment[]>([]);
+    const [commentsStatus, setCommentsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [selectedPdfComment, setSelectedPdfComment] = useState<DrawingComment | null>(null);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -74,6 +89,12 @@ export function App() {
         if (!drawingScope) return geometry.pick;
         const appearances = new Set(geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId));
         return (point: Parameters<typeof geometry.pick>[0], tolerance: number) => geometry.pick(point, tolerance).filter((hit) => appearances.has(hit.occurrenceId ?? ''));
+    }, [geometry, pageData, drawingScope]);
+    // Page bounds of everything an element is drawn with, for finding what a revision cloud covers.
+    // It follows the same geometry source and drawing scope the picker uses.
+    const regionSources = useMemo<BoundsSource[]>(() => {
+        if (!geometry) return (pageData?.shapes ?? []).filter((shape) => matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => ({ elementKey: shape.elementKey, bounds: shape.bbox }));
+        return geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => ({ elementKey: part.elementKey, bounds: part.bounds }));
     }, [geometry, pageData, drawingScope]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
@@ -106,7 +127,11 @@ export function App() {
             setSelectedAnnotationId(null);
             setHover(null);
             setZoomMode({ kind: 'fit-width' });
-            setTab('properties');
+            setTab('agent');
+            setDocumentSession((session) => session + 1);
+            setAgentHighlight(null);
+            setPdfComments([]);
+            setSelectedPdfComment(null);
             setStatus(next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null);
         } catch (e) {
             if (request === openRequest.current) {
@@ -155,6 +180,17 @@ export function App() {
         };
     }, [doc, page]);
 
+    useEffect(() => {
+        let cancelled = false;
+        setPdfComments([]);
+        setCommentsStatus('loading');
+        if (doc) void readPdfComments(doc.pdf, page, doc.bytes).then(
+            (comments) => { if (!cancelled) { setPdfComments(comments); setCommentsStatus('ready'); } },
+            () => { if (!cancelled) setCommentsStatus('error'); },
+        );
+        return () => { cancelled = true; };
+    }, [doc, page]);
+
     const goToPage = useCallback(
         (n: number) => {
             if (!doc) return;
@@ -167,6 +203,9 @@ export function App() {
             setHover(null);
             setSelectedKey(null);
             setSelectedAnnotationId(null);
+            setAgentHighlight(null);
+            setSelectedPdfComment(null);
+            setTab('agent');
         },
         [doc, page],
     );
@@ -174,15 +213,24 @@ export function App() {
     const labelFor = useCallback(
         (key: string) => {
             const e = doc?.elements.get(key);
-            return e ? (e.mark ?? e.name) : key;
+            // Drawn on the page, so just the type; the panel shows the ID (elementLabel).
+            return e ? elementTypeLabel(e) : key;
         },
         [doc],
     );
 
     const describeTie = useCallback(
         (a: Annotation) => {
+            if (a.kind === 'cloud') {
+                const names = (a.contained ?? []).map((c) => {
+                    const el = doc?.elements.get(c.key);
+                    return el ? elementLabel(el) : c.key;
+                });
+                if (!names.length) return 'Untied: covers no objects';
+                return `Covers ${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
+            }
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
-            return e ? `Tied to ${e.mark ?? e.name} (ID ${e.elementIdText ?? e.elementId})` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
+            return e ? `Tied to ${elementLabel(e)}` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
         [doc],
     );
@@ -190,13 +238,15 @@ export function App() {
     const selectElement = useCallback((key: string | null) => {
         setFocusRequest(null);
         setSelectedKey(key);
+        setSelectedPdfComment(null);
+        setComposerAt(null);
         if (key) {
             setTab('properties');
             const drawingIds = new Set(doc?.appearances?.filter((appearance) => appearance.elementKey === key).map((appearance) => appearance.drawingId));
             const drawings = doc?.drawings?.filter((drawing) => drawingIds.has(drawing.id) && matchesDrawingScope(drawing.id, drawingScope)) ?? [];
             const target = drawings.find((drawing) => drawing.page === page) ?? drawings[0];
-            if (target && target.page !== page) { setPage(target.page); setFocusRequest(null); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
-        }
+            if (target && target.page !== page) { setPage(target.page); setAgentHighlight(null); setFocusRequest(null); setPageData(null); setNativeGeometry(null); setSelectedAnnotationId(null); setHover(null); }
+        } else setTab('agent');
     }, [doc, page, drawingScope]);
 
     const onHover = useCallback((key: string | null, at: { x: number; y: number }) => {
@@ -205,14 +255,57 @@ export function App() {
 
     const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => {
         if (!pageData) return;
-        const draft: Annotation = { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) };
-        const tied = tieWithPicker(draft, pickElement, 4 / zoom);
+        const draft: Annotation = withAuthorship(
+            { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) },
+            profile,
+            new Date().toISOString(),
+        );
+        // A cloud ties to what it covers; everything else ties to the object under its anchor.
+        const tied = draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
         setSelectedKey(tied.elementKey ?? null);
         setTab('notes');
         setTool('select');
     };
+
+    // A comment being written belongs to the comment tool and to one page.
+    useEffect(() => {
+        setComposerAt(null);
+    }, [tool, pageData?.number]);
+
+    const sendComment = (c: { text: string; image?: string; at: Point; name: string }) => {
+        addAnnotation({
+            kind: 'comment', from: c.at, to: c.at, text: c.text, createdAt: new Date().toISOString(),
+            author: { name: c.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+            ...(c.image ? { image: c.image } : {}),
+        });
+        setComposerAt(null);
+    };
+
+    // Dropping a pin ties it to whatever is under its tip, or unties it on empty paper.
+    const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
+        const moved = annotations.find((a) => a.id === id);
+        if (!moved) return;
+        const next = { ...moved, ...patch };
+        const retied = next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
+        setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
+        setSelectedKey(retied.elementKey ?? null);
+    };
+    const moveComment = (id: string, at: Point) => moveAnnotation(id, { from: at, to: at });
+
+    const sendReply = useCallback((id: string, r: { text: string; name: string }) => {
+        const reply: Reply = {
+            id: `r${nextId.current++}`, text: r.text, createdAt: new Date().toISOString(),
+            author: { name: r.name, ...(profile.photo ? { photo: profile.photo } : {}) },
+        };
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
+    }, [profile.photo]);
+
+    const deleteById = useCallback((id: string) => {
+        setAnnotations((list) => list.filter((a) => a.id !== id));
+        setSelectedAnnotationId((current) => (current === id ? null : current));
+    }, []);
 
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
         setAnnotations((list) =>
@@ -297,8 +390,25 @@ export function App() {
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
 
+    const agentContext = useMemo<AgentContext | null>(() => {
+        if (!doc || !pageData) return null;
+        const pageKeys = new Set([
+            ...(pageData.elementKeys ?? []),
+            ...(pageData.nativeTags?.resolvedElementKeys ?? []),
+            ...pageData.shapes.map((shape) => shape.elementKey),
+        ]);
+        const scopedKeys = drawingScope ? new Set((doc.appearances ?? []).filter((appearance) => matchesDrawingScope(appearance.drawingId, drawingScope)).map((appearance) => appearance.elementKey)) : null;
+        const elements = elementList.filter((element) => pageKeys.has(element.key) && (!scopedKeys || scopedKeys.has(element.key)));
+        return {
+            elements, parameters: doc.parameters, pageNumber: pageData.number,
+            scopeKey: drawingScope ? JSON.stringify([...drawingScope].sort()) : 'all-views',
+            locatableKeys: new Set(elements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).map((element) => element.key)),
+            comments: [...pdfComments, ...viewerComments(pageAnnotations)], commentsStatus,
+        };
+    }, [doc, pageData, elementList, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus]);
+
     const cancelFocus = useCallback(() => setFocusRequest(null), []);
-    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setFocusRequest(null); }, []);
+    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setAgentHighlight(null); setFocusRequest(null); }, []);
     const changeZoomMode = useCallback((next: ZoomMode) => { setFocusRequest(null); setZoomMode(next); }, []);
     const changeTool = useCallback((next: Tool) => { setFocusRequest(null); setTool(next); }, []);
     const focusComplete = useCallback((request: FocusRequest, located: boolean) => {
@@ -318,14 +428,30 @@ export function App() {
         setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: matchedKeys, drawingIds: drawingScope });
     };
 
+    const applyAgentHighlight = (highlight: AgentHighlight | null) => {
+        setAgentHighlight(highlight);
+        setSelectedKey(null);
+        setSelectedAnnotationId(null);
+        setFocusRequest(null);
+        setTool('select');
+        setComposerAt(null);
+    };
+    const fitAgentHighlights = () => {
+        if (!pageData || !agentHighlight) return;
+        setTool('select');
+        setFocusRequest({ id: ++nextFocusId.current, pageNumber: pageData.number, elementKeys: agentHighlight.elementKeys, drawingIds: drawingScope });
+    };
+    const selectComment = (comment: DrawingComment) => {
+        goToPage(comment.page);
+        setSelectedPdfComment(comment.source === 'pdf' ? comment : null);
+        setSelectedAnnotationId(comment.source === 'viewer' ? comment.annotationId ?? comment.id : null);
+        setSelectedKey(comment.elementKey ?? null);
+        setTab('notes');
+    };
+
     return (
         <div className="app">
-            <header className="header">
-                <h1 className="type-h3">Enhanced PDF Viewer</h1>
-                <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
-                {status && <span className="status" role="status">{status}</span>}
-                {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
-            </header>
+            <input ref={fileInput} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void open(f); e.target.value = ''; }} />
             <DocBar
                 disabled={!doc}
                 saving={saving}
@@ -343,6 +469,13 @@ export function App() {
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
                 onUpload={() => fileInput.current?.click()}
                 onOpenDemo={() => void openDemo()}
+                info={
+                    <>
+                        {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
+                        {status && <span className="status" role="status">{status}</span>}
+                    </>
+                }
+                account={<ProfileMenu profile={profile} onChange={setProfile} />}
             />
             <Dialog open={loading !== null} onClose={() => undefined} dismissible={false} title="Opening drawing" titleClassName="type-h3" description={loading?.fileName} className={`load-dialog${loading?.revealing ? ' is-revealing' : ''}`}>
                 {loading && <ProgressBar label={`Opening ${loading.fileName}`} value={loading.fraction} ceiling={loading.ceiling} detail={loading.step} onComplete={revealViewer} />}
@@ -370,13 +503,34 @@ export function App() {
                             onZoomMode={setZoomMode}
                             onHover={onHover}
                             onSelectElement={selectElement}
-                            onSelectAnnotation={setSelectedAnnotationId}
+                            onSelectAnnotation={(id) => { setSelectedAnnotationId(id); if (id) { setSelectedPdfComment(null); setTab('notes'); } }}
                             onAddAnnotation={addAnnotation}
+                            onMoveAnnotation={moveAnnotation}
+                            coverOf={(cloud) => elementsInCloud(cloud, regionSources)}
+                            onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
+                            commentLayer={{
+                                selectedId: selectedAnnotationId,
+                                composerAt,
+                                profile,
+                                onProfile: setProfile,
+                                labelFor,
+                                onSelect: (id) => {
+                                    setSelectedAnnotationId(id);
+                                    setComposerAt(null);
+                                    setSelectedKey(annotations.find((a) => a.id === id)?.elementKey ?? null);
+                                    if (id) { setSelectedPdfComment(null); setTab('notes'); }
+                                },
+                                onMove: moveComment,
+                                onDragTarget: (key, client) => onHover(key, client),
+                                onSend: sendComment,
+                                onCancel: () => setComposerAt(null),
+                            }}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
                             createCapture={createCapture}
                             geometry={geometry}
                             matchedKeys={hasActiveFilters(filters) ? matchedKeys : null}
+                            elementColors={agentHighlight?.colors}
                             drawingIds={drawingScope}
                             focusRequest={focusRequest}
                             onFocusComplete={focusComplete}
@@ -409,10 +563,13 @@ export function App() {
                 <aside className="side">
                     <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
                         value: t,
-                        label: t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties',
+                        label: t === 'agent' ? 'Agent' : t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? `Elements (${matchedElements.length})` : 'Properties',
                     }))} />
-                    <div className="panel" role="tabpanel">
-                        {!doc ? (
+                    <div className="panel" role="tabpanel" aria-label={tab === 'agent' ? 'Agent' : tab === 'properties' ? 'Properties' : tab === 'elements' ? 'Elements' : 'Notes'}>
+                        <div className="agent-panel-host" hidden={tab !== 'agent'}>
+                            <AgentPanel context={agentContext} fileName={doc?.fileName} sessionKey={`${documentSession}:${page}`} active={tab === 'agent'} onHighlight={applyAgentHighlight} activeHighlight={agentHighlight} onFitHighlights={fitAgentHighlights} onSelectComment={selectComment} />
+                        </div>
+                        {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
                             <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
@@ -422,13 +579,26 @@ export function App() {
                                 <ElementList elements={matchedElements} selectedKey={selectedKey} onSelect={selectElement} locations={locations} onLocate={locateElement} />
                             </>
                         ) : (
+                            <>
+                            {selectedPdfComment && <section className="pdf-comment-context">
+                                <span className="chip">PDF review comment · page {selectedPdfComment.page}</span>
+                                <p>{selectedPdfComment.text}</p>
+                                <div className="muted">{selectedPdfComment.author ?? 'Author not recorded'} · {selectedPdfComment.modifiedAt ?? selectedPdfComment.createdAt ?? 'Date not recorded'}</div>
+                                <p className="muted">Embedded in the source PDF.</p>
+                            </section>}
                             <NotesList
                                 annotations={annotations}
                                 elements={doc.elements}
                                 selectedId={selectedAnnotationId}
+                                profile={profile}
+                                onProfile={setProfile}
                                 onTie={tieAnnotation}
-                                onSelect={(a) => { goToPage(a.page); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
+                                onReply={sendReply}
+                                onDelete={deleteById}
+                                onOpenElement={selectElement}
+                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
                             />
+                            </>
                         )}
                     </div>
                 </aside>

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button, IconButton } from '../ui/Button';
+import { Logo } from '../ui/Logo';
 import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon, UploadIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
@@ -22,12 +23,18 @@ interface Props {
     onZoomOut: () => void;
     onUpload: () => void;
     onOpenDemo: () => void;
+    /** File name and status, shown before the upload buttons. */
+    info?: ReactNode;
+    /** Your profile, shown after the upload buttons. */
+    account?: ReactNode;
 }
 
 /** The document bar: save, print, pages, select and pan, zoom, then demo and upload at the far right. Laid out like Acrobat's. */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
+            <Logo />
+            <span className="sep" />
             <IconButton label={p.saving ? 'Saving…' : 'Save with annotations (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><SaveIcon /></IconButton>
             <IconButton label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
             <span className="sep" />
@@ -42,15 +49,19 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
             <span className="docbar-spacer" />
+            {p.info && <div className="docbar-info">{p.info}</div>}
             <Button variant="ghost" onClick={p.onOpenDemo}>Open demo drawing</Button>
             <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
+            {p.account}
         </div>
     );
 }
 
 function PageInput({ page, pageCount, disabled, onPage }: { page: number; pageCount: number; disabled: boolean; onPage: (n: number) => void }) {
     const [text, setText] = useState(String(page));
-    useEffect(() => setText(String(page)), [page]);
+    useEffect(() => {
+        setText(String(page));
+    }, [page]);
     const commit = () => {
         const n = Math.round(Number(text));
         if (Number.isFinite(n) && n >= 1) onPage(Math.min(pageCount, n));
