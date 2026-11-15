@@ -28,7 +28,7 @@ Use `-RevitPath` for a non-default Revit installation. Use `-BuildDirectory` to 
 - **One drawing.** Open the view or sheet, click its drawing canvas, and select **Add-Ins → Enhanced PDFs → Export Enhanced PDF**.
 - **A set.** Select **Add-Ins → Enhanced PDFs → Export Sheet Set**, then choose **Project sheets** or a saved Revit view/sheet set. Check the drawings to include, choose a destination, and save one combined PDF. Project sheets appear in sheet-number order, with sheets containing live 3D views unchecked by default. Check those sheets individually or use **Select all** to include them. Saved sets start with every drawing checked in Revit's stored order.
 
-Use the viewer's search or extract the page text to find drawing names, element IDs, and common properties. Open the PDF attachments to read instance and type parameters exposed by Revit.
+Use the viewer's search or extract the page text to find drawing names, element IDs, UniqueIds, and common properties. The text layer starts with a short description of the file: the embedded tables, their join keys, the unit of `InternalValue`, and which identifier is unique across linked models, so a reader that only extracts page text (a person, a search index, a coding agent) knows the attachments exist and how to read them. Open the PDF attachments to read instance and type parameters exposed by Revit.
 
 For example, ask a PDF reader that extracts text: **“What Fire Rating values are assigned to the exterior walls on this drawing? Cite the Revit element IDs and distinguish blank ratings.”** The text layer includes each wall's Revit Function and Fire Rating, with a summary per view. A blank Fire Rating is reported as unspecified.
 

@@ -102,12 +102,23 @@ def verify(path, native=None, wall_id=None, rating=None, excluded_id=None, dpi=1
     if excluded_id is not None:
         check(all(row["ElementId"] != excluded_id for row in data), "An excluded element is present in Parquet.")
 
+    unique_ids = {row["ElementId"]: row["UniqueId"] for row in data}
     found_rating = False
     for page_number, page in enumerate(reader.pages, 1):
         text = extract_bim_text(page, page_number)
         text_ids = {int(match) for match in re.findall(r"Element ID:\s*(\d+)\s*\|", text)}
         check(text_ids == element_ids_by_page[page_number],
               f"Hidden text element IDs differ from the Parquet table on page {page_number}.")
+        # The header describes the file for readers that only extract page text: it must name
+        # every embedded table and the join keys, and each element record carries its UniqueId.
+        header = text.split("Element ID:", 1)[0]
+        for name in tables:
+            check(f"{name}.parquet" in header, f"The text header on page {page_number} does not name {name}.parquet.")
+        check("OwnerKey" in header and "TypeKey" in header, f"The text header on page {page_number} lacks the join rules.")
+        text_unique = dict(re.findall(r"Element ID:\s*(\d+)\s*\|\s*UniqueId:\s*([0-9a-f-]+)", text))
+        check(all(unique_ids.get(int(element_id)) == unique_id for element_id, unique_id in text_unique.items())
+              and len(text_unique) == len(text_ids),
+              f"Hidden text UniqueIds differ from the Parquet table on page {page_number}.")
         if wall_id in text_ids and not found_rating:
             wall_sections = re.split(r"(?=Element ID:\s*\d+\s*\|)", text)
             found_rating = any(re.match(wall_prefix, section) and re.search(rating_pattern, section)

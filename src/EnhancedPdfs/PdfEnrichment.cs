@@ -52,6 +52,8 @@ internal sealed class PageText(DrawingData data)
         yield return "REVIT BIM DATA";
         yield return $"Model: {root.Model} | Revit: {root.RevitVersion} | Exported UTC: {root.ExportedUtc}";
         yield return "Revit element properties as exported. Blank fire ratings are unspecified.";
+        foreach (var line in FileDescription())
+            yield return line;
         foreach (var note in _notesByPage[page])
             yield return $"Coverage: {note.Text}";
 
@@ -73,7 +75,7 @@ internal sealed class PageText(DrawingData data)
             }
             foreach (var element in members)
             {
-                var fields = new List<string> { $"Element ID: {element.ElementId}", element.Category, element.Name };
+                var fields = new List<string> { $"Element ID: {element.ElementId}", $"UniqueId: {element.UniqueId}", element.Category, element.Name };
                 if (element.Family is not null)
                     fields.Add($"Family: {element.Family}");
                 if (element.Type is not null && element.Type != element.Name)
@@ -98,5 +100,31 @@ internal sealed class PageText(DrawingData data)
             }
         }
         yield return "Complete instance and type parameter tables are embedded as Parquet attachments.";
+    }
+
+    /// <summary>
+    /// A plain description of what the file contains and how its tables join. It is a
+    /// description of data, written for any reader that extracts page text (people, search,
+    /// coding agents), and deliberately contains no instructions.
+    /// </summary>
+    private IEnumerable<string> FileDescription()
+    {
+        yield return "About this file: a Revit drawing exported as PDF together with the BIM data of what is drawn on it. "
+            + "This invisible text layer lists the elements on this page; the complete data is in the PDF's embedded files (attachments).";
+        string scheduleCells = data.ScheduleCells.Count > 0
+            ? " schedule-cells.parquet: text of the schedules placed on the sheets (DrawingId, Section, Row, Column, Value)."
+            : "";
+        yield return "Embedded files (Apache Parquet, gzip): drawings.parquet: one row per sheet, placed view or schedule "
+            + "(DrawingId, Page = 1-based PDF page, Name, Kind, SheetNumber, ViewId, Scale, Model, ModelKey, SavedVersion). "
+            + "elements.parquet: one row per element (ElementKey, ElementId, UniqueId, Category, Family, Type, TypeKey, Level, Mark, "
+            + "WallFunction, FireRating, Model, ModelKey). appearances.parquet: which element is drawn on which drawing (DrawingId, ElementKey). "
+            + "parameters.parquet: every populated instance and type parameter (OwnerKey, Scope, Name, DisplayValue, InternalValue, UnitId, Storage)."
+            + scheduleCells;
+        yield return "Joins: appearances.DrawingId = drawings.DrawingId; appearances.ElementKey = elements.ElementKey; "
+            + "parameters.OwnerKey = elements.ElementKey for instance parameters (Scope = Instance) and = elements.TypeKey for type parameters (Scope = Type).";
+        yield return "Units: DisplayValue is the text Revit displays, in the project's units. InternalValue is Revit's internal value: "
+            + "feet for lengths, square feet for areas, cubic feet for volumes, radians for angles. UnitId names the display unit.";
+        yield return "Identifiers: ElementId is an integer that is unique only within one model file, so it can repeat across linked models. "
+            + "UniqueId is stable and unique across models and is the safe key for the Revit API. ElementKey = ModelKey/link path or 'host'/UniqueId.";
     }
 }
