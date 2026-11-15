@@ -1,6 +1,6 @@
-import type { AgentContext } from './drawingAgent';
-import { singularCategory } from './elementLabel';
-import type { ElementInfo, ParameterInfo } from './types';
+import type { AgentContext } from './drawingAgent.ts';
+import { singularCategory } from './elementLabel.ts';
+import type { ElementInfo, ParameterInfo } from './types.ts';
 
 export type DrawingQueryOperator = 'equals' | 'not_equals' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte' | 'exists' | 'missing';
 export interface DrawingQuery {

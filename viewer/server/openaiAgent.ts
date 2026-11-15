@@ -1,7 +1,7 @@
-import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi';
-import { AgentProviderError } from './agentProviderError';
-import { AGENT_INSTRUCTIONS as INSTRUCTIONS, AGENT_TOOLS as TOOLS } from './drawingAgentPlan';
-export { AgentProviderError } from './agentProviderError';
+import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi.ts';
+import { AgentProviderError } from './agentProviderError.ts';
+import { AGENT_INSTRUCTIONS as INSTRUCTIONS, AGENT_TOOLS as TOOLS } from './drawingAgentPlan.ts';
+export { AgentProviderError } from './agentProviderError.ts';
 
 /** This module is server-only. Never import it from the browser entry point. */
 const RESPONSES_URL = 'https://api.openai.com/v1/responses';

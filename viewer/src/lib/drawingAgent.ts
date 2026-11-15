@@ -1,6 +1,6 @@
-import type { AgentHostAction } from './agentWorkspace';
-import { singularCategory } from './elementLabel';
-import type { Annotation, ElementInfo, ParameterInfo } from './types';
+import type { AgentHostAction } from './agentWorkspace.ts';
+import { singularCategory } from './elementLabel.ts';
+import type { Annotation, ElementInfo, ParameterInfo } from './types.ts';
 
 export interface DrawingComment {
     id: string;

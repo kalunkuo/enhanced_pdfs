@@ -1,4 +1,4 @@
-import { createHostedAgentHandler } from '../server/hostedAgent';
+import { createHostedAgentHandler } from '../server/hostedAgent.ts';
 
 /**
  * Vercel serverless function: POST /api/agent, the same drawing agent the local Vite server runs.

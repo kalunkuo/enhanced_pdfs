@@ -1,18 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi';
-import { AgentProviderError } from './agentProviderError';
-import { planAgentRequest } from './agentProvider';
-import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig';
-export type { AgentServerConfig } from './agentConfig';
+import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi.ts';
+import { AgentProviderError } from './agentProviderError.ts';
+import { planAgentRequest } from './agentProvider.ts';
+import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig.ts';
+export type { AgentServerConfig } from './agentConfig.ts';
 
 type Next = (error?: unknown) => void;
 type Planner = typeof planAgentRequest;
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_HISTORY = 12;
 
+// Plain field assignments: Node's strip-only TypeScript loader (which Vercel uses for api/) rejects parameter properties.
 export class RequestError extends Error {
-    constructor(readonly status: number, message: string) { super(message); }
+    readonly status: number;
+    constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+    }
 }
 
 function record(value: unknown): value is Record<string, unknown> {

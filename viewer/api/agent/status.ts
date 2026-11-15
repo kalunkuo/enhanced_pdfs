@@ -1,4 +1,4 @@
-import { createHostedAgentHandler } from '../../server/hostedAgent';
+import { createHostedAgentHandler } from '../../server/hostedAgent.ts';
 
 /** Vercel serverless function: GET /api/agent/status reports whether a provider is configured, never its key. */
 export const config = { maxDuration: 10 };

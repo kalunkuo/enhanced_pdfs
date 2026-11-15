@@ -1,7 +1,7 @@
-import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi';
-import { agentConfigured, validBedrockRegion, type AgentServerConfig } from './agentConfig';
-import { AgentProviderError } from './agentProviderError';
-import { AGENT_INSTRUCTIONS, AGENT_TOOLS } from './drawingAgentPlan';
+import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi.ts';
+import { agentConfigured, validBedrockRegion, type AgentServerConfig } from './agentConfig.ts';
+import { AgentProviderError } from './agentProviderError.ts';
+import { AGENT_INSTRUCTIONS, AGENT_TOOLS } from './drawingAgentPlan.ts';
 
 /**
  * Standard Converse tool use avoids model-specific strict-schema compilation for the local demo. The

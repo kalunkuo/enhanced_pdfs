@@ -1,10 +1,10 @@
-import { colorWallsByFireRating, compareDoorWidths, highlightElementsByCategory, latestComments, type AgentContext, type AgentResult } from './drawingAgent';
-import type { DrawingQuery } from './drawingQuery';
-import { parseAgentObservations, type AgentObservation } from './agentObservations';
-import { runAgentToolLoop } from './agentToolLoop';
-import type { AgentHostCallback } from './agentWorkspace';
-export type { AgentHostAction, AgentHostResult, AgentHostCallback } from './agentWorkspace';
-export type { AgentObservation } from './agentObservations';
+import { colorWallsByFireRating, compareDoorWidths, highlightElementsByCategory, latestComments, type AgentContext, type AgentResult } from './drawingAgent.ts';
+import type { DrawingQuery } from './drawingQuery.ts';
+import { parseAgentObservations, type AgentObservation } from './agentObservations.ts';
+import { runAgentToolLoop } from './agentToolLoop.ts';
+import type { AgentHostCallback } from './agentWorkspace.ts';
+export type { AgentHostAction, AgentHostResult, AgentHostCallback } from './agentWorkspace.ts';
+export type { AgentObservation } from './agentObservations.ts';
 
 const CATEGORY_COLORS = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink'] as const;
 type CategoryColor = typeof CATEGORY_COLORS[number];
