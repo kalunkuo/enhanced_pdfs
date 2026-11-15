@@ -170,7 +170,9 @@ internal sealed class ReviewController
         _toolCalls = 0;
         SetStatus("Starting Claude…");
         _ = Task.Run(() => PumpOutput(_claude, cancel));
-        _ = Task.Run(async () => Log("stderr: " + await _claude.StandardError.ReadToEndAsync()));
+        var stderr = _claude.StandardError.ReadToEndAsync();
+        _stderr = stderr;
+        _ = stderr.ContinueWith(t => Log("stderr: " + (t.IsCompletedSuccessfully ? t.Result : t.Exception?.GetBaseException().Message)), TaskScheduler.Default);
     }
 
     private async Task PumpOutput(Process process, CancellationToken cancel)
@@ -197,7 +199,7 @@ internal sealed class ReviewController
                             break;
                         case MarkupReview.Core.Claude.Result result:
                             sawResult = true;
-                            if (result.IsError) SetStatus($"Claude stopped: {result.Subtype}. Proposals so far are kept.");
+                            if (result.IsError) SetStatus(ClaudeStatus.Stopped(result, StderrTail()));
                             else if (Session?.IsFinished != true) SetStatus("Claude finished without a summary.");
                             break;
                     }
@@ -210,10 +212,19 @@ internal sealed class ReviewController
         finally
         {
             if (!sawResult && Session?.IsFinished != true)
-                SetStatus(cancel.IsCancellationRequested ? "Review cancelled. Proposals so far are kept." : "Claude stopped before finishing. Proposals so far are kept.");
+                SetStatus(cancel.IsCancellationRequested ? "Review cancelled. Proposals so far are kept." : ClaudeStatus.Stopped(null, StderrTail()));
             _cancel?.Cancel();
             Changed?.Invoke();
         }
+    }
+
+    private Task<string>? _stderr;
+
+    /// <summary>Claude Code's stderr once it has exited (start-up and sign-in failures land there); waits briefly.</summary>
+    private string StderrTail()
+    {
+        try { return _stderr is { } t && t.Wait(2000) ? t.Result : ""; }
+        catch (AggregateException) { return ""; }
     }
 
     public void Cancel()

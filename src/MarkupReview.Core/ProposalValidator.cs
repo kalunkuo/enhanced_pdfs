@@ -51,8 +51,19 @@ public static class ProposalValidator
             return ValidationResult.Reject($"Parameter '{parameter.Name}' is read-only.");
 
         var options = await model.GetOptionsAsync(current.UniqueId, parameter.Name, set.Scope);
-        string? value = Normalise(set.Value, options, out string? error);
-        if (value is null) return ValidationResult.Reject($"'{set.Value}' is not valid for '{parameter.Name}': {error}");
+        string? value;
+        if (options.Storage == "Double" && options.Allowed is not { Count: > 0 })
+        {
+            // Numbers with units are parsed by the model itself, so "3.5 ft" is stored and shown as Revit formats it.
+            var parsed = await model.ParseValueAsync(current.UniqueId, parameter.Name, set.Scope, set.Value);
+            if (!parsed.Ok) return ValidationResult.Reject($"'{set.Value}' is not valid for '{parameter.Name}': {parsed.Error}");
+            value = parsed.Display;
+        }
+        else
+        {
+            value = Normalise(set.Value, options, out string? error);
+            if (value is null) return ValidationResult.Reject($"'{set.Value}' is not valid for '{parameter.Name}': {error}");
+        }
         if (Same(value, parameter.DisplayValue))
             return ValidationResult.Reject($"'{parameter.Name}' already is '{parameter.DisplayValue}'; no change needed.");
 
@@ -73,17 +84,26 @@ public static class ProposalValidator
         IModelGateway model, bool changedSinceExport)
     {
         var types = await model.ListTypesAsync(current.UniqueId);
-        var target = types.FirstOrDefault(t => Same(t.Name, swap.TypeName) || Same(t.FullName, swap.TypeName));
+        // Type names repeat across families (36" x 84" in several door families): identity is "Family: Name".
+        var target = types.FirstOrDefault(t => Same(t.FullName, swap.TypeName));
         if (target is null)
-            return ValidationResult.Reject($"No type '{swap.TypeName}' is available for this element. Available: {List(types.Select(t => t.Name))}.");
-        if (Same(target.Name, current.Type))
-            return ValidationResult.Reject($"The element already is type '{current.Type}'; no change needed.");
+        {
+            var byName = types.Where(t => Same(t.Name, swap.TypeName)).ToList();
+            target = byName.FirstOrDefault(t => Same(t.Family, current.Family)) ?? (byName.Count == 1 ? byName[0] : null);
+            if (target is null && byName.Count > 1)
+                return ValidationResult.Reject($"'{swap.TypeName}' exists in several families: {List(byName.Select(t => t.FullName))}. Pass the family-qualified name.");
+        }
+        if (target is null)
+            return ValidationResult.Reject($"No type '{swap.TypeName}' is available for this element. Available: {List(types.Select(t => t.FullName))}.");
+
+        string currentName = current.Family is null ? current.Type ?? "" : $"{current.Family}: {current.Type}";
+        if (Same(target.FullName, currentName))
+            return ValidationResult.Reject($"The element already is type '{currentName}'; no change needed.");
         string? block = changedSinceExport && !Same(exported.Type, current.Type)
             ? $"Type changed since export (was '{exported.Type}', now '{current.Type}')"
             : null;
-        var from = types.FirstOrDefault(t => Same(t.Name, current.Type) && (current.Family is null || Same(t.Family, current.Family)))
-            ?? types.FirstOrDefault(t => Same(t.Name, current.Type));
-        return new(true, null, current.Type, target.Name, 1, block) { SizeChanges = SizeDiff(from, target) };
+        var from = types.FirstOrDefault(t => Same(t.FullName, currentName)) ?? types.FirstOrDefault(t => Same(t.Name, current.Type));
+        return new(true, null, currentName, target.FullName, 1, block) { SizeChanges = SizeDiff(from, target) };
     }
 
     private static List<SizeChange> SizeDiff(ModelType? from, ModelType to)

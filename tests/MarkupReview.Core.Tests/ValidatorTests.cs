@@ -53,6 +53,30 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Length_value_is_parsed_and_formatted_by_the_model()
+    {
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Unconnected Height", ParamScope.Instance, "12.5 ft"));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("12' - 6\"", r.NormalisedValue);
+    }
+
+    [Fact]
+    public async Task Length_value_the_model_cannot_parse_is_rejected()
+    {
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Unconnected Height", ParamScope.Instance, "1hr"));
+        Assert.False(r.Ok);
+        Assert.Contains("could not read", r.Error);
+    }
+
+    [Fact]
+    public async Task Length_equal_to_current_once_formatted_is_already_matching()
+    {
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Unconnected Height", ParamScope.Instance, "10 ft"));
+        Assert.False(r.Ok);
+        Assert.Contains("already", r.Error);
+    }
+
+    [Fact]
     public async Task Allowed_values_normalised_case_and_whitespace()
     {
         var r = await Validate(FixturePdf.WallKey, new SetParameter("Structural Usage", ParamScope.Instance, " non-bearing "));
@@ -81,8 +105,47 @@ public sealed class ValidatorTests : IDisposable
     {
         var r = await Validate(FixturePdf.DoorKey, new ChangeType("36\" x 84\""));
         Assert.True(r.Ok, r.Error);
-        Assert.Equal("32\" x 84\"", r.OldValue);
-        Assert.Equal("36\" x 84\"", r.NormalisedValue);
+        Assert.Equal("Single-Flush: 32\" x 84\"", r.OldValue);
+        Assert.Equal("Single-Flush: 36\" x 84\"", r.NormalisedValue);
+    }
+
+    private void AddDoorTypes(params ModelType[] types) => _model.Types["door-uid"].AddRange(types);
+
+    [Fact]
+    public async Task Bare_type_name_prefers_the_elements_current_family()
+    {
+        AddDoorTypes(new ModelType("Double-Flush", "36\" x 84\""));
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("36\" x 84\""));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("Single-Flush: 36\" x 84\"", r.NormalisedValue);
+    }
+
+    [Fact]
+    public async Task Bare_type_name_found_only_in_several_other_families_is_rejected_as_ambiguous()
+    {
+        AddDoorTypes(new ModelType("Double-Flush", "40\" x 84\""), new ModelType("Bifold", "40\" x 84\""));
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("40\" x 84\""));
+        Assert.False(r.Ok);
+        Assert.Contains("Double-Flush: 40\" x 84\"", r.Error);
+        Assert.Contains("Bifold: 40\" x 84\"", r.Error);
+    }
+
+    [Fact]
+    public async Task Family_qualified_name_picks_that_family_even_when_the_name_repeats()
+    {
+        AddDoorTypes(new ModelType("Double-Flush", "36\" x 84\""));
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("Double-Flush: 36\" x 84\""));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("Double-Flush: 36\" x 84\"", r.NormalisedValue);
+    }
+
+    [Fact]
+    public async Task Same_type_name_in_another_family_is_a_real_change()
+    {
+        AddDoorTypes(new ModelType("Double-Flush", "32\" x 84\""));
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("Double-Flush: 32\" x 84\""));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal("Single-Flush: 32\" x 84\"", r.OldValue);
     }
 
     [Fact]

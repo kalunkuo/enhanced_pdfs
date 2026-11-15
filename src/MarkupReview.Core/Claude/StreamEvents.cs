@@ -6,7 +6,7 @@ namespace MarkupReview.Core.Claude;
 public abstract record ProgressEvent;
 public sealed record Thinking(string Text) : ProgressEvent;
 public sealed record ToolCall(string Name) : ProgressEvent;
-public sealed record Result(bool IsError, string? Subtype, double? CostUsd) : ProgressEvent;
+public sealed record Result(bool IsError, string? Subtype, double? CostUsd, string? Text) : ProgressEvent;
 
 /// <summary>Maps Claude Code's stream-json output lines to progress events for the review panel.</summary>
 public static class StreamEvents
@@ -41,7 +41,7 @@ public static class StreamEvents
                 }
                 return events;
             case "result":
-                return [new Result((bool?)o["is_error"] ?? false, (string?)o["subtype"], (double?)o["total_cost_usd"])];
+                return [new Result((bool?)o["is_error"] ?? false, (string?)o["subtype"], (double?)o["total_cost_usd"], (string?)o["result"])];
             default:
                 return [];
         }

@@ -39,6 +39,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private string? _selected;
     private string? _rejecting;
     private bool _confirmingEnd;
+    private bool _confirmingSave;
     private readonly ContentControl _endHost = new();
     private string _rejectText = ""; // survives the list rebuilding when new proposals arrive mid-review
     private string? _lastError;
@@ -53,7 +54,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         Background = Brushes.White;
 
         _cancel.Click += (_, _) => _controller.Cancel();
-        _save.Click += async (_, _) => await SaveAsync();
+        _save.Click += async (_, _) => await SaveClickedAsync();
         _end.Click += (_, _) => { _confirmingEnd = true; Refresh(); };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save, _end } };
         var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _endHost, _filters } };
@@ -100,7 +101,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _warning.Visibility = _controller.Warning is null ? Visibility.Collapsed : Visibility.Visible;
         _cancel.Visibility = _controller.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         _end.Visibility = session is null || _confirmingEnd ? Visibility.Collapsed : Visibility.Visible;
-        _endHost.Content = session is not null && _confirmingEnd ? EndConfirmation(session) : null;
+        _endHost.Content = session is null ? null : _confirmingEnd ? EndConfirmation(session) : _confirmingSave ? SaveConfirmation(session) : null;
         _save.IsEnabled = session is not null && !_controller.IsRunning;
         UpdateActivity();
 
@@ -314,6 +315,40 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             Title = $"Markup · {markup.Kind} · {markup.Author ?? "unknown author"}", Width = 900, Height = 650,
             Content = new Image { Source = big, Stretch = Stretch.Uniform }, WindowStartupLocation = WindowStartupLocation.CenterScreen,
         }.Show();
+    }
+
+    /// <summary>Saving over an existing "-reviewed.pdf" (possibly the file that was imported) asks first.</summary>
+    private async Task SaveClickedAsync()
+    {
+        var session = _controller.Session;
+        if (session is null) return;
+        if (File.Exists(DecisionsWriter.OutputPath(session.Pdf.Path))) { _confirmingSave = true; Refresh(); return; }
+        await SaveAsync();
+    }
+
+    private UIElement SaveConfirmation(ReviewSession session)
+    {
+        string output = DecisionsWriter.OutputPath(session.Pdf.Path);
+        bool isInput = string.Equals(Path.GetFullPath(output), Path.GetFullPath(session.Pdf.Path), StringComparison.OrdinalIgnoreCase);
+        string message = $"{Path.GetFileName(output)} already exists" + (isInput ? " — it is the file you imported" : "") +
+            ". Saving replaces it and its earlier review decisions.";
+        var confirm = new Button { Content = "Replace", Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+        var cancel = SmallButton("Cancel");
+        confirm.Click += async (_, _) => { _confirmingSave = false; Refresh(); await SaveAsync(); };
+        cancel.Click += (_, _) => { _confirmingSave = false; Refresh(); };
+        return new Border
+        {
+            Background = Hex("#FFF8F0"), BorderBrush = Accent, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8), Margin = new Thickness(0, 8, 0, 0),
+            Child = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) },
+                    new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, cancel } },
+                },
+            },
+        };
     }
 
     private async Task SaveAsync()

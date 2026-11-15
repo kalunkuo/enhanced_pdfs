@@ -53,7 +53,7 @@ When an enhanced PDF comes back with markups, select **Add-Ins → Enhanced PDFs
 - **Approve** applies one change in its own undoable transaction (`Markup: Walls 676281 Fire Rating`). It re-checks the element first and refuses if it changed since the proposal. Type swaps also show the dimensions that change.
 - **Reject…** takes an optional reason. Nothing is written to the model.
 - Clicking a card zooms to the element and shows the contractor's markup cropped from the PDF.
-- **Save review** writes `<name>-reviewed.pdf` with a `review-decisions.parquet` attachment. The original PDF is never modified.
+- **Save review** writes `<name>-reviewed.pdf` with a `review-decisions.parquet` attachment. The original PDF is never modified; if the `-reviewed.pdf` already exists (or is the file you imported), the panel asks before replacing it.
 - **Stop Claude** ends the analysis and keeps the proposals so far. **End review** discards pending proposals and closes the panel; approved changes stay (Ctrl+Z reverts them).
 
 Requirements: [Claude Code](https://claude.com/claude-code) installed and signed in (`claude auth login`) on the same machine. The add-in runs it headless with only the review tools: Claude can read the model and stage proposals, but no tool changes the model. Each run is capped at $2. Markups come from the web viewer (`annotations.json`), the Acrobat smart-markup plug-in (`annotations.parquet`, `annotation-links.parquet`), or plain PDF annotations. Each import writes a log under `%TEMP%\…\EnhancedPdfs-review\` (`latest.txt` points to the newest). Design: `docs/superpowers/specs/2026-11-14-markup-reimport-design.md`.

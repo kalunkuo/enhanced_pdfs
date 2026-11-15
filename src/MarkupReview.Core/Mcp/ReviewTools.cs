@@ -29,7 +29,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
                     ["properties"] = new JsonObject
                     {
                         ["set_parameter"] = Obj(Props(("name", Str("Parameter name.")), ("scope", Enum("instance", "type")), ("value", Str("New value as Revit displays it."))), "name", "scope", "value"),
-                        ["change_type"] = Obj(Props(("type_name", Str("Exact type name from list_types."))), "type_name"),
+                        ["change_type"] = Obj(Props(("type_name", Str("Family-qualified type name \"Family: Name\" from list_types (names repeat across families)."))), "type_name"),
                     },
                 })),
             "markup_id", "handle", "reason", "change"),
@@ -128,10 +128,10 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         var types = await model.ListTypesAsync(current.UniqueId);
         return new JsonObject
         {
-            ["current"] = current.Type,
+            ["current"] = current.Family is null ? current.Type : $"{current.Family}: {current.Type}",
             ["types"] = new JsonArray([.. types.Select(t => (JsonNode)new JsonObject
             {
-                ["family"] = t.Family, ["name"] = t.Name,
+                ["full_name"] = t.FullName, ["family"] = t.Family, ["name"] = t.Name,
                 ["sizes"] = new JsonObject([.. t.Sizes.Select(s => KeyValuePair.Create(s.Key, (JsonNode?)s.Value))]),
             })]),
         };

@@ -42,6 +42,21 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
         return new ParameterOptions(p.StorageType.ToString(), null, unit);
     });
 
+    public Task<ParsedValue> ParseValueAsync(string uniqueId, string parameter, ParamScope scope, string raw) => dispatcher.InvokeAsync(_ =>
+    {
+        var p = FindParameter(Document, Document.GetElement(uniqueId), parameter, scope);
+        if (p is null) return new ParsedValue(false, null, $"No {scope.ToString().ToLowerInvariant()} parameter '{parameter}'.");
+        var spec = p.Definition.GetDataType();
+        if (!UnitUtils.IsMeasurableSpec(spec))
+            return double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double plain)
+                ? new ParsedValue(true, plain.ToString(System.Globalization.CultureInfo.InvariantCulture), null)
+                : new ParsedValue(false, null, "expected a number");
+        var units = Document.GetUnits();
+        if (!UnitFormatUtils.TryParse(units, spec, raw, out double value, out string message))
+            return new ParsedValue(false, null, $"Revit could not read it as {LabelUtils.GetLabelForSpec(spec).ToLowerInvariant()}{(string.IsNullOrEmpty(message) ? "" : $" ({message})")}.");
+        return new ParsedValue(true, UnitFormatUtils.Format(units, spec, value, false), null);
+    });
+
     internal static Parameter? FindParameter(Document document, Element? element, string name, ParamScope scope)
     {
         if (element is null) return null;

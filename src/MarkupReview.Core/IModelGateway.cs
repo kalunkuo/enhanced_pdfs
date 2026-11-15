@@ -28,7 +28,15 @@ public interface IModelGateway
     Task<ModelElement?> FindAsync(string uniqueId);
     Task<IReadOnlyList<ModelType>> ListTypesAsync(string uniqueId);
     Task<ParameterOptions> GetOptionsAsync(string uniqueId, string parameter, ParamScope scope);
+
+    /// <summary>
+    /// Parses a value for a number parameter the way Revit would (units, feet-inches) and returns Revit's display form,
+    /// so proposals are checked and shown as Revit will store them.
+    /// </summary>
+    Task<ParsedValue> ParseValueAsync(string uniqueId, string parameter, ParamScope scope, string raw);
 }
+
+public sealed record ParsedValue(bool Ok, string? Display, string? Error);
 
 public enum MatchStatus { Matched, ChangedSinceExport, Missing, LinkedModel }
 

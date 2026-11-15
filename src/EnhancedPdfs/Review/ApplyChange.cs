@@ -61,10 +61,11 @@ internal static class ApplyChange
 
     private static string? Swap(Document document, Element element, string typeName)
     {
+        // typeName is the validator's family-qualified "Family: Name" — match exactly, never by bare name, so the
+        // type applied is the one that was validated and shown (names repeat across families).
         var target = element.GetValidTypes()
             .Select(id => document.GetElement(id) as ElementType)
-            .FirstOrDefault(t => t is not null && (string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals($"{t.FamilyName}: {t.Name}", typeName, StringComparison.OrdinalIgnoreCase)));
+            .FirstOrDefault(t => t is not null && string.Equals($"{t.FamilyName}: {t.Name}", typeName, StringComparison.OrdinalIgnoreCase));
         if (target is null) return $"Type '{typeName}' is not available for this element.";
         element.ChangeTypeId(target.Id);
         return null;

@@ -92,14 +92,46 @@ public sealed class StreamEventsTests
     public void Result_error_max_budget_is_reported()
     {
         var e = Assert.Single(StreamEvents.Parse("""{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":2.01}"""));
-        Assert.Equal(new Result(true, "error_max_budget_usd", 2.01), e);
+        Assert.Equal(new Result(true, "error_max_budget_usd", 2.01, null), e);
     }
 
     [Fact]
     public void Result_success_is_reported()
     {
         var e = Assert.Single(StreamEvents.Parse("""{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.42,"result":"done"}"""));
-        Assert.Equal(new Result(false, "success", 0.42), e);
+        Assert.Equal(new Result(false, "success", 0.42, "done"), e);
+    }
+
+    [Fact]
+    public void Result_carries_its_text()
+    {
+        var e = Assert.Single(StreamEvents.Parse("""{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Please run /login"}"""));
+        Assert.Equal("Invalid API key · Please run /login", ((Result)e).Text);
+    }
+
+    [Fact]
+    public void Sign_in_failure_points_to_claude_auth_login()
+    {
+        string status = ClaudeStatus.Stopped(new Result(true, "success", null, "Invalid API key · Please run /login"), "");
+        Assert.Contains("claude auth login", status);
+    }
+
+    [Fact]
+    public void Sign_in_failure_seen_only_on_stderr_points_to_claude_auth_login()
+    {
+        Assert.Contains("claude auth login", ClaudeStatus.Stopped(null, "Error: Not logged in. Please run claude auth login"));
+    }
+
+    [Fact]
+    public void Budget_stop_names_the_cap()
+    {
+        Assert.Contains("$2", ClaudeStatus.Stopped(new Result(true, "error_max_budget_usd", 2.01, null), ""));
+    }
+
+    [Fact]
+    public void Other_errors_show_claudes_own_message()
+    {
+        Assert.Contains("Overloaded", ClaudeStatus.Stopped(new Result(true, "error_during_execution", null, "API Error: 529 Overloaded"), ""));
     }
 
     [Theory]
