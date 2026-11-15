@@ -25,7 +25,7 @@ Use semantic roles in screens and patterns. Add a component token when variants 
 | Raised surface | `--color-surface-raised` | `#292d30` |
 | Primary text | `--color-text` | `#ffffff` |
 | Muted text | `--color-text-muted` | `#cccccc` |
-| Primary blue | `--color-primary` | `#31c6e8` |
+| Primary blue | `--color-primary` | `#8ce3f2` |
 | Secondary red | `--color-secondary` | `#ff4b5c` |
 | Tertiary pink | `--color-tertiary-pink` | `#f4a7e9` |
 | Tertiary green | `--color-tertiary-green` | `#1bb574` |

@@ -26,7 +26,7 @@ import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, s
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
 import { useProfile } from './lib/profile';
-import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
+import type { Annotation, ElementInfo, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 import type { AgentContext, AgentHighlight, DrawingComment } from './lib/drawingAgent';
 import { readPdfComments, viewerComments } from './lib/drawingComments';
 
@@ -77,6 +77,9 @@ export function App() {
     const [selectedPdfComment, setSelectedPdfComment] = useState<DrawingComment | null>(null);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    // Every object in a multi-selection, the primary `selectedKey` included. Ignored once the primary is not in it.
+    const [multiKeys, setMultiKeys] = useState<ReadonlySet<string>>(new Set());
+    const selectedKeys = useMemo<ReadonlySet<string>>(() => selectedKey && multiKeys.has(selectedKey) ? multiKeys : new Set(selectedKey ? [selectedKey] : []), [selectedKey, multiKeys]);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
     const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
@@ -293,8 +296,27 @@ export function App() {
         [doc],
     );
 
+    /** Replace, extend or toggle the multi-selection. The last key added becomes the primary one shown in Properties. */
+    const selectElements = useCallback((keys: readonly string[], mode: 'replace' | 'add' | 'toggle') => {
+        setFocusRequest(null);
+        setSelectedPdfComment(null);
+        setComposerAt(null);
+        setSelectedAnnotationId(null);
+        const base = new Set(mode === 'replace' ? [] : selectedKeys);
+        let primary = mode === 'replace' ? null : selectedKey;
+        for (const key of keys) {
+            if (mode === 'toggle' && base.has(key)) { base.delete(key); if (primary === key) primary = null; }
+            else { base.add(key); primary = key; }
+        }
+        if (!primary || !base.has(primary)) primary = [...base].at(-1) ?? null;
+        setMultiKeys(base);
+        setSelectedKey(primary);
+        if (base.size > 0) setTab('properties');
+    }, [selectedKeys, selectedKey]);
+
     const selectElement = useCallback((key: string | null) => {
         setFocusRequest(null);
+        setMultiKeys(new Set());
         setSelectedKey(key);
         setSelectedPdfComment(null);
         setComposerAt(null);
@@ -590,6 +612,9 @@ export function App() {
                             tool={tool}
                             hoverKey={hover?.key ?? null}
                             selectedKey={selectedKey}
+                            selectedKeys={selectedKeys}
+                            onSelectElements={selectElements}
+                            regionOf={(rect) => elementsInCloud({ from: [rect[0], rect[1]], to: [rect[2], rect[3]] }, regionSources)}
                             annotations={pageAnnotations}
                             selectedAnnotationId={selectedAnnotationId}
                             highlightColor={highlightColor}
@@ -667,7 +692,7 @@ export function App() {
                         {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
-                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
+                            <PropertiesPanel doc={doc} selection={[...selectedKeys].map((k) => doc.elements.get(k)).filter((e): e is ElementInfo => !!e)} onPick={setSelectedKey} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
                         ) : tab === 'elements' ? (
                             <>
                                 <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={changeFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} context={filterContext} pageNumber={page} onFitMatches={fitMatches} />

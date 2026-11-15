@@ -22,6 +22,11 @@ interface Props {
     tool: Tool;
     hoverKey: string | null;
     selectedKey: string | null;
+    /** Every selected object (the primary included), for multi-selection. */
+    selectedKeys?: ReadonlySet<string>;
+    onSelectElements?: (keys: readonly string[], mode: 'replace' | 'add' | 'toggle') => void;
+    /** Elements whose bounds touch a page rectangle, wholly inside first. */
+    regionOf?: (rect: readonly [number, number, number, number]) => readonly { key: string; fully: boolean }[];
     annotations: Annotation[];
     selectedAnnotationId: string | null;
     highlightColor: string;
@@ -186,7 +191,7 @@ export function PdfStage(props: Props) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     };
     // Every annotation tool shares one cursor, which shows whether an object is under it (see review.css).
-    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : 'tool-review';
+    const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : ['line', 'rect', 'ellipse', 'highlight', 'pen', 'cloud'].includes(tool) ? 'tool-draw' : 'tool-review';
     const hoverClass = !props.hoverKey || tool === 'pan' ? '' : tool === 'select' ? 'hovering' : 'over-object';
 
     return (
@@ -204,12 +209,12 @@ export function PdfStage(props: Props) {
                     hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
-                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
                     selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
                     onElementMove={(point, client) => props.onHover(pickElement(point, 4 / zoom)[0]?.elementKey ?? null, client)}
-                    onElementSelect={(point) => {
+                    onElementSelect={(point, additive) => {
                         const hits = [...new Map(pickElement(point, 4 / zoom).map((hit) => [hit.elementKey, hit])).values()];
                         const keys = hits.map((hit) => hit.elementKey).join('\n');
                         const previous = previousPick.current;
@@ -217,9 +222,17 @@ export function PdfStage(props: Props) {
                         const repeat = previous && previous.keys === keys && now - previous.time < 3000 && Math.hypot(previous.x - point[0], previous.y - point[1]) < 6 / zoom;
                         const index = repeat && hits.length ? (previous.index + 1) % hits.length : 0;
                         previousPick.current = { x: point[0], y: point[1], keys, index, time: now };
-                        props.onSelectElement(hits[index]?.elementKey ?? null);
+                        const picked = hits[index]?.elementKey ?? null;
+                        if (additive && picked && props.onSelectElements) { props.onSelectElements([picked], 'toggle'); setPickNotice(null); props.onSelectAnnotation(null); return; }
+                        props.onSelectElement(picked);
                         setPickNotice(hits.length > 1 ? `${index + 1} of ${hits.length} elements · click again to cycle` : null);
                         props.onSelectAnnotation(null);
+                    }}
+                    onSelectRegion={(rect, additive, crossing) => {
+                        const hits = (props.regionOf?.(rect) ?? []).filter((hit) => crossing || hit.fully).map((hit) => hit.key);
+                        props.onSelectAnnotation(null);
+                        setPickNotice(hits.length ? `${hits.length} element${hits.length === 1 ? '' : 's'} selected` : null);
+                        if (props.onSelectElements) props.onSelectElements(hits, additive ? 'add' : 'replace');
                     }}
                     onElementLeave={() => props.onHover(null, { x: 0, y: 0 })}
                     onStartComment={props.onStartComment}
@@ -229,7 +242,7 @@ export function PdfStage(props: Props) {
                     onMoveAnnotation={props.onMoveAnnotation}
                     coverOf={props.coverOf}
                 >
-                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {pickNotice && <div className="pick-status" role="status">{pickNotice}</div>}
