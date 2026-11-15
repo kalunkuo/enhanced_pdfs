@@ -60,7 +60,7 @@ public:
             AddRef();
             return S_OK;
         }
-        *ppv = nullptr;
+        *ppv = nullptr;  // IUIX_CmdHandler2 (optional appearance hooks) is asked for and not needed
         return E_NOINTERFACE;
     }
     ULONG __stdcall AddRef() override { return ++refs_; }
@@ -86,7 +86,9 @@ public:
     }
     HRESULT __stdcall OnNotify(long code, IUIX_Cmd*, IUIX_CmdItem*, IUIX_Obj*, PARAM_T) override {
         try {
-            if (code == UIX_Notify_ExecCmd) {
+            // A toolbar button press arrives as UIX_Notify_Click (verified in Editor 10.8.4: codes 9 then 1
+            // per click, never 37); ExecCmd is kept for menus/shortcuts.
+            if (code == UIX_Notify_Click || code == UIX_Notify_ExecCmd) {
                 gOn = !gOn;
                 LogLine("inspect: %s", gOn ? "on" : "off");
                 RefreshCommand();
@@ -96,8 +98,31 @@ public:
         }
         return S_OK;
     }
-    HRESULT __stdcall OnDrawItemIcon(IUIX_RenderContext*, IUIX_CmdItem*, tagRECT*, tagRECT*) override {
-        return S_FALSE;
+    // The command has no image, so draw a small "i" (info) badge: rounded-ish square with a dot and stem.
+    HRESULT __stdcall OnDrawItemIcon(IUIX_RenderContext* rc, IUIX_CmdItem*, tagRECT* icon, tagRECT* clip) override {
+        if (!rc || !icon) return S_FALSE;
+        try {
+            const long kBlue = 0x00B06A1F;   // dark blue/teal; channel order unverified, any dark tone reads well
+            const long kWhite = 0x00FFFFFF;
+            RECT box = *icon;
+            int w = box.right - box.left, h = box.bottom - box.top;
+            if (w < 6 || h < 6) return S_FALSE;
+            int side = (w < h ? w : h) - 2;
+            box.left += (w - side) / 2;
+            box.top += (h - side) / 2;
+            box.right = box.left + side;
+            box.bottom = box.top + side;
+            rc->FillSolidRect(&box, kBlue, VARIANT_FALSE);
+            int cx = (box.left + box.right) / 2, unit = side / 8 > 0 ? side / 8 : 1;
+            RECT dot{cx - unit, box.top + 2 * unit, cx + unit, box.top + 4 * unit};
+            RECT stem{cx - unit, box.top + 5 * unit, cx + unit, box.bottom - unit};
+            rc->FillSolidRect(&dot, kWhite, VARIANT_FALSE);
+            rc->FillSolidRect(&stem, kWhite, VARIANT_FALSE);
+            if (gOn) rc->DrawSolidBorder(&box, kWhite, 1, clip, VARIANT_FALSE);
+            return S_OK;
+        } catch (...) {
+            return S_FALSE;
+        }
     }
 
 private:
