@@ -91,15 +91,18 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
         ComPtr<IPXC_AnnotData> data;
         ComPtr<IPXC_AnnotData_SquareCircle> sq;
         if (SUCCEEDED(annot->get_Data(data.Put())) && SUCCEEDED(data.As(sq))) {
-            ComPtr<IColor> fill = Rgb(1.0f, 0.86f, 0.0f), stroke = Rgb(0.95f, 0.55f, 0.0f);
+            // Highlighter-pen look: multiply keeps the drawing's lines crisp inside a vivid yellow, so the
+            // box reads as "on top" (plain transparency let the black lines dominate).
+            ComPtr<IColor> fill = Rgb(1.0f, 0.88f, 0.0f), stroke = Rgb(1.0f, 0.45f, 0.0f);
             if (fill) sq->put_FColor(fill.Get());
             if (stroke) sq->put_SColor(stroke.Get());
-            sq->put_Opacity(0.35);
+            sq->put_Opacity(0.75);
+            sq->put_BlendMode(BlendMode_Multiply);
             PXC_AnnotBorder border{};
             sq->get_Border(&border);
             border.nStyle = ABS_Solid;
             border.nEffect = ABE_Standard;
-            border.nWidth = 1.5f;
+            border.nWidth = 2.5f;
             border.nDashCount = 0;
             sq->put_Border(&border);
             annot->put_Data(data.Get());
