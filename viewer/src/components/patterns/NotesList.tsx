@@ -148,12 +148,20 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                         ) : (
                             <>
                                 <button aria-current={selected} onClick={() => onSelect(a)}>
-                                    <strong>{NAMES[a.kind]}</strong> <span className="muted">p. {a.page}</span>
-                                    {a.kind === 'comment' && (
-                                        <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'} <time className="muted" dateTime={a.createdAt} title={formatTimeAgo(a.createdAt, now)}>{formatExactDate(a.createdAt)}</time></span>
+                                    <span className="note-head">
+                                        <strong>{NAMES[a.kind]}</strong>
+                                        <span className="muted">p. {a.page}</span>
+                                        {a.kind === 'comment' && (
+                                            <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'}</span>
+                                        )}
+                                        {a.kind === 'comment' && <time className="muted" dateTime={a.createdAt} title={formatTimeAgo(a.createdAt, now)}>{formatExactDate(a.createdAt)}</time>}
+                                    </span>
+                                    {(a.text || (a.kind === 'comment' && (a.replies?.length ?? 0) > 0)) && (
+                                        <span className="note-body">
+                                            {a.text && <>“{a.text}”</>}
+                                            {a.kind === 'comment' && (a.replies?.length ?? 0) > 0 && <span className="muted">{a.text ? ' · ' : ''}{a.replies!.length} {a.replies!.length === 1 ? 'reply' : 'replies'}</span>}
+                                        </span>
                                     )}
-                                    {a.text && <span> “{a.text}”</span>}
-                                    {a.kind === 'comment' && (a.replies?.length ?? 0) > 0 && <span className="muted"> · {a.replies!.length} {a.replies!.length === 1 ? 'reply' : 'replies'}</span>}
                                     <div>{chip}</div>
                                 </button>
                             </>
