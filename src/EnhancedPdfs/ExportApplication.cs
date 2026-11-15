@@ -16,6 +16,10 @@ public sealed class ExportApplication : IExternalApplication
             "EnhancedPdfs.Export", "Export Enhanced PDF", Assembly.GetExecutingAssembly().Location,
             typeof(ExportCommand).FullName));
         button.ToolTip = "Export the active Revit view or sheet with searchable BIM data and Parquet attachments.";
+        var setButton = (PushButton)panel.AddItem(new PushButtonData(
+            "EnhancedPdfs.ExportSet", "Export Sheet Set", Assembly.GetExecutingAssembly().Location,
+            typeof(ExportSetCommand).FullName));
+        setButton.ToolTip = "Choose project sheets or a saved Revit view/sheet set to export into one enhanced PDF.";
         return Result.Succeeded;
     }
 
@@ -30,13 +34,23 @@ public sealed class ExportCommand : IExternalCommand
     {
         var application = commandData.Application;
         var view = application.ActiveUIDocument?.ActiveView;
-        if (view is null || view.Document.IsFamilyDocument || view.IsTemplate || !view.CanBePrinted)
+        if (view is null || view.Document.IsFamilyDocument || !CanExport(view))
         {
             TaskDialog.Show("Enhanced PDFs", "Open a printable view or sheet in a Revit project.");
             return Result.Cancelled;
         }
 
-        string title = view is ViewSheet sheet ? $"{sheet.SheetNumber} - {view.Name}" : view.Name;
+        return Export(application, [view], DrawingTitle(view), ref message);
+    }
+
+    internal static bool CanExport(View view) => view.CanBePrinted && !view.IsTemplate &&
+        view is not ViewSheet { IsPlaceholder: true };
+
+    internal static string DrawingTitle(View view) =>
+        view is ViewSheet sheet ? $"{sheet.SheetNumber} - {sheet.Name}" : view.Name;
+
+    internal static Result Export(UIApplication application, IReadOnlyList<View> views, string title, ref string message)
+    {
         using var dialog = new Forms.SaveFileDialog
         {
             Title = "Export Enhanced PDF",
@@ -51,8 +65,8 @@ public sealed class ExportCommand : IExternalCommand
 
         try
         {
-            var result = DrawingExport.Export(view, dialog.FileName);
-            ShowResult(dialog.FileName, result);
+            var result = DrawingExport.Export(views, dialog.FileName);
+            ShowResult(dialog.FileName, views.Count, result);
             return Result.Succeeded;
         }
         catch (Exception error)
@@ -64,16 +78,16 @@ public sealed class ExportCommand : IExternalCommand
         }
     }
 
-    private static void ShowResult(string path, DrawingData data)
+    private static void ShowResult(string path, int pages, DrawingData data)
     {
         var dialog = new TaskDialog("Enhanced PDFs")
         {
             MainInstruction = "Enhanced PDF exported",
-            MainContent = $"{Path.GetFileName(path)}\n{data.Elements.Count:N0} elements · {data.Drawings.Count:N0} views and sheets",
+            MainContent = $"{Path.GetFileName(path)}\n{pages:N0} {(pages == 1 ? "page" : "pages")} · {data.Elements.Count:N0} elements",
             CommonButtons = TaskDialogCommonButtons.Close,
         };
         if (data.Notes.Count > 0)
-            dialog.ExpandedContent = string.Join("\n", data.Notes);
+            dialog.ExpandedContent = string.Join("\n", data.Notes.Select(note => $"Page {note.Page}: {note.Text}"));
         dialog.AddCommandLink(TaskDialogCommandLinkId.CommandLink1, "Open PDF");
         if (dialog.Show() == TaskDialogResult.CommandLink1)
         {
@@ -88,5 +102,6 @@ public sealed class ExportCommand : IExternalCommand
         }
     }
 
-    private sealed record RevitWindow(IntPtr Handle) : Forms.IWin32Window;
 }
+
+internal sealed record RevitWindow(IntPtr Handle) : Forms.IWin32Window;

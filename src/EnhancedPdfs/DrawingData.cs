@@ -8,8 +8,10 @@ internal sealed class DrawingData
     public HashSet<AppearanceRow> Appearances { get; } = [];
     public List<ParameterRow> Parameters { get; } = [];
     public List<ScheduleCellRow> ScheduleCells { get; } = [];
-    public List<string> Notes { get; } = [];
+    public List<DrawingNote> Notes { get; } = [];
 }
+
+internal sealed record DrawingNote(int Page, string Text);
 
 internal sealed record DrawingRow(
     string DrawingId, string? ParentDrawingId, string ViewUniqueId, long ViewId, int Page,

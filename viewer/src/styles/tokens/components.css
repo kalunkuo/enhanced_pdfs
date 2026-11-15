@@ -1,0 +1,117 @@
+:root {
+  /* Compact toolbar button: exactly 24 × 24 CSS pixels. */
+  --button-icon-size: var(--primitive-size-6);
+  --button-icon-glyph-size: var(--primitive-size-4);
+  --button-icon-radius: var(--primitive-radius-1);
+  --button-icon-rest-background: transparent;
+  --button-icon-rest-foreground: var(--color-action);
+  --button-icon-hover-background: var(--primitive-color-white);
+  --button-icon-hover-foreground: var(--primitive-color-ink-950);
+  --button-icon-pressed-background: var(--primitive-color-white);
+  --button-icon-pressed-foreground: var(--primitive-color-ink-950);
+  --button-icon-disabled-opacity: 0.4;
+  --button-icon-focus-ring: var(--color-focus-ring);
+  --button-transition-duration: var(--duration-interaction);
+  --action-press-scale: .97;
+
+  --control-height: var(--primitive-size-11);
+  --control-radius: var(--radius-control);
+  --control-inline-padding: var(--primitive-space-3);
+  --control-gap: var(--space-control-gap);
+  --control-background: var(--color-canvas);
+  --control-border: var(--color-control-border);
+  --control-text: var(--color-text);
+  --control-placeholder: var(--color-text-subtle);
+
+  --menu-item-height: 32px;
+  --menu-icon-size: var(--primitive-size-4);
+  --menu-item-gap: var(--space-control-gap);
+  --menu-padding: var(--primitive-space-2);
+  --menu-radius: var(--radius-control);
+  --menu-background: var(--color-surface);
+  --menu-hover-background: var(--color-surface-raised);
+  --menu-active-background: var(--color-primary);
+  --menu-active-foreground: var(--color-canvas);
+  --menu-transition-duration: var(--duration-interaction);
+  --menu-exit-duration: var(--duration-menu-exit);
+  --menu-options-transition-duration: var(--duration-content-reveal);
+  --menu-row-stagger: var(--duration-menu-stagger);
+  --menu-scale-closed: .94;
+
+  /* Segmented control: a single indicator slides between equal-width options. */
+  --segmented-padding: var(--primitive-space-1);
+  --segmented-gap: 2px;
+  --segmented-indicator-inset: var(--primitive-space-3);
+  --segmented-background: var(--color-surface-raised);
+  --segmented-indicator-background: var(--menu-active-background);
+  --segmented-indicator-foreground: var(--menu-active-foreground);
+  --segmented-slide-duration: var(--duration-slide);
+  --segmented-slide-easing: var(--ease-slide);
+
+  /* Element list entry: one bordered, clickable container per matching element. */
+  --element-entry-gap: var(--primitive-space-2);
+  --element-entry-line-gap: var(--primitive-space-1);
+  --element-entry-padding-block: var(--primitive-space-2);
+  --element-entry-padding-inline: var(--primitive-space-3);
+  --element-entry-radius: var(--radius-control);
+  --element-entry-border: var(--color-border);
+  --element-entry-background: var(--color-surface);
+  --element-entry-hover-background: var(--menu-hover-background);
+  --element-entry-active-background: var(--menu-active-background);
+  --element-entry-active-foreground: var(--menu-active-foreground);
+
+  --progress-height: var(--primitive-space-2);
+  --progress-radius: var(--radius-control);
+  --progress-track: var(--color-surface-raised);
+  --progress-fill: var(--color-tertiary-green);
+
+  /* A finished blocking dialog fades out with its backdrop, revealing the viewer behind it. */
+  --dialog-reveal-duration: var(--duration-reveal-app);
+
+  --dialog-width: 440px;
+  --dialog-padding: var(--primitive-space-6);
+  --tooltip-padding-block: var(--primitive-space-2);
+  --tooltip-padding-inline: var(--primitive-space-3);
+  --table-cell-padding: var(--primitive-space-2);
+  --status-padding: var(--primitive-space-3);
+  --metadata-row-gap: var(--primitive-space-3);
+
+  --comment-background: var(--color-surface-raised);
+  --comment-border: var(--color-border);
+  --comment-radius: var(--radius-control);
+  --comment-padding: var(--space-panel-padding);
+  --comment-gap: var(--space-control-gap);
+  --comment-avatar-size: var(--primitive-space-8);
+  --comment-avatar-background: var(--color-canvas);
+  --comment-accent-border-width: 3px;
+  --comment-info-accent: var(--color-primary);
+  --comment-warning-accent: var(--color-warning);
+  --comment-error-accent: var(--color-error);
+
+  /* Toolbars: 24px compact controls, 8px gaps, 4px container padding. */
+  /* "ePDF." wordmark: blue "e", red square period. */
+  --logo-font-size: var(--primitive-font-size-lg);
+  --logo-font-weight: var(--primitive-font-weight-bold);
+  --logo-text: var(--color-text);
+  --logo-accent: var(--color-primary);
+  --logo-dot: var(--color-secondary);
+  --logo-dot-size: .2em;
+
+  --toolbar-gap: var(--primitive-space-2);
+  --toolbar-padding: var(--primitive-space-1);
+  --toolbar-control-height: var(--button-icon-size);
+  --toolbar-action-height: var(--menu-item-height);
+  --toolbar-separator-inset: var(--primitive-space-1);
+  --docbar-padding-block: var(--primitive-space-2);
+  --panel-background: var(--color-surface);
+  --panel-border: var(--color-border);
+  --geometry-outline: var(--color-geometry-highlight);
+  --geometry-outline-width: 2px;
+  --metadata-link-indicator: var(--color-metadata-link);
+
+  /* Existing viewer composition: these govern chrome, not the PDF raster. */
+  --viewer-rail-width: calc(var(--button-icon-size) + 2 * var(--toolbar-padding) + 2 * var(--primitive-border-1));
+  --viewer-shadow-xs: 0 1px 2px rgb(0 0 0 / 0.2);
+  --viewer-shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
+  --viewer-warning-background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface));
+}

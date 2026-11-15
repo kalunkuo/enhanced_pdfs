@@ -1,0 +1,196 @@
+/*
+ * Review features: comment pins and threads, markup details, profile menu, avatars, logo.
+ * Built on the viewer design tokens (tokens/semantic.css). The aliases below let these rules read in a
+ * short, familiar vocabulary; each one points at a semantic token and none holds a literal color.
+ */
+:root {
+    --background: var(--color-canvas);
+    --foreground: var(--color-text);
+    --card: var(--color-surface);
+    --popover: var(--color-surface-raised);
+    --muted: var(--color-surface-raised);
+    --muted-foreground: var(--color-text-muted);
+    --accent: var(--color-surface-raised);
+    --accent-foreground: var(--color-text);
+    --border: var(--color-border);
+    --input: var(--color-control-border);
+    --primary: var(--color-primary);
+    --ring: var(--color-focus-ring);
+    --radius: var(--radius-control);
+    --font: var(--font-ui);
+    --tied: var(--color-annotation-tied);
+    --untied: var(--color-annotation-untied);
+    --element: var(--color-geometry-highlight);
+    --element-soft: var(--color-geometry-highlight-soft);
+    --element-strong: var(--color-geometry-highlight-strong);
+    --comment: var(--color-primary);
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.25);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+}
+
+.spacer { flex: 1; }
+/* Avatar */
+.avatar { display: inline-grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; color: #fff; font-weight: 600; line-height: 1; user-select: none; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Comments: a teardrop whose tip (bottom-left corner) is the anchor point, plus a pill with the object and a message preview.
+   .cpin is a zero-size box at the anchor, so everything is placed relative to the tip. */
+.comment-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.cpin { --drop: 32px; position: absolute; width: 0; height: 0; pointer-events: none; outline: none; }
+.cpin.selected, .cpin.dragging { z-index: 2; }
+.cdrop { position: absolute; left: 0; top: calc(-1 * var(--drop)); width: var(--drop); height: var(--drop); display: grid; place-items: center; overflow: hidden;
+    border-radius: 50% 50% 50% 0; background: var(--pin); color: #fff; font-size: 13px; font-weight: 600; line-height: 1;
+    pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%238ce3f2'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, grab; touch-action: none; user-select: none; transform-origin: 0 100%;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); transition: transform 0.12s; }
+.cdrop img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+/* Untied: not attached to an object, so it is plain gray. */
+.cpin.untied .cdrop { background: hsl(240 4% 52%); filter: grayscale(1) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3)); }
+.cpin.selected .cdrop, .cpin.dragging .cdrop { transform: scale(1.14); }
+.cpin.dragging .cdrop { cursor: grabbing; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4)); }
+.cpin.untied.dragging .cdrop { filter: grayscale(1) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4)); }
+.cpin:focus-visible .cdrop { outline: 2px solid var(--ring); outline-offset: 2px; }
+.cpill { position: absolute; left: calc(var(--drop) + 6px); top: calc(-1 * var(--drop) + 3px); height: 26px; max-width: 260px; display: flex; align-items: center; gap: 6px;
+    padding: 0 11px; border-radius: 13px; background: #fff; color: #18181b; font-size: 12px; white-space: nowrap; overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--pin) 50%, #fff); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); pointer-events: auto; cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%238ce3f2'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, grab; user-select: none; }
+.cpin.untied .cpill { border-color: #d4d4d8; }
+.cpin.selected .cpill { border-color: var(--pin); box-shadow: 0 0 0 1px var(--pin), 0 2px 6px rgba(0, 0, 0, 0.25); }
+.cpin.untied.selected .cpill { border-color: #71717a; box-shadow: 0 0 0 1px #71717a, 0 2px 6px rgba(0, 0, 0, 0.25); }
+.cpill strong { flex: none; font-weight: 600; }
+.cpin.untied .cpill strong { color: #71717a; font-weight: 500; font-style: italic; }
+.cpill-msg { overflow: hidden; text-overflow: ellipsis; color: #52525b; }
+.cpin.dragging .cpill { cursor: grabbing; }
+.cpin.flip .cpill { left: auto; right: 6px; }
+.cbubble, .ccard { position: absolute; top: -46px; left: 30px; width: 320px; pointer-events: auto; background: #fff; color: #18181b;
+    border-radius: 20px; box-shadow: var(--shadow-md); }
+.ccard.left { left: auto; right: 28px; }
+.ccomposer { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 4; }
+.cteardrop { position: absolute; left: 0; top: -32px; width: 32px; height: 32px; background: var(--comment); border-radius: 50% 50% 50% 0;
+    box-shadow: var(--shadow-md); pointer-events: none; }
+.ccard { top: -32px; left: 42px; border: 2px solid var(--comment); border-radius: 22px; overflow: visible; }
+.ccard.left { right: 10px; }
+.ccard textarea { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: #18181b; font: inherit; font-size: 17px;
+    padding: 16px 20px 8px; border-radius: 22px 22px 0 0; }
+.ccard textarea::placeholder { color: #a1a1aa; }
+.cname { display: block; width: calc(100% - 32px); margin: 12px 16px 0; height: 34px; padding: 0 10px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fff; color: #18181b; font: inherit; }
+.cproblem { margin: 0 16px 8px; color: #dc2626; font-size: 12px; }
+.cbar { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid #e4e4e7; }
+.cbar .icon-btn { color: #18181b; font-size: 20px; width: 36px; height: 36px; }
+.cbar .icon-btn:hover:not(:disabled) { background: #f4f4f5; }
+.csend { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: var(--comment); color: #fff; cursor: pointer; }
+.csend:disabled { opacity: 0.4; cursor: default; }
+.cemoji-wrap { position: relative; }
+.cemoji { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 5; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; padding: 6px;
+    background: #fff; border: 1px solid #e4e4e7; border-radius: 10px; box-shadow: var(--shadow-md); }
+.cemoji button { width: 32px; height: 32px; border: 0; background: none; border-radius: 6px; font-size: 18px; cursor: pointer; }
+.cemoji button:hover { background: #f4f4f5; }
+.note-author { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
+.profile-menu { position: relative; }
+.profile-btn { width: 36px; height: 36px; }
+.profile-pop { left: auto; right: 0; width: 280px; padding: 14px; display: grid; gap: 12px; }
+.profile-row { display: flex; align-items: center; gap: 12px; }
+.profile-actions { display: flex; gap: 4px; }
+.profile-name { display: grid; gap: 4px; }
+.profile-name .search { width: 100%; margin: 0; }
+/* The composer card carries its own blue focus border, so the inner field shows no second ring. */
+.ccard textarea:focus-visible, .cname:focus-visible { box-shadow: none; }
+.cname:focus-visible { border-color: var(--comment); }
+/* Right side of the navigation bar: file name, upload, profile. */
+.docbar-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.docbar-info .file-name { max-width: 28ch; }
+/* Thread in the Notes panel */
+/* An open note uses the full panel width, and is only as tall as its content. */
+.thread { padding: 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tmsg { display: grid; gap: 8px; min-width: 0; }
+.thead { display: flex; align-items: center; gap: 10px; }
+.twho { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
+.twho strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.twho .muted { font-size: 12px; }
+.tdel { width: 28px; height: 28px; flex: none; color: var(--muted-foreground); }
+.ttext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.treplies { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--border); display: grid; gap: 14px; }
+.treplies .avatar { width: 26px !important; height: 26px !important; font-size: 11px !important; }
+.treply { display: grid; gap: 8px; }
+.treply textarea { width: 100%; resize: vertical; min-height: 72px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input);
+    background: var(--background); color: var(--foreground); font: inherit; }
+.treply .tname { width: 100%; margin: 0; }
+.tsend { justify-self: end; height: 32px; }
+.tsend:disabled { opacity: 0.5; cursor: default; }
+/* Details card for a selected markup (same card as a comment thread) */
+.byline { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.byline-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.byline-text strong { font-weight: 600; }
+.byline-text .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adetails-head { display: flex; align-items: center; gap: 8px; }
+.akind { margin: 0; }
+.adetails .ttext { margin: 0; }
+
+/* Objects a revision cloud covers, in its Notes card */
+.cloud-contents { display: grid; gap: 6px; }
+.cloud-contents h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.cloud-contents p { margin: 0; }
+.cloud-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.cloud-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px);
+    background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.cloud-item:hover { background: var(--accent); }
+.cloud-item .chip { margin-top: 0; margin-left: auto; }
+.cloud-summary { font-size: 12px; }
+
+/* Flat icon buttons, like the design system's: no border, no raised default look, a soft hover.
+   These are plain buttons in the comment card, composer and profile menu, so they need the reset themselves. */
+.icon-btn { display: inline-grid; place-items: center; flex: none; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: inherit;
+    font: inherit; line-height: 1; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
+.icon-btn:hover:not(:disabled) { background: var(--accent); }
+.icon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon-btn svg { width: 18px; height: 18px; }
+.profile-btn { border-radius: 50%; }
+
+/* The tie tag and its menu: the tag is the control, so there is no separate Object ID dropdown. */
+.tie-tag { position: relative; display: inline-block; max-width: 100%; }
+.tie-button { display: inline-flex; align-items: center; gap: 4px; margin: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.tie-button svg { width: 12px; height: 12px; }
+.tie-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: min(320px, calc(100vw - 48px)); padding: 8px; display: grid; gap: 6px;
+    background: var(--popover); color: var(--foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-md); }
+.tie-search { width: 100%; height: 34px; padding: 0 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input); background: var(--background); color: inherit; font: inherit; }
+.tie-actions:empty { display: none; }
+.tie-action { width: 100%; padding: 6px 8px; border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; color: var(--color-primary); font: inherit; text-align: left; cursor: pointer; }
+.tie-action:hover { background: var(--accent); }
+.tie-options { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: grid; gap: 1px; }
+.tie-option { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 6px 8px; border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tie-option:hover { background: var(--accent); }
+.tie-check { display: inline-grid; width: 14px; flex: none; align-self: center; }
+.tie-check svg { width: 13px; height: 13px; }
+.tie-hint { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted-foreground); }
+.tie-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tie-meta { margin-left: auto; padding-left: 8px; font-size: 11px; white-space: nowrap; }
+
+/* Annotation tools show a faded blue text-insertion (I-beam) cursor over empty paper. Over an object it becomes a chat
+   bubble with "..." inside, the same teardrop as a comment pin with its tip on the pointer, and the object is
+   highlighted as with the Select tool. */
+.page.tool-review > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238ce3f2'%20stroke-opacity='0.6'%20stroke-width='4.6'%20stroke-linecap='round'%3E%3Cpath%20d='M8.5%203.5h7M12%203.5v17M8.5%2020.5h7'/%3E%3C/svg%3E") 12 12, text; }
+.page.tool-review.over-object > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cpath%20d='M2%2030V17A13%2013%200%200%201%2015%204A13%2013%200%200%201%2028%2017A13%2013%200%200%201%2015%2030Z'%20fill='%238ce3f2'%20stroke='%23ffffff'%20stroke-width='1.5'%20stroke-linejoin='round'/%3E%3Ccircle%20cx='9'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='15'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3Ccircle%20cx='21'%20cy='17'%20r='2.1'%20fill='%23ffffff'/%3E%3C/svg%3E") 2 30, text; }
+
+/* Select tool: a blue arrow by default and a blue pointing hand over an object (also over a markup). The arrow's
+   hotspot is its tip; the hand's is its fingertip. */
+.page.tool-select > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%20stroke-linejoin='round'%20stroke-linecap='round'%3E%3Cpath%20d='M8%205v18l4.6-4.1%203.2%207%203-1.4-3.1-6.8H21z'%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='5.4'/%3E%3Cpath%20d='M8%205v18l4.6-4.1%203.2%207%203-1.4-3.1-6.8H21z'%20fill='%238ce3f2'%20stroke='%238ce3f2'%20stroke-width='2.8'/%3E%3C/svg%3E") 7 4, default; }
+.page.tool-select.hovering > svg, .markup-hit { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='32'%20height='32'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%23ffffff'%20stroke='%23ffffff'%20stroke-width='3'%20stroke-linejoin='round'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3Cg%20fill='%238ce3f2'%3E%3Crect%20x='12'%20y='3'%20width='4.4'%20height='14'%20rx='2.2'/%3E%3Crect%20x='16.4'%20y='9'%20width='4.2'%20height='10'%20rx='2.1'/%3E%3Crect%20x='20.6'%20y='11'%20width='4'%20height='9'%20rx='2'/%3E%3Crect%20x='9.5'%20y='15'%20width='15.1'%20height='12'%20rx='5.5'/%3E%3Crect%20x='5'%20y='17'%20width='6.5'%20height='4.4'%20rx='2.2'%20transform='rotate%28-25%208%2019.5%29'/%3E%3C/g%3E%3C/svg%3E") 14 3, pointer; }
+
+/* Collapsed note rows in the Notes tab: a flat bordered row (the unstyled <button> showed the browser's raised default). */
+.notes-list > li > button { display: block; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: transparent; color: var(--color-text); text-align: left; cursor: pointer; transition: background-color 0.15s; }
+.notes-list > li > button:hover, .notes-list > li > button:focus-visible { background: var(--accent); outline: none; }
+.notes-list > li > button .note-author { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; }
+.notes-list > li > button > div { margin-top: 6px; }
+
+/* Box drag in the Select tool: solid when it takes only what it wholly contains, dashed when it takes anything it touches. */
+.select-box { fill: color-mix(in srgb, var(--color-selection) 14%, transparent); stroke: var(--color-selection); }
+
+.multi-items { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.multi-item { padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: transparent; color: inherit; font-size: 12px; cursor: pointer; }
+.multi-item:hover { background: var(--accent); }
+.multi-item[aria-current='true'] { background: var(--color-selection); border-color: var(--color-selection); color: var(--color-canvas); }
+
+/* Shape-drawing tools use a faded blue cross, the same weight as the I-beam. */
+.page.tool-draw > svg { cursor: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='24'%20height='24'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238ce3f2'%20stroke-opacity='0.6'%20stroke-width='4.6'%20stroke-linecap='round'%3E%3Cpath%20d='M12%203.5v17M3.5%2012h17'/%3E%3C/svg%3E") 12 12, crosshair; }
+
+/* Sidebar tie tags are a lighter red than the annotations on the page, which keep the full annotation red. */
+.chip.tied { color: color-mix(in srgb, var(--color-annotation-tied) 72%, #fff); }
