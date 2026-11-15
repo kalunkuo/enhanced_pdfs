@@ -33,6 +33,7 @@ struct DocState {
     std::map<int, sm::ElementMap> pages;  // 1-based page -> element boxes, filled on demand
     size_t openMarkups = 0;
     bool saveHandled = false;  // WillSaveEx and WillSave both fire; act once per save
+    ULONGLONG saveHandledAt = 0;
 };
 
 std::map<PDDoc, DocState> gDocs;
@@ -185,8 +186,12 @@ void OnChangedDoc(PDDoc doc, const char* what) {
 
 void OnWillSave(PDDoc doc) {
     DocState* s = Find(doc);
-    if (!s || s->saveHandled) return;
+    // WillSaveEx and WillSave both fire for one save: act once. The guard expires after 5 s so a cancelled
+    // or failed save (where DidSave may not fire to reset it) cannot block table writes on later saves.
+    ULONGLONG now = GetTickCount64();
+    if (!s || (s->saveHandled && now - s->saveHandledAt < 5000)) return;
     s->saveHandled = true;
+    s->saveHandledAt = now;
     Guarded("save", [&] { SaveDoc(doc, *s); });  // the save itself proceeds either way
 }
 

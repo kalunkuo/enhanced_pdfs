@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "element_map.h"
-#include "linked_ids.h"
+#include "doc_state.h"
 #include "log.h"
 #include "overlay.h"
 
