@@ -1,0 +1,121 @@
+using System.Globalization;
+
+namespace MarkupReview.Core;
+
+/// <param name="Ok">False: reject back to Claude with <see cref="Error"/>; nothing is staged.</param>
+/// <param name="BlockReason">Set when Ok: stage the proposal, but it cannot be approved.</param>
+public sealed record ValidationResult(bool Ok, string? Error, string? OldValue, string? NormalisedValue, int AffectsCount, string? BlockReason = null)
+{
+    public static ValidationResult Reject(string error) => new(false, error, null, null, 0);
+}
+
+/// <summary>Checks a proposed change against the open model. Used when Claude proposes and again at Approve.</summary>
+public static class ProposalValidator
+{
+    private const int MaxListed = 20;
+
+    public static async Task<ValidationResult> ValidateAsync(Proposal proposal, IModelGateway model, ExportTables tables)
+    {
+        if (!tables.ElementsByKey.TryGetValue(proposal.ElementKey, out var exported))
+            return ValidationResult.Reject($"Element handle '{proposal.ElementKey}' is not in this PDF. Use a handle from list_markups.");
+
+        var current = exported.LinkInstanceId is null ? await model.FindAsync(exported.UniqueId) : null;
+        switch (ElementMatcher.Match(exported, current))
+        {
+            case MatchStatus.LinkedModel:
+                return new(true, null, null, null, 0, "Element is in a linked model; change it in that model");
+            case MatchStatus.Missing:
+                return new(true, null, null, null, 0, "Element no longer in model");
+        }
+
+        bool changedSinceExport = current!.VersionGuid != exported.VersionGuid;
+        return proposal.Change switch
+        {
+            SetParameter set => await ValidateParameter(set, exported, current, model, tables, changedSinceExport),
+            ChangeType swap => await ValidateType(swap, current, model),
+            _ => ValidationResult.Reject("Unsupported change kind."),
+        };
+    }
+
+    private static async Task<ValidationResult> ValidateParameter(SetParameter set, ExportedElement exported, ModelElement current,
+        IModelGateway model, ExportTables tables, bool changedSinceExport)
+    {
+        var candidates = current.Parameters.Where(p => p.Scope == set.Scope).ToList();
+        var parameter = candidates.FirstOrDefault(p => string.Equals(p.Name, set.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (parameter is null)
+            return ValidationResult.Reject($"No {Scope(set.Scope)} parameter '{set.Name}'. {Scope(set.Scope)} parameters: {List(candidates.Select(p => p.Name))}.");
+        if (parameter.ReadOnly)
+            return ValidationResult.Reject($"Parameter '{parameter.Name}' is read-only.");
+
+        var options = await model.GetOptionsAsync(current.UniqueId, parameter.Name, set.Scope);
+        string? value = Normalise(set.Value, options, out string? error);
+        if (value is null) return ValidationResult.Reject($"'{set.Value}' is not valid for '{parameter.Name}': {error}");
+        if (Same(value, parameter.DisplayValue))
+            return ValidationResult.Reject($"'{parameter.Name}' already is '{parameter.DisplayValue}'; no change needed.");
+
+        int affects = set.Scope == ParamScope.Type ? current.TypeInstanceCount : 1;
+        string? block = null;
+        if (changedSinceExport)
+        {
+            string owner = set.Scope == ParamScope.Type ? exported.TypeKey ?? "" : exported.ElementKey;
+            string? exportedValue = tables.ParametersByOwner[owner].FirstOrDefault(p => Same(p.Name, parameter.Name))?.DisplayValue;
+            if (exportedValue is not null && !Same(exportedValue, parameter.DisplayValue))
+                block = $"'{parameter.Name}' changed since export (was '{exportedValue}', now '{parameter.DisplayValue}')";
+        }
+        return new(true, null, parameter.DisplayValue, value, affects, block);
+    }
+
+    private static async Task<ValidationResult> ValidateType(ChangeType swap, ModelElement current, IModelGateway model)
+    {
+        var types = await model.ListTypesAsync(current.UniqueId);
+        var target = types.FirstOrDefault(t => Same(t.Name, swap.TypeName) || Same(t.FullName, swap.TypeName));
+        if (target is null)
+            return ValidationResult.Reject($"No type '{swap.TypeName}' is available for this element. Available: {List(types.Select(t => t.Name))}.");
+        if (Same(target.Name, current.Type))
+            return ValidationResult.Reject($"The element already is type '{current.Type}'; no change needed.");
+        return new(true, null, current.Type, target.Name, 1);
+    }
+
+    /// <summary>Returns the value to apply, or null with an error. Never passes a non-numeric string to a numeric parameter.</summary>
+    private static string? Normalise(string raw, ParameterOptions options, out string? error)
+    {
+        error = null;
+        string value = raw.Trim();
+        if (options.Allowed is { Count: > 0 } allowed)
+        {
+            var match = allowed.FirstOrDefault(a => Same(a, value));
+            if (match is null) error = $"allowed values are {List(allowed)}";
+            return match;
+        }
+        switch (options.Storage)
+        {
+            case "Integer":
+                if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)) return value;
+                error = "expected a whole number";
+                return null;
+            case "Double":
+                // Revit parses display strings with units (e.g. 3' 6"); require at least one ASCII digit.
+                if (value.Any(c => c is >= '0' and <= '9')) return value;
+                error = options.Unit is null ? "expected a number" : $"expected a number in {options.Unit}";
+                return null;
+            case "ElementId":
+                error = "this parameter references another element and has no listed values";
+                return null;
+            default:
+                return value;
+        }
+    }
+
+    private static bool Same(string? a, string? b) =>
+        string.Equals(Squash(a), Squash(b), StringComparison.OrdinalIgnoreCase);
+
+    private static string Squash(string? s) => s is null ? "" : string.Concat(s.Where(c => !char.IsWhiteSpace(c)));
+    private static string Scope(ParamScope scope) => scope == ParamScope.Type ? "type" : "instance";
+
+    private static string List(IEnumerable<string> names)
+    {
+        var all = names.ToList();
+        var shown = string.Join(", ", all.Take(MaxListed).Select(n => $"'{n}'"));
+        return all.Count > MaxListed ? $"{shown} (and {all.Count - MaxListed} more)" : shown.Length == 0 ? "none" : shown;
+    }
+}
