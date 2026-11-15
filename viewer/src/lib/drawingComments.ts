@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
+import { collectViewerOwnedNames, isViewerOwnedAnnotation, listPdfAnnotationEntries } from './pdfAnnotationOwnership';
 import type { DrawingComment } from './drawingAgent';
 import type { Annotation } from './types';
 
@@ -22,17 +23,8 @@ async function viewerReferences(pdf: CommentPdf, sourceBytes?: Uint8Array): Prom
             if (!bytes) return new Set<string>();
             const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
             const result = new Set<string>();
-            for (const page of source.getPages()) {
-                const annotations = page.node.Annots();
-                if (!annotations) continue;
-                for (let i = 0; i < annotations.size(); i++) {
-                    const reference = annotations.get(i);
-                    if (!(reference instanceof PDFRef)) continue;
-                    const annotation = source.context.lookup(reference, PDFDict);
-                    const name = annotation.lookupMaybe(PDFName.of('NM'), PDFString, PDFHexString)?.decodeText();
-                    if (name?.startsWith('ep-')) result.add(`${reference.objectNumber}R${reference.generationNumber || ''}`);
-                }
-            }
+            const names = collectViewerOwnedNames(source);
+            for (const entry of listPdfAnnotationEntries(source)) if (isViewerOwnedAnnotation(entry.dict, names)) result.add(`${entry.page}:${entry.ref}`);
             return result;
         })();
         viewerReferenceCache.set(pdf, cached);
@@ -93,7 +85,7 @@ function knownIsoDate(value: unknown): string | undefined {
 }
 
 /** Read real, text-bearing review annotations on one current PDF page. */
-export async function readPdfComments(pdf: CommentPdf, pageNumber: number, sourceBytes?: Uint8Array): Promise<DrawingComment[]> {
+export async function readPdfComments(pdf: CommentPdf, pageNumber: number, sourceBytes?: Uint8Array, importedAnnotations: readonly Annotation[] = []): Promise<DrawingComment[]> {
     if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.numPages) return [];
     const page = await pdf.getPage(pageNumber);
     const [annotations, excluded]: [unknown[], ReadonlySet<string>] = await Promise.all([
@@ -101,16 +93,18 @@ export async function readPdfComments(pdf: CommentPdf, pageNumber: number, sourc
     ]);
     const comments: DrawingComment[] = [];
     const seen = new Set<string>();
+    const importedRefs = new Set(importedAnnotations.filter((a) => a.page === pageNumber).flatMap((a) => [
+        ...(a.source ? [a.source.ref, ...(a.source.renderId ? [a.source.renderId] : [])] : []),
+        ...(a.replies ?? []).flatMap((reply) => reply.source ? [reply.source.ref, ...(reply.source.renderId ? [reply.source.renderId] : [])] : []),
+    ]));
     for (const raw of annotations) {
         if (!raw || typeof raw !== 'object') continue;
         const annotation = raw as Record<string, unknown>;
         if (typeof annotation.subtype !== 'string' || !REVIEW_SUBTYPES.has(annotation.subtype)) continue;
         const author = stringFromObject(annotation.titleObj) ?? text(annotation.title);
-        // /NM identifies app exports regardless of their custom author name.
-        const name = text(annotation.annotationName) ?? text(annotation.name);
         const contents = stringFromObject(annotation.contentsObj) ?? text(annotation.contents) ?? stringFromObject(annotation.richText);
         const id = text(annotation.id);
-        if (!contents || !id || excluded.has(id) || name?.startsWith('ep-') || seen.has(id)) continue;
+        if (!contents || !id || excluded.has(`${pageNumber}:${id}`) || importedRefs.has(id) || seen.has(id)) continue;
         seen.add(id);
         const createdAt = parsePdfDate(annotation.creationDate);
         const modifiedAt = parsePdfDate(annotation.modificationDate);

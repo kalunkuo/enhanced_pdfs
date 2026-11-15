@@ -22,6 +22,16 @@ const valid = {
 };
 
 describe('parseSessionState', () => {
+    it('preserves imported source identity and its inventory without inventing reply dates', () => {
+        const annotation: Annotation = { id: 'imported', page: 1, kind: 'comment', from: [5, 5], to: [5, 5], source: {
+            ref: '42R', name: 'ep-native', subtype: 'Square', bounds: [0, 0, 10, 10], anchor: [5, 5], shape: 'area', linkState: 'ambiguous', candidateKeys: ['w1', 'w2'],
+        }, replies: [{ id: 'reply', text: 'Native undated reply', createdAt: '', author: { name: '' }, source: { ref: '43R' } }] };
+        const state = parseSessionState({ ...valid, annotations: [annotation], importedAnnotationIds: ['imported', 'imported', 5, ''] });
+        expect(state?.annotations).toEqual([annotation]);
+        expect(state?.importedAnnotationIds).toEqual(['imported']);
+        expect(parseSessionState(valid)?.importedAnnotationIds).toBeUndefined();
+    });
+
     it('round-trips a structured clone of valid state', () => {
         expect(parseSessionState(structuredClone(valid))).toEqual(valid);
     });

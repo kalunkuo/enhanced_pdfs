@@ -54,7 +54,7 @@ export function CommentThread({ comment, profile, onProfile, now, onReply, onDel
     /** `name` is the author's name as of this click, so a first-time name is not lost to stale state. */
     onReply: (id: string, reply: { text: string; name: string }) => void;
     onDelete: (id: string) => void;
-    /** Rewrite a message. Offered only on messages the current profile wrote. */
+    /** Rewrite a browser message by the current profile; native PDF appearances remain untouched. */
     onEdit?: (id: string, text: string) => void;
     onEditReply?: (id: string, replyId: string, text: string) => void;
     /** Extra controls under the message, such as the object tie. */
@@ -84,14 +84,14 @@ export function CommentThread({ comment, profile, onProfile, now, onReply, onDel
         <section className="thread" aria-label={`Comment thread by ${comment.author?.name ?? 'Unknown'}`}>
             <Message
                 author={comment.author} createdAt={comment.createdAt} text={comment.text ?? ''} now={now}
-                {...(onEdit && isAuthor(comment.author, profile) ? { onEdit: (text: string) => onEdit(comment.id, text) } : {})}
+                {...(onEdit && !comment.source && isAuthor(comment.author, profile) ? { onEdit: (text: string) => onEdit(comment.id, text) } : {})}
                 action={<button className="icon-btn tdel" aria-label="Delete comment and its replies" title="Delete comment and its replies" onClick={() => onDelete(comment.id)}><TrashIcon /></button>}
             />
             {children}
             {replies.length > 0 && (
                 <ul className="treplies" aria-label={`${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}>
                     {replies.map((r) => (
-                        <li key={r.id}><Message author={r.author} createdAt={r.createdAt} text={r.text} now={now} {...(onEditReply && isAuthor(r.author, profile) ? { onEdit: (text: string) => onEditReply(comment.id, r.id, text) } : {})} /></li>
+                        <li key={r.id}><Message author={r.author} createdAt={r.createdAt} text={r.text} now={now} {...(onEditReply && !r.source && isAuthor(r.author, profile) ? { onEdit: (text: string) => onEditReply(comment.id, r.id, text) } : {})} /></li>
                     ))}
                 </ul>
             )}

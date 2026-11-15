@@ -16,10 +16,21 @@ public sealed class ExportApplication : IExternalApplication
             "EnhancedPdfs.Export", "Export Enhanced PDF", Assembly.GetExecutingAssembly().Location,
             typeof(ExportCommand).FullName));
         button.ToolTip = "Export the active Revit view or sheet with searchable BIM data and Parquet attachments.";
+        (button.LargeImage, button.Image) = (RibbonIcons.Export(32), RibbonIcons.Export(16));
         var setButton = (PushButton)panel.AddItem(new PushButtonData(
             "EnhancedPdfs.ExportSet", "Export Sheet Set", Assembly.GetExecutingAssembly().Location,
             typeof(ExportSetCommand).FullName));
         setButton.ToolTip = "Choose project sheets or a saved Revit view/sheet set to export into one enhanced PDF.";
+        (setButton.LargeImage, setButton.Image) = (RibbonIcons.ExportSet(32), RibbonIcons.ExportSet(16));
+
+        var importButton = (PushButton)panel.AddItem(new PushButtonData(
+            "EnhancedPdfs.ImportMarkups", "Import marked-up PDF", Assembly.GetExecutingAssembly().Location,
+            typeof(Review.ImportCommand).FullName));
+        importButton.ToolTip = "Have Claude turn a returned PDF's markups into proposed model changes, then approve or reject each one.";
+        (importButton.LargeImage, importButton.Image) = (RibbonIcons.ImportMarkups(32), RibbonIcons.ImportMarkups(16));
+        var review = Review.ReviewController.Instance;
+        review.Initialize();
+        application.RegisterDockablePane(Review.ReviewController.PaneId, "Markup review", new Review.ReviewPane(review));
         return Result.Succeeded;
     }
 

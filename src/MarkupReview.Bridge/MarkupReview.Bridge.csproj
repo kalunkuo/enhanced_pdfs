@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Run on whichever .NET the machine has (Revit 2025 ships 8 or 10). -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+</Project>

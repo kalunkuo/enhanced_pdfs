@@ -33,6 +33,8 @@ The viewer reads the Parquet attachments the add-in already writes (`elements`, 
 
 `nativeTags.ts` resolves identities; `nativeGeometry.ts` captures paths and clips from a complete main-thread render and builds a Flatbush/Path2D picker. Unresolved/ambiguous identities and unsupported graphics remain explicit. Capture must index the exact operator list for the render's annotation mode and honor its abort signal before publishing.
 
+Existing standard PDF review marks are imported by `importPdfAnnotations.ts` as comments with source provenance. Preserve native graphics and attachments; use `annotations.json` for browser links and review state. Native root/reply text stays read-only; new browser replies remain editable. The viewer's markup Parquet export represents imported records as comment review pins, retaining links and replies without reconstructing the native shapes. `upgradeDocumentAnnotations.ts` matches pending notes across all annotated pages with bounded sequential native capture. Only pending results may merge into current state, so background work cannot overwrite manual links, replies, or deletions. Text references are separate from geometry links. Keep uncertain matches explicit. Ownership and source identity use `pdfAnnotationOwnership.ts`; never remove or hide annotations by a blanket `ep-` prefix. Session import inventories distinguish old recovery states from intentional source deletions.
+
 The loader also accepts optional `geometry.parquet` for compatibility with the synthetic demo, one row per element drawn on the page:
 
 | Column | Type | Meaning |

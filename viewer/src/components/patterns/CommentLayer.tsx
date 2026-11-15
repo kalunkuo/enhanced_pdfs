@@ -55,7 +55,7 @@ interface Drag {
 export function CommentLayer(props: CommentLayerProps) {
     const { page, zoom } = props;
     const [drag, setDrag] = useState<Drag | null>(null);
-    const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean; linked: boolean } | null>(null);
+    const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean; linked: boolean; source: boolean } | null>(null);
     // The drop reads this ref, not `drag`: a quick flick can release before React re-renders the last move.
     const dragRef = useRef<Drag | null>(null);
     const updateDrag = (next: Drag | null) => {
@@ -81,11 +81,11 @@ export function CommentLayer(props: CommentLayerProps) {
         event.stopPropagation();
         try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         // A pin linked to several objects moves without re-tying, so it has no drop target.
-        press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false, linked: linkedKeys(comment).length > 1 };
+        press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false, linked: linkedKeys(comment).length > 1, source: !!comment.source };
     };
     const move = (event: ReactPointerEvent<HTMLDivElement>) => {
         const p = press.current;
-        if (!p) return;
+        if (!p || p.source) return;
         const dx = event.clientX - p.x;
         const dy = event.clientY - p.y;
         if (!p.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
@@ -127,11 +127,11 @@ export function CommentLayer(props: CommentLayerProps) {
                 return (
                     <div
                         key={comment.id}
-                        className={`cpin ${key ? 'tied' : 'untied'} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''} ${flip ? 'flip' : ''}`}
+                        className={`cpin ${comment.source ? 'imported-pin' : ''} ${key ? 'tied' : 'untied'} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''} ${flip ? 'flip' : ''}`}
                         style={{ left: at[0] * zoom, top: at[1] * zoom, '--pin': avatarColor(name) } as CSSProperties}
                         role="button"
                         tabIndex={0}
-                        aria-label={`Comment by ${name}${key ? `, on ${label}` : ', not tied to an object'}. Drag to move.`}
+                        aria-label={`${comment.source ? 'Imported markup' : 'Comment'} by ${name}${key ? `, on ${label}` : ', not tied to an object'}.${comment.source ? ' Open review details.' : ' Drag to move.'}`}
                         aria-pressed={selected}
                         onPointerEnter={() => links.length && props.onPreview?.(new Set(links))}
                         onPointerLeave={() => props.onPreview?.(null)}
