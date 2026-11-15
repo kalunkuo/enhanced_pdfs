@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createAgentMiddleware, readJson, RequestError, type AgentMiddlewareOptions } from './agentMiddleware.ts';
+import { clampConcurrency, createAgentMiddleware, readJson, RequestError, type AgentMiddlewareOptions } from './agentMiddleware.ts';
 import { resolveAgentConfig } from './agentConfig.ts';
 
 /**
@@ -53,9 +53,20 @@ export async function hostedBody(request: IncomingMessage & { body?: unknown }):
     return body;
 }
 
+/** Hosted default: one Vercel instance serves many visitors at once, so the local cap of 2 would turn visitors away. */
+export const HOSTED_MAX_CONCURRENT = 64;
+
+/** `AGENT_MAX_CONCURRENT` from the environment, 1..256; the hosted default when unset or not a positive integer. */
+export function hostedConcurrency(env: Record<string, string | undefined>): number {
+    const raw = env.AGENT_MAX_CONCURRENT?.trim();
+    if (!raw || !/^\d{1,4}$/.test(raw)) return HOSTED_MAX_CONCURRENT;
+    const value = Number(raw);
+    return value >= 1 ? clampConcurrency(value, HOSTED_MAX_CONCURRENT) : HOSTED_MAX_CONCURRENT;
+}
+
 /** One handler serves both routes; the middleware dispatches on the request path. */
-export function createHostedAgentHandler(env: Record<string, string | undefined> = process.env, options: Pick<AgentMiddlewareOptions, 'plan' | 'timeoutMs'> = {}) {
-    const middleware = createAgentMiddleware(resolveAgentConfig(env), { ...options, allowRequest: sameSiteRequest, readBody: hostedBody });
+export function createHostedAgentHandler(env: Record<string, string | undefined> = process.env, options: Pick<AgentMiddlewareOptions, 'plan' | 'timeoutMs' | 'maxConcurrent'> = {}) {
+    const middleware = createAgentMiddleware(resolveAgentConfig(env), { maxConcurrent: hostedConcurrency(env), ...options, allowRequest: sameSiteRequest, readBody: hostedBody });
     return (request: IncomingMessage, response: ServerResponse) => middleware(request, response, () => {
         response.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         response.end(JSON.stringify({ error: 'Not found.' }));

@@ -41,7 +41,13 @@ export interface AgentModelContext {
 }
 export interface AgentApiRequest { prompt: string; history: AgentChatTurn[]; context: AgentModelContext; observations?: AgentObservation[] }
 export interface AgentApiResponse { message: string; actions: AgentAction[] }
-export interface AgentApiStatus { configured: boolean; provider: 'openai' | 'bedrock'; model: string }
+export interface AgentApiStatus {
+    configured: boolean;
+    provider: 'openai' | 'bedrock';
+    model: string;
+    /** Server settings still unset, by environment variable name (never values). Empty when configured. */
+    missing: string[];
+}
 
 const INVALID_RESPONSE = 'The agent returned an unsupported response. No drawing action was applied. Try again or switch to Local demo.';
 const UNAVAILABLE = 'The agent API is unavailable. Try again shortly, or use Local demo.';
@@ -213,10 +219,14 @@ async function fetchJson(path: string, init: RequestInit): Promise<unknown> {
 
 export async function getAgentApiStatus(signal?: AbortSignal): Promise<AgentApiStatus> {
     const value = record(await fetchJson('/api/agent/status', { signal, cache: 'no-store' }));
-    if (!exactKeys(value, ['configured', 'provider', 'model']) || typeof value.configured !== 'boolean' ||
+    // Older servers omit `missing`; it only ever carries environment variable names.
+    const keys = Object.hasOwn(value, 'missing') ? ['configured', 'provider', 'model', 'missing'] : ['configured', 'provider', 'model'];
+    if (!exactKeys(value, keys) || typeof value.configured !== 'boolean' ||
         !['openai', 'bedrock'].includes(String(value.provider)) || typeof value.model !== 'string' ||
         (value.configured && !value.model.trim()) || value.model.length > (value.provider === 'bedrock' ? 2048 : 100)) throw invalid();
-    return { configured: value.configured, provider: value.provider as AgentApiStatus['provider'], model: value.model.trim() };
+    const missing = value.missing ?? [];
+    if (!Array.isArray(missing) || missing.length > 8 || !missing.every((name): name is string => typeof name === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(name))) throw invalid();
+    return { configured: value.configured, provider: value.provider as AgentApiStatus['provider'], model: value.model.trim(), missing };
 }
 
 export async function requestAgent(prompt: string, history: AgentChatTurn[], context: AgentContext, signal?: AbortSignal, getCurrentContext?: () => AgentContext, onHostAction?: AgentHostCallback): Promise<AgentResult> {

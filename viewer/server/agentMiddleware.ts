@@ -4,7 +4,7 @@ import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, ty
 import { AgentProviderError } from './agentProviderError.ts';
 import { planAgentRequest } from './agentProvider.ts';
 import { openAiKeyAccepted } from './openaiAgent.ts';
-import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig.ts';
+import { agentConfigured, agentProvider, missingAgentSettings, type AgentServerConfig } from './agentConfig.ts';
 export type { AgentServerConfig } from './agentConfig.ts';
 
 type Next = (error?: unknown) => void;
@@ -110,7 +110,18 @@ export interface AgentMiddlewareOptions {
     readBody?: (request: IncomingMessage) => Promise<unknown>;
     /** Whether the provider accepts the configured credential (null = unknown). The default checks OpenAI keys; Bedrock tokens are not pre-checked. */
     verifyKey?: (config: AgentServerConfig, signal: AbortSignal) => Promise<boolean | null>;
+    /**
+     * Agent requests one server instance plans at the same time before answering 429. The local dev
+     * server keeps 2 (one person at one laptop); the hosted function raises it because one Vercel
+     * instance serves many visitors at once. Clamped to 1..256.
+     */
+    maxConcurrent?: number;
 }
+
+export const MAX_CONCURRENT_LIMIT = 256;
+export const DEFAULT_MAX_CONCURRENT = 2;
+export const clampConcurrency = (value: number | undefined, fallback: number): number =>
+    Number.isFinite(value) ? Math.min(MAX_CONCURRENT_LIMIT, Math.max(1, Math.floor(value as number))) : fallback;
 
 const defaultVerifyKey = (config: AgentServerConfig, signal: AbortSignal): Promise<boolean | null> =>
     agentProvider(config) === 'openai' ? openAiKeyAccepted(config, { signal }) : Promise.resolve(true);
@@ -121,6 +132,7 @@ export function createAgentMiddleware(config: AgentServerConfig, options: AgentM
     const allowRequest = options.allowRequest ?? sameLocalOrigin;
     const readBody = options.readBody ?? readJson;
     const verifyKey = options.verifyKey ?? defaultVerifyKey;
+    const maxConcurrent = clampConcurrency(options.maxConcurrent, DEFAULT_MAX_CONCURRENT);
     let inFlight = 0;
     return (request: IncomingMessage, response: ServerResponse, next: Next) => {
         const path = request.url?.split('?')[0];
@@ -143,14 +155,12 @@ export function createAgentMiddleware(config: AgentServerConfig, options: AgentM
                     catch { /* inconclusive: leave the configuration as it is */ }
                     finally { clearTimeout(timer); }
                 }
-                json(response, 200, { configured, provider: agentProvider(config), model: config.model });
+                json(response, 200, { configured, provider: agentProvider(config), model: config.model, missing: missingAgentSettings(config) });
             })();
             return;
         }
-        if (!agentConfigured(config)) return json(response, 503, { error: agentProvider(config) === 'bedrock'
-            ? 'Configure AWS_BEARER_TOKEN_BEDROCK, AWS_REGION, and BEDROCK_MODEL_ID on the server, or use Local demo.'
-            : 'Configure OPENAI_API_KEY and OPENAI_MODEL on the server, or use Local demo.' });
-        if (inFlight >= 2) return json(response, 429, { error: 'The drawing agent is busy. Wait for the current request to finish.' });
+        if (!agentConfigured(config)) return json(response, 503, { error: `Configure ${missingAgentSettings(config).join(', ')} on the server, or use Local demo.` });
+        if (inFlight >= maxConcurrent) return json(response, 429, { error: 'The drawing agent is busy. Wait for the current request to finish.' });
         inFlight++;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? (agentProvider(config) === 'bedrock' ? 60_000 : 30_000));

@@ -303,7 +303,7 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
     const fitAvailable = activeHighlight && context && [...activeHighlight.elementKeys].some((key) => context.locatableKeys.has(key));
     const providerName = apiStatus?.provider === 'bedrock' ? 'Amazon Bedrock' : apiStatus?.provider === 'openai' ? 'OpenAI' : 'AI service';
     const providerModel = apiStatus?.model ? `${providerName} · ${apiStatus.model}` : providerName;
-    const connectionLabel = checkingConnection ? 'Connecting to the AI service…' : mode === 'api' ? providerModel : connectionUnavailable ? 'AI service unavailable · drawing tools ready' : `${providerName} not connected · drawing tools ready`;
+    const connectionLabel = checkingConnection ? 'Connecting to the AI service…' : mode === 'api' ? providerModel : connectionUnavailable ? 'AI service unavailable · drawing tools ready' : apiStatus?.missing.length ? `${providerName} not connected · server lacks ${apiStatus.missing.join(', ')}` : `${providerName} not connected · drawing tools ready`;
     const changeMode = (next: 'api' | 'local') => {
         cancelRequest('Request canceled after changing agent mode.');
         explicitMode.current = true;
@@ -368,8 +368,8 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                     <IconButton className="agent-send" label="Send request" type="submit" disabled={!context || !draft.trim() || pending || checkingConnection}><Glyph><path d="M12 19V5M6 11l6-6 6 6" /></Glyph></IconButton>
                 </div></div>
             </form>
-            {(voiceError || listening || mode === 'api' || apiStatus?.configured || context) && (
-                <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and requested drawing data go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : 'Start with a drawing check above, or type a request.')}</p>
+            {(voiceError || listening || mode === 'api' || apiStatus?.configured || !!apiStatus?.missing.length || context) && (
+                <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and requested drawing data go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : apiStatus?.missing.length ? `AI requests are off: the server is missing ${apiStatus.missing.join(', ')}. Redeploy after adding them.` : 'Start with a drawing check above, or type a request.')}</p>
             )}
         </section>
     );
