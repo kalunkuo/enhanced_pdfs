@@ -64,6 +64,46 @@ public sealed class MarkupSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Viewer_cloud_links_every_contained_element_with_author_and_time()
+    {
+        var fixture = new FixturePdf
+        {
+            ViewerJson = FixturePdf.ViewerAnnotations(new
+            {
+                id = "c1", page = 1, kind = "cloud",
+                from = new { x = 0.0, y = 0.0 }, to = new { x = 50.0, y = 50.0 },
+                text = "upgrade these to 1 HR",
+                author = new { name = "J. Contractor" }, createdAt = "2026-11-12T10:00:00Z",
+                contained = new object[] { new { key = FixturePdf.WallKey, fully = true }, new { key = FixturePdf.DoorKey, fully = false } },
+            }),
+        };
+
+        var markup = Assert.Single(Read(fixture).Markups);
+        Assert.Equal("cloud", markup.Kind);
+        Assert.Equal("J. Contractor", markup.Author);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-12T10:00:00Z"), markup.Created);
+        Assert.Equal([new MarkupLink(FixturePdf.WallKey, "linked"), new MarkupLink(FixturePdf.DoorKey, "overlapping")], markup.Links);
+    }
+
+    [Fact]
+    public void Viewer_comment_replies_are_appended_to_the_text()
+    {
+        var fixture = new FixturePdf
+        {
+            ViewerJson = FixturePdf.ViewerAnnotations(new
+            {
+                id = "c2", page = 1, kind = "comment",
+                from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                text = "door too narrow", elementKey = FixturePdf.DoorKey, author = new { name = "A" },
+                replies = new object[] { new { id = "r1", author = new { name = "B" }, createdAt = "2026-11-13T09:00:00Z", text = "agreed, use 36in" } },
+            }),
+        };
+
+        var markup = Assert.Single(Read(fixture).Markups);
+        Assert.Equal("door too narrow\n— reply from B: agreed, use 36in", markup.Text);
+    }
+
+    [Fact]
     public void Untied_viewer_text_has_no_links()
     {
         var fixture = new FixturePdf

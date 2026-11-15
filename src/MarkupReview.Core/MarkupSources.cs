@@ -85,10 +85,18 @@ public static partial class MarkupSources
             var ys = points.Select(p => page.Box.Y1 - p.Y).ToList();
             var rect = new PdfRect(xs.Min(), ys.Min(), xs.Max(), ys.Max());
 
-            string? text = Str(a, "text");
-            var own = Str(a, "elementKey") is { } key ? new List<MarkupLink> { new(key, "linked") } : [];
+            string? text = WithReplies(Str(a, "text"), a);
+            var own = new List<MarkupLink>();
+            if (Str(a, "elementKey") is { } key) own.Add(new MarkupLink(key, "linked"));
+            // Revision clouds list what they cover; elements only partly inside are "overlapping".
+            if (a.TryGetProperty("contained", out var contained) && contained.ValueKind == JsonValueKind.Array)
+                foreach (var c in contained.EnumerateArray())
+                    if (Str(c, "key") is { } k && own.All(l => l.ElementKey != k))
+                        own.Add(new MarkupLink(k, c.TryGetProperty("fully", out var f) && f.ValueKind == JsonValueKind.False ? "overlapping" : "linked"));
+
+            string? author = a.TryGetProperty("author", out var au) && au.ValueKind == JsonValueKind.Object ? Str(au, "name") : null;
             result.Add(new Markup(Str(a, "id") ?? $"viewer-{result.Count}", pageNumber, Str(a, "kind") ?? "unknown",
-                text, null, null, rect, WithMentions(own, text, tables)));
+                text, author, ParseTime(Str(a, "createdAt")), rect, WithMentions(own, text, tables)));
         }
         return result;
     }
@@ -110,6 +118,21 @@ public static partial class MarkupSources
                     links.Add(new MarkupLink(element.ElementKey, "referenced"));
         }
         return links;
+    }
+
+    /// <summary>Comment threads: replies often carry the actual instruction ("agreed, use 36in"), so Claude reads them too.</summary>
+    private static string? WithReplies(string? text, JsonElement a)
+    {
+        if (!a.TryGetProperty("replies", out var replies) || replies.ValueKind != JsonValueKind.Array) return text;
+        var lines = new List<string>();
+        if (!string.IsNullOrEmpty(text)) lines.Add(text);
+        foreach (var r in replies.EnumerateArray())
+        {
+            if (Str(r, "text") is not { Length: > 0 } reply) continue;
+            string who = r.TryGetProperty("author", out var au) && au.ValueKind == JsonValueKind.Object ? Str(au, "name") ?? "someone" : "someone";
+            lines.Add($"— reply from {who}: {reply}");
+        }
+        return lines.Count == 0 ? null : string.Join("\n", lines);
     }
 
     private static (double X, double Y) Point(JsonElement p) => (p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble());
