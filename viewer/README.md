@@ -98,3 +98,16 @@ uv run --python 3.13 --script scripts/make-demo-pdf.py public/demo/demo-enhanced
 ```
 
 The visual system lives in `src/styles/tokens/`, `src/components/ui/`, and `docs/design-system.md`. Reusable controls are exported from `src/components/ui/index.ts`. `src/components/patterns/` contains the viewer compositions that connect those controls to PDF, Parquet, and annotation state. The former design-library test screen has been removed.
+
+## Hosted agent API (Vercel)
+
+The Vercel deployment serves the static build, and `api/agent.ts` and `api/agent/status.ts` run the same drawing agent as the local Vite server as serverless functions (`server/hostedAgent.ts`). Set the provider variables on the Vercel project for Production and Preview (Settings → Environment Variables, or from `viewer/` with the CLI after `vercel login` and `vercel link`), then redeploy:
+
+```sh
+vercel env add AGENT_PROVIDER production            # bedrock
+vercel env add AWS_REGION production                # us-east-1
+vercel env add BEDROCK_MODEL_ID production          # us.anthropic.claude-opus-5-5
+vercel env add AWS_BEARER_TOKEN_BEDROCK production  # paste the token when prompted; never commit it
+```
+
+`GET /api/agent/status` on the site reports `configured: true` once the variables are in place. The function admits browser requests from the site itself (same host, no cross-site fetches) and keeps the local API's bounded inputs, at most two concurrent requests per instance and a 60-second limit. It is still a public URL: anyone who finds it can spend the configured quota, so treat it as a demo setting and remove the variables after the event.
