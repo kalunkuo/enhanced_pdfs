@@ -86,6 +86,10 @@ export function MarkupLayer(props: MarkupLayerProps) {
         movingRef.current = next;
         setMoving(next);
     };
+    // Touch points on the page. A second finger means the stage is pinch-zooming, so the layer drops whatever
+    // the first finger started (box select, drawing, moving a note) and ignores input until every finger lifts.
+    const touches = useRef(new Set<number>());
+    const multiTouch = useRef(false);
 
     const updateDraft = (next: Draft | null) => {
         draftRef.current = next;
@@ -130,7 +134,36 @@ export function MarkupLayer(props: MarkupLayerProps) {
         return [(event.clientX - rect.left) * page.width / width, (event.clientY - rect.top) * page.height / height];
     };
 
+    const cancelGesture = () => {
+        boxPress.current = null;
+        setBox(null);
+        updateDraft(null);
+        textPress.current = null;
+        setLeaderPreview(null);
+        movePress.current = null;
+        updateMoving(null);
+        props.onDragTarget(null, { x: 0, y: 0 });
+        props.onElementLeave();
+    };
+    // Capture phase, so a finger landing on a note's handle is counted before the handle starts a move.
+    // It must not stop propagation: the stage's pinch handler listens for the same pointers.
+    const onDownCapture = (event: ReactPointerEvent<SVGSVGElement>) => {
+        if (event.pointerType !== 'touch') return;
+        touches.current.add(event.pointerId);
+        if (touches.current.size < 2) return;
+        multiTouch.current = true;
+        cancelGesture();
+    };
+    const releaseTouch = (event: ReactPointerEvent<SVGSVGElement>) => {
+        if (event.pointerType !== 'touch') return false;
+        touches.current.delete(event.pointerId);
+        if (!multiTouch.current) return false;
+        if (touches.current.size === 0) multiTouch.current = false;
+        return true;
+    };
+
     const onMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+        if (multiTouch.current) return;
         const point = toPage(event);
         const drag = movePress.current;
         if (drag) {
@@ -186,7 +219,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
     };
 
     const onDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || multiTouch.current) return;
         const point = toPage(event);
         if (isDrawingTool(tool)) {
             try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
@@ -203,7 +236,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
     };
 
     const beginMove = (event: ReactPointerEvent<SVGElement>, a: Annotation, part: 'box' | 'tip' | 'body') => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || multiTouch.current) return;
         event.stopPropagation();
         try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
         const leaderless = !hasLeader(a);
@@ -213,6 +246,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
     // Opening on click avoids the trailing pointer-down focus change closing
     // the newly mounted text editor before the user can enter anything.
     const onClick = (event: ReactMouseEvent<SVGSVGElement>) => {
+        if (multiTouch.current) return;
         const press = textPress.current;
         textPress.current = null;
         setLeaderPreview(null);
@@ -227,7 +261,8 @@ export function MarkupLayer(props: MarkupLayerProps) {
         } else if (isNoteTool(tool)) updateEditor({ kind: tool, at: toPage(event), value: '' });
     };
 
-    const onUp = () => {
+    const onUp = (event: ReactPointerEvent<SVGSVGElement>) => {
+        if (releaseTouch(event)) return;
         const press = boxPress.current;
         if (press) {
             boxPress.current = null;
@@ -274,9 +309,10 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 ref={svgRef}
                 viewBox={`0 0 ${page.width} ${page.height}`}
                 onPointerMove={onMove}
+                onPointerDownCapture={onDownCapture}
                 onPointerDown={onDown}
                 onPointerUp={onUp}
-                onPointerCancel={() => { boxPress.current = null; setBox(null); updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; updateMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
+                onPointerCancel={(event) => { releaseTouch(event); cancelGesture(); }}
                 onClick={onClick}
                 onPointerLeave={() => !draftRef.current && props.onElementLeave()}
             >

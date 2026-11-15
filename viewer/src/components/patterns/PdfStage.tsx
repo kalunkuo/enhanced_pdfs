@@ -127,7 +127,8 @@ export function PdfStage(props: Props) {
         element.addEventListener('wheel', onWheel, { passive: false });
         return () => element.removeEventListener('wheel', onWheel);
     }, []);
-    useLayoutEffect(() => {
+    // Scrolls so the anchored fraction of the page sits under the anchor's client point.
+    const applyAnchor = () => {
         const anchor = anchorRef.current;
         const element = wrapRef.current;
         const pageEl = pageRef.current;
@@ -136,7 +137,68 @@ export function PdfStage(props: Props) {
         const rect = pageEl.getBoundingClientRect();
         element.scrollLeft += rect.left + anchor.fx * rect.width - anchor.clientX;
         element.scrollTop += rect.top + anchor.fy * rect.height - anchor.clientY;
-    }, [zoom]);
+    };
+    const applyAnchorRef = useRef(applyAnchor);
+    applyAnchorRef.current = applyAnchor;
+    useLayoutEffect(applyAnchor, [zoom]);
+
+    // Two-finger touch pinch zooms around the fingers' midpoint and pans with it. The markup layer drops
+    // any box select or drawing the first finger started, so a pinch never also selects.
+    const onCancelFocusRef = useRef(props.onCancelFocus);
+    onCancelFocusRef.current = props.onCancelFocus;
+    useEffect(() => {
+        const element = wrapRef.current;
+        if (!element) return;
+        const touches = new Map<number, { x: number; y: number }>();
+        let pinch: { distance: number; zoom: number; fx: number; fy: number } | null = null;
+        const span = () => {
+            const [a, b] = [...touches.values()] as [{ x: number; y: number }, { x: number; y: number }];
+            return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) };
+        };
+        const begin = () => {
+            const pageEl = pageRef.current;
+            pinch = null;
+            if (touches.size !== 2 || !pageEl) return;
+            const { x, y, distance } = span();
+            const rect = pageEl.getBoundingClientRect();
+            pinch = { distance, zoom: zoomRef.current, fx: rect.width ? (x - rect.left) / rect.width : 0.5, fy: rect.height ? (y - rect.top) / rect.height : 0.5 };
+            panRef.current = null;
+            setPanning(false);
+            onCancelFocusRef.current?.();
+        };
+        const down = (event: PointerEvent) => {
+            if (event.pointerType !== 'touch') return;
+            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            begin();
+        };
+        const move = (event: PointerEvent) => {
+            if (!touches.has(event.pointerId)) return;
+            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            const setMode = onZoomModeRef.current;
+            if (!pinch || !setMode) return;
+            event.preventDefault();
+            const { x, y, distance } = span();
+            anchorRef.current = { clientX: x, clientY: y, fx: pinch.fx, fy: pinch.fy };
+            const next = clampZoom(pinch.zoom * distance / pinch.distance);
+            if (next === zoomRef.current) { applyAnchorRef.current(); return; }
+            zoomRef.current = next;
+            setMode({ kind: 'value', value: next });
+        };
+        const up = (event: PointerEvent) => {
+            if (!touches.delete(event.pointerId)) return;
+            begin();
+        };
+        element.addEventListener('pointerdown', down, true);
+        element.addEventListener('pointermove', move, true);
+        element.addEventListener('pointerup', up, true);
+        element.addEventListener('pointercancel', up, true);
+        return () => {
+            element.removeEventListener('pointerdown', down, true);
+            element.removeEventListener('pointermove', move, true);
+            element.removeEventListener('pointerup', up, true);
+            element.removeEventListener('pointercancel', up, true);
+        };
+    }, []);
     useEffect(() => {
         panRef.current = null;
         setPanning(false);

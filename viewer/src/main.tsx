@@ -7,6 +7,7 @@ import './components/ui/icon-button.css';
 import './components/ui/kit.css';
 import './styles/app.css';
 import './styles/review.css';
+import './styles/mobile.css';
 
 createRoot(document.getElementById('root')!).render(
     <StrictMode>

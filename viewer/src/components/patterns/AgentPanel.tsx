@@ -367,7 +367,9 @@ export function AgentPanel({ context, sessionKey, active = true, activeHighlight
                     <IconButton className="agent-send" label="Send request" type="submit" disabled={!context || !draft.trim() || pending || checkingConnection}><Glyph><path d="M12 19V5M6 11l6-6 6 6" /></Glyph></IconButton>
                 </div></div>
             </form>
-            <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and requested drawing data go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : context ? 'Start with a drawing check above, or type a request.' : 'Open an enhanced PDF to get started.')}</p>
+            {(voiceError || listening || mode === 'api' || apiStatus?.configured || context) && (
+                <p className="agent-footer" role={voiceError ? 'status' : undefined}>{voiceError ?? (listening ? 'Your browser transcribes speech. Review the text, then send.' : mode === 'api' ? `Messages and requested drawing data go to ${providerName}. Your PDF stays in your browser.` : apiStatus?.configured ? 'Built-in drawing tools · AI requests are off' : 'Start with a drawing check above, or type a request.')}</p>
+            )}
         </section>
     );
 }

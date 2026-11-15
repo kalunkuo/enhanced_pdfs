@@ -28,28 +28,33 @@ interface Props {
     account?: ReactNode;
 }
 
-/** The document bar: upload, download, print, pages, select and pan, zoom, then your profile at the far right. Laid out like Acrobat's. */
+/**
+ * The document bar: upload, download, print, pages, select and pan, zoom, clear browser data, then your profile at the far right. Laid out like Acrobat's.
+ * `docbar-optional` items are hidden on a phone in landscape (see mobile.css): print, the logo, Select (the tool rail has it), and
+ * the zoom steps (pinch and the zoom menu remain).
+ */
 export function DocBar(p: Props) {
     return (
         <div className="docbar" role="toolbar" aria-label="Document">
-            <Logo />
+            <Logo className="docbar-optional" />
             <span className="sep" />
             <IconButton label="Upload enhanced PDF" onClick={p.onUpload}><UploadIcon /></IconButton>
             <IconButton label={p.saving ? 'Saving…' : 'Download PDF with markups and review data (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><ExportIcon /></IconButton>
-            <IconButton label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
+            <IconButton className="docbar-optional" label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
             <span className="sep" />
             <IconButton label="Previous page (PageUp)" disabled={p.disabled || p.page <= 1} onClick={() => p.onPage(p.page - 1)}><PrevPageIcon /></IconButton>
             <IconButton label="Next page (PageDown)" disabled={p.disabled || p.page >= p.pageCount} onClick={() => p.onPage(p.page + 1)}><NextPageIcon /></IconButton>
             <PageInput page={p.page} pageCount={p.pageCount} disabled={p.disabled} onPage={p.onPage} />
             <span className="sep" />
-            <IconButton label="Select (V)" pressed={p.tool === 'select'} disabled={p.disabled} onClick={() => p.onTool('select')}><SelectIcon /></IconButton>
+            <IconButton className="docbar-optional" label="Select (V)" pressed={p.tool === 'select'} disabled={p.disabled} onClick={() => p.onTool('select')}><SelectIcon /></IconButton>
             <IconButton label="Pan (hand)" pressed={p.tool === 'pan'} disabled={p.disabled} onClick={() => p.onTool('pan')}><HandIcon /></IconButton>
             <span className="sep" />
-            <IconButton label="Zoom out" disabled={p.disabled} onClick={p.onZoomOut}><MinusIcon /></IconButton>
-            <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
+            <IconButton className="docbar-optional" label="Zoom out" disabled={p.disabled} onClick={p.onZoomOut}><MinusIcon /></IconButton>
+            <IconButton className="docbar-optional" label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
+            <span className="sep" />
+            <IconButton label="Clear browser memory" onClick={p.onClearData}><CloseIcon /></IconButton>
             <span className="docbar-spacer" />
-            <IconButton label="Clear browser data" onClick={p.onClearData}><CloseIcon /></IconButton>
             {p.account}
         </div>
     );

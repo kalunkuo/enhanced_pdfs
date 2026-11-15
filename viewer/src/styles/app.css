@@ -25,7 +25,8 @@ button, input { font: inherit; color: inherit; }
 @media (max-width: 860px) { .main { grid-template-columns: 1fr; grid-template-rows: 1fr 45%; } .side { min-width: 0; } }
 
 .stage-wrap { position: relative; min-height: 0; min-width: 0; display: flex; flex-direction: column; background: var(--color-canvas); }
-.stage { overflow: auto; scrollbar-gutter: stable; padding: var(--primitive-space-4) calc(var(--viewer-rail-width) + var(--primitive-space-8) + var(--primitive-space-1)) var(--primitive-space-4) var(--primitive-space-4); min-height: 0; flex: 1; position: relative; }
+.stage { overflow: auto; scrollbar-gutter: stable; padding: var(--primitive-space-4) calc(var(--viewer-rail-width) + var(--primitive-space-8) + var(--primitive-space-1)) var(--primitive-space-4) var(--primitive-space-4); min-height: 0; flex: 1; position: relative;
+    /* Browser pinch would zoom the whole app; PdfStage zooms the drawing instead. */ touch-action: pan-x pan-y; }
 .empty { display: grid; place-items: center; height: 100%; text-align: center; color: var(--color-text-muted); }
 .empty p { margin: 4px 0; }
 .empty strong { color: var(--color-text); font-weight: 600; }
