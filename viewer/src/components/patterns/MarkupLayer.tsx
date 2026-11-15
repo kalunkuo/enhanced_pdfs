@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { clampShift, cloudRect, cloudSvgPath } from '../../lib/cloud';
 import { anchorHandle, defaultBoxOrigin, hasLeader, leaderSegment, textBox } from '../../lib/callout';
+import { linkedKeys } from '../../lib/links';
 import type { Tool } from '../../lib/presentation';
 import type { Annotation, ContainedElement, PageData, Point } from '../../lib/types';
 
@@ -23,7 +24,7 @@ export interface MarkupLayerProps {
     labelFor: (elementKey: string) => string;
     onSelectAnnotation: (id: string | null) => void;
     onSelectElement: (key: string | null) => void;
-    onAddAnnotation: (annotation: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
+    onAddAnnotation: (annotation: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>) => void;
     onElementMove: (point: Point, client: { x: number; y: number }) => void;
     onElementSelect: (point: Point) => void;
     onElementLeave: () => void;
@@ -143,6 +144,12 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 props.onDragTarget(null, { x: event.clientX, y: event.clientY });
                 return;
             }
+            const moved = annotations.find((a) => a.id === drag.id);
+            if (moved && linkedKeys(moved).length > 1) {
+                // Linked to several objects: it moves without re-tying, so there is no drop target.
+                updateMoving({ id: drag.id, from, to, key: moved.elementKey ?? null });
+                return;
+            }
             const key = props.pick(to);
             updateMoving({ id: drag.id, from, to, key });
             props.onDragTarget(key, { x: event.clientX, y: event.clientY });
@@ -255,6 +262,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                     // While a text box is dragged it follows the pointer and shows the tie it would get.
                     const live = moving?.id === stored.id;
                     const annotation = live ? { ...stored, from: moving.from, to: moving.to, ...(moving.contained ? { contained: moving.contained } : {}) } : stored;
+                    const links = linkedKeys(stored);
                     const key = live ? moving.key : (stored.elementKey ?? null);
                     return (
                     <AnnotationShape
@@ -263,7 +271,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                         selected={annotation.id === props.selectedAnnotationId}
                         interactive={tool === 'select'}
                         tied={key !== null}
-                        label={key ? props.labelFor(key) : undefined}
+                        label={links.length > 1 ? `${links.length} objects` : key ? props.labelFor(key) : undefined}
                         onPart={(event, part) => beginMove(event, stored, part)}
                         onClick={() => {
                             // Object first, then the markup: the last selection decides which panel opens.

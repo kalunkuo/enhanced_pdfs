@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { formatTimeAgo } from '../../lib/comments';
 import { elementLabel } from '../../lib/elementLabel';
+import { linkedKeys } from '../../lib/links';
 import type { Profile } from '../../lib/profile';
 import { useNow } from '../../lib/useNow';
 import type { Annotation, ElementInfo } from '../../lib/types';
@@ -58,6 +59,27 @@ function CloudContents({ cloud, elements, onOpen }: { cloud: Annotation; element
     );
 }
 
+/** The objects a note is linked to when there are several, each opening that object's properties. */
+function LinkedObjects({ keys, elements, onOpen }: { keys: readonly string[]; elements: Map<string, ElementInfo>; onOpen: (key: string) => void }) {
+    return (
+        <div className="cloud-contents">
+            <h4>Linked objects ({keys.length})</h4>
+            <ul className="cloud-list">
+                {keys.map((key) => {
+                    const e = elements.get(key);
+                    return (
+                        <li key={key}>
+                            <button className="cloud-item" title="Show this object's properties" onClick={() => onOpen(key)}>
+                                <strong>{e ? elementLabel(e) : key}</strong>
+                            </button>
+                        </li>
+                    );
+                })}
+            </ul>
+        </div>
+    );
+}
+
 export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onDelete, onOpenElement }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
@@ -74,8 +96,12 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                 const e = a.elementKey ? elements.get(a.elementKey) : undefined;
                 const selected = a.id === selectedId;
                 const covered = a.contained?.length ?? 0;
+                const links = linkedKeys(a);
+                const linkList = links.length > 1 && <LinkedObjects keys={links} elements={elements} onOpen={onOpenElement} />;
                 const chip = a.kind === 'cloud'
                     ? (covered ? <span className="chip tied">covers {covered} object{covered === 1 ? '' : 's'}</span> : <span className="chip untied">no objects</span>)
+                    : links.length > 1
+                    ? <span className="chip tied">linked to {links.length} objects</span>
                     : a.elementKey
                     ? <span className="chip tied">tied to {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
@@ -84,6 +110,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                         {selected && a.kind === 'comment' ? (
                             <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onDelete={onDelete}>
                                 <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
+                                {linkList}
                             </CommentThread>
                         ) : selected ? (
                             <section className="thread adetails" aria-label={`${NAMES[a.kind]} details`}>
@@ -96,7 +123,10 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                                 {a.kind === 'cloud' ? (
                                     <CloudContents cloud={a} elements={elements} onOpen={onOpenElement} />
                                 ) : (
-                                    <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
+                                    <>
+                                        <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
+                                        {linkList}
+                                    </>
                                 )}
                             </section>
                         ) : (

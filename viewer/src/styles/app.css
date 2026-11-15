@@ -10,7 +10,6 @@ button, input { font: inherit; color: inherit; }
 .header h1 { margin: 0 var(--primitive-space-2) 0 0; }
 .header .ui-action-button, .docbar .ui-action-button { min-height: var(--toolbar-action-height); padding: 0 var(--primitive-space-3); }
 /* Pinned to the header's right edge. */
-.file-name { margin-left: auto; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
 
 /* The zoom menu trigger retains its existing behavior and uses shared control values. */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--control-gap); min-height: var(--control-height); padding: 0 var(--control-inline-padding);
@@ -89,7 +88,9 @@ button, input { font: inherit; color: inherit; }
 .prop-swatch { width: 56px; height: 56px; flex: none; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-raised); }
 .prop-title { font-weight: 600; }
 .prop-sub { color: var(--color-text-muted); word-break: break-word; }
-.prop-count { padding: 8px 16px; border-bottom: 1px solid var(--color-border); font-weight: 500; }
+.prop-count { display: flex; align-items: center; justify-content: space-between; gap: var(--primitive-space-2); padding: 8px 16px; border-bottom: 1px solid var(--color-border); font-weight: 500; }
+/* Compact action button: matches the 24px icon-button height, like the filter actions. */
+.prop-count .ui-action-button { flex: none; min-height: var(--button-icon-size); padding: 0 var(--primitive-space-2); font-size: var(--primitive-font-size-xs); }
 .group > h3 { margin: 0; padding: 6px 16px; font-size: var(--primitive-font-size-xs); font-weight: 500; letter-spacing: 0.02em; color: var(--color-text-muted);
     background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border); }
 .rows { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -121,6 +122,11 @@ button, input { font: inherit; color: inherit; }
 .search { width: calc(100% - 32px); min-height: var(--control-height); margin: var(--primitive-space-3) var(--space-panel-padding); padding: 0 var(--control-inline-padding); border-radius: var(--control-radius);
     border: var(--primitive-border-1) solid var(--control-border); background: var(--control-background); color: var(--control-text); }
 .search::placeholder { color: var(--color-text-muted); }
+
+/* File name, floating over the top-left of the page area (the tool rail takes the top-right). */
+.file-chip { position: absolute; top: var(--primitive-space-4); left: var(--primitive-space-4); z-index: 5; max-width: min(40ch, calc(100% - var(--viewer-rail-width) - 3 * var(--primitive-space-4)));
+    padding: var(--primitive-space-1) var(--primitive-space-3); background: var(--color-surface); border: var(--primitive-border-1) solid var(--color-border); border-radius: var(--radius-control); box-shadow: var(--viewer-shadow-md);
+    color: var(--color-text-muted); font-size: var(--text-label-size); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Vertical tool rail, anchored to the right edge of the page area like Acrobat's. */
 .vtoolbar { position: absolute; top: var(--primitive-space-4); right: var(--primitive-space-4); z-index: 5; width: var(--viewer-rail-width); display: flex; flex-direction: column; align-items: center;
@@ -157,7 +163,6 @@ button, input { font: inherit; color: inherit; }
 .select { flex: 1; min-width: 0; height: 36px; padding: 0 8px; border-radius: var(--radius-control); border: 1px solid var(--color-control-border);
     background: var(--color-canvas); color: var(--color-text); box-shadow: var(--viewer-shadow-xs); }
 
-.status { color: var(--color-text-muted); font-size: var(--text-label-size); }
 
 /* Document bar */
 .docbar { display: flex; align-items: center; gap: var(--toolbar-gap); padding: var(--docbar-padding-block) var(--space-panel-padding); background: var(--color-surface); border-bottom: var(--primitive-border-1) solid var(--color-border); flex-wrap: wrap; }
@@ -255,7 +260,13 @@ button, input { font: inherit; color: inherit; }
 .parameter-scope { display: inline-block; margin-left: 4px; color: var(--color-text-muted); font-size: var(--primitive-font-size-xs); opacity: .8; }
 .load-more { margin: 10px 14px; }
 .pick-status { position: absolute; left: 12px; bottom: 12px; pointer-events: none; padding: 7px 10px; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); font-size: var(--primitive-font-size-xs); box-shadow: var(--viewer-shadow-md); }
-.property-actions { padding: 10px 14px; border-bottom: 1px solid var(--color-border); }
+/* Contextual selection actions: a small rail under the selection's bottom-right corner, styled like the tool rail. */
+.selection-actions { position: absolute; z-index: 4; display: flex; gap: var(--primitive-space-1); padding: var(--toolbar-padding); background: var(--color-surface); border: var(--primitive-border-1) solid var(--color-border); border-radius: var(--radius-control); box-shadow: var(--viewer-shadow-md);
+    transform: translate(-100%, var(--primitive-space-2)); transform-origin: top right; animation: selection-actions-in var(--duration-content-reveal) var(--ease-enter); }
+.selection-actions.above { transform: translate(-100%, calc(-100% - var(--primitive-space-2))); transform-origin: bottom right; }
+@keyframes selection-actions-in { from { opacity: 0; scale: var(--menu-scale-closed); } to { opacity: 1; scale: 1; } }
+@media (prefers-reduced-motion: reduce) { .selection-actions { animation-duration: .01ms; } }
+
 .filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--primitive-space-2); }
 .filter-chips:empty { display: none; }
 /* Compact action buttons: the same 24px height as the reset icon button beside them. */

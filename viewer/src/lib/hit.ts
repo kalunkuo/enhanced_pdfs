@@ -1,5 +1,6 @@
 import type { Annotation, Point, Shape } from './types';
 import type { ElementPicker } from './presentation';
+import { withLinks } from './links';
 
 export function pointInPolygon(x: number, y: number, polygon: readonly Point[]): boolean {
     let inside = false;
@@ -76,6 +77,5 @@ export function tie<T extends Annotation>(a: T, shapes: readonly Shape[], tolera
 /** Annotation ties and drawing selection use the same picker and page coordinates. */
 export function tieWithPicker<T extends Annotation>(a: T, picker: ElementPicker, tolerance = 0): T {
     const hit = picker(anchorOf(a), tolerance)[0];
-    const { elementKey: _previous, ...rest } = a;
-    return (hit ? { ...rest, elementKey: hit.elementKey } : rest) as T;
+    return withLinks(a, hit ? [hit.elementKey] : []);
 }

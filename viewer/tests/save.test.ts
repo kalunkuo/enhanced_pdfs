@@ -68,6 +68,12 @@ describe('buildAnnotatedPdf', () => {
         expect(parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!)).toEqual(ANNOTATIONS);
     });
 
+    it('keeps a comment linked to several objects', async () => {
+        const linked: Annotation = { id: 'a9', page: 1, kind: 'comment', from: [40, 40], to: [40, 40], text: 'Same type?', elementKey: 'w1', elementKeys: ['w1', 'w2', 'w3'] };
+        const files = await attachments(await buildAnnotatedPdf(await source(), [linked], describe_));
+        expect(parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!)).toEqual([linked]);
+    });
+
     it('replaces its own earlier annotations and attachment on a second save', async () => {
         const first = await buildAnnotatedPdf(await source(), ANNOTATIONS, describe_);
         const second = await buildAnnotatedPdf(first, ANNOTATIONS.slice(0, 2), describe_);

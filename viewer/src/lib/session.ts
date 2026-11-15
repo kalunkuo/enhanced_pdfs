@@ -1,5 +1,8 @@
 import type { FilterState } from './filters';
 import { clampZoom, type ZoomMode } from './presentation';
+import { safeImage } from './comments';
+import { cleanLinks } from './links';
+import { ANNOTATION_KINDS, cleanAuthor, cleanContained, cleanReplies } from './save';
 import type { Annotation, AnnotationKind, Point } from './types';
 
 /**
@@ -20,7 +23,10 @@ export interface SessionState {
     fingerprint: string;
     page: number;
     annotations: Annotation[];
-    selectedKey: string | null;
+    /** Picked elements: one clicked element, or a multi-selection such as Select similar. */
+    selectedKeys: string[];
+    /** The selection is every element matching the filters (until something is picked). */
+    filterSelected: boolean;
     selectedAnnotationId: string | null;
     filters: FilterState;
     zoomMode: ZoomMode;
@@ -105,11 +111,12 @@ function isSessionFile(value: unknown): value is SessionFile {
     return typeof v.fingerprint === 'string' && typeof v.fileName === 'string' && v.blob instanceof Blob;
 }
 
-const KINDS = new Set<AnnotationKind>(['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature']);
+const KINDS = new Set<AnnotationKind>(ANNOTATION_KINDS);
 const TABS = new Set<SessionTab>(['agent', 'properties', 'elements', 'notes']);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isPoint = (v: unknown): v is Point => Array.isArray(v) && v.length === 2 && isNum(v[0]) && isNum(v[1]);
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+const isIsoDate = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v));
 
 function parseAnnotation(value: unknown): Annotation | null {
     if (!value || typeof value !== 'object') return null;
@@ -119,8 +126,18 @@ function parseAnnotation(value: unknown): Annotation | null {
     if (Array.isArray(v.points) && v.points.every(isPoint)) a.points = v.points.map((p) => [p[0], p[1]] as const);
     if (typeof v.color === 'string') a.color = v.color;
     if (typeof v.text === 'string') a.text = v.text;
-    if (typeof v.elementKey === 'string') a.elementKey = v.elementKey;
-    return a;
+    // Comment threads and clouds: the same checks the viewer applies to annotations read back from a saved PDF.
+    const author = cleanAuthor(v.author);
+    if (author) a.author = author;
+    if (isIsoDate(v.createdAt)) a.createdAt = v.createdAt;
+    if (isIsoDate(v.modifiedAt)) a.modifiedAt = v.modifiedAt;
+    const image = safeImage(v.image);
+    if (image) a.image = image;
+    const replies = cleanReplies(v.replies);
+    if (replies.length) a.replies = replies;
+    const contained = cleanContained(v.contained);
+    if (contained.length) a.contained = contained;
+    return cleanLinks(a, v);
 }
 
 function parseFilters(value: unknown): FilterState {
@@ -155,7 +172,9 @@ export function parseSessionState(value: unknown): SessionState | null {
         fingerprint: v.fingerprint,
         page: isNum(v.page) && v.page >= 1 ? Math.floor(v.page) : 1,
         annotations,
-        selectedKey: str(v.selectedKey),
+        // Records written before multi-selection kept one `selectedKey`.
+        selectedKeys: Array.isArray(v.selectedKeys) ? [...new Set(v.selectedKeys.filter((k): k is string => typeof k === 'string'))] : str(v.selectedKey) ? [v.selectedKey as string] : [],
+        filterSelected: v.filterSelected === true,
         selectedAnnotationId: str(v.selectedAnnotationId),
         filters: parseFilters(v.filters),
         zoomMode: parseZoomMode(v.zoomMode),

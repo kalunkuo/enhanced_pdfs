@@ -69,6 +69,8 @@
 .ccard.left { right: 10px; }
 .ccard textarea { display: block; width: 100%; resize: none; border: 0; outline: none; background: transparent; color: #18181b; font: inherit; font-size: 17px;
     padding: 16px 20px 8px; border-radius: 22px 22px 0 0; }
+.ccontext { margin: 14px 20px 0; color: #52525b; font-size: 12px; font-weight: 600; }
+.ccontext + textarea { padding-top: 6px; }
 .ccard textarea::placeholder { color: #a1a1aa; }
 .cname { display: block; width: calc(100% - 32px); margin: 12px 16px 0; height: 34px; padding: 0 10px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fff; color: #18181b; font: inherit; }
 .cproblem { margin: 0 16px 8px; color: #dc2626; font-size: 12px; }
@@ -94,8 +96,6 @@
 .ccard textarea:focus-visible, .cname:focus-visible { box-shadow: none; }
 .cname:focus-visible { border-color: var(--comment); }
 /* Right side of the navigation bar: file name, upload, profile. */
-.docbar-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.docbar-info .file-name { max-width: 28ch; }
 /* Thread in the Notes panel */
 /* An open note uses the full panel width, and is only as tall as its content. */
 .thread { padding: 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: flex; flex-direction: column; gap: 12px; min-width: 0; }

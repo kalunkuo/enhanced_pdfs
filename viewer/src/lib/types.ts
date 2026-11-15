@@ -144,6 +144,8 @@ export interface Annotation {
     replies?: Reply[];
     /** For a revision cloud: the elements it covered when it was drawn or moved, fully inside ones first. */
     contained?: ContainedElement[];
-    /** Set when the annotation is tied to an element. Absent means untied. */
+    /** Set when the annotation is tied to an element. Absent means untied. With several links, the first of `elementKeys`. */
     elementKey?: string;
+    /** Every linked element, when there are two or more (a comment on a multi-selection). Read through `linkedKeys`. */
+    elementKeys?: string[];
 }

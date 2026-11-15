@@ -9,14 +9,14 @@ export interface NativeElementOverlayProps {
     width: number;
     height: number;
     hoverKey: string | null;
-    selectedKey: string | null;
+    selectedKeys: ReadonlySet<string> | null;
     matchedKeys: ReadonlySet<string> | null;
     elementColors?: ReadonlyMap<string, string> | null;
     drawingIds?: ReadonlySet<string> | null;
 }
 
 /** Native paint emphasis is independent of base rendering and markup hit targets. */
-export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, elementColors, drawingIds = null }: NativeElementOverlayProps) {
+export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height, hoverKey, selectedKeys, matchedKeys, elementColors, drawingIds = null }: NativeElementOverlayProps) {
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = ref.current;
@@ -42,7 +42,7 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
         );
         for (const part of geometry.parts) {
             if (!matchesDrawingScope(part.drawingId, drawingIds)) continue;
-            const selected = part.elementKey === selectedKey;
+            const selected = !!selectedKeys?.has(part.elementKey);
             const hovered = part.elementKey === hoverKey;
             const agentColor = elementColors?.get(part.elementKey);
             if (!selected && !hovered && !agentColor && !matchedKeys?.has(part.elementKey)) continue;
@@ -65,6 +65,6 @@ export function NativeElementOverlay({ geometry, pageNumber, zoom, width, height
             else context.stroke(part.path);
             context.restore();
         }
-    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKey, matchedKeys, elementColors, drawingIds]);
+    }, [geometry, pageNumber, zoom, width, height, hoverKey, selectedKeys, matchedKeys, elementColors, drawingIds]);
     return <canvas ref={ref} aria-hidden="true" style={{ pointerEvents: 'none' }} />;
 }

@@ -8,6 +8,7 @@ import { ElementOverlay } from './ElementOverlay';
 import { MarkupLayer } from './MarkupLayer';
 import { PdfCanvas } from './PdfCanvas';
 import { NativeElementOverlay } from './NativeElementOverlay';
+import { SelectionActions } from './SelectionActions';
 import type { NativeGeometry } from '../../lib/nativeGeometry';
 import { collectFocusBounds, fitBounds, getFocusScrollOffset, type FocusRequest } from '../../lib/navigation';
 
@@ -21,7 +22,8 @@ interface Props {
     hideEmbeddedAnnotations: boolean;
     tool: Tool;
     hoverKey: string | null;
-    selectedKey: string | null;
+    /** Elements drawn as selected: a clicked element, or every filter match. */
+    selectedKeys: ReadonlySet<string> | null;
     annotations: Annotation[];
     selectedAnnotationId: string | null;
     highlightColor: string;
@@ -30,7 +32,7 @@ interface Props {
     onHover: (key: string | null, at: { x: number; y: number }) => void;
     onSelectElement: (key: string | null) => void;
     onSelectAnnotation: (id: string | null) => void;
-    onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => void;
+    onAddAnnotation: (a: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>) => void;
     /** Comment threads drawn over the page. `comments`, `page` and `zoom` come from the stage. */
     commentLayer: Omit<CommentLayerProps, 'page' | 'zoom' | 'comments' | 'pick'>;
     /** The comment tool was clicked at a page point. */
@@ -51,6 +53,12 @@ interface Props {
     onZoomMode?: (mode: ZoomMode) => void;
     onFocusComplete?: (request: FocusRequest, located: boolean) => void;
     onCancelFocus?: () => void;
+    /** Contextual actions on the element selection, shown on its corner in the select tool. */
+    selectionActions?: {
+        onSelectSimilar: () => void;
+        /** Start a comment linked to the whole selection, its pin at `at` (page coordinates). */
+        onComment: (at: Point) => void;
+    };
 }
 
 const PAD_X = 104;
@@ -166,6 +174,14 @@ export function PdfStage(props: Props) {
         props.onFocusComplete?.(request, true);
     }, [props.focusRequest, props.geometry, props.onZoomMode, props.onFocusComplete, page, size, zoom]);
 
+    // Page-space bounds of the selection on this page, for pinning the selection bar to its corner.
+    const selectionBounds = useMemo(() => {
+        if (!props.selectedKeys?.size) return undefined;
+        const raw = collectFocusBounds(props.geometry?.parts ?? [], page.shapes, props.selectedKeys, props.drawingIds ?? null);
+        return raw && [Math.max(0, raw[0]), Math.max(0, raw[1]), Math.min(page.width, raw[2]), Math.min(page.height, raw[3])] as const;
+    }, [props.selectedKeys, props.geometry, props.drawingIds, page]);
+    const showSelectionActions = !!props.selectionActions && !!selectionBounds && tool === 'select' && !props.commentLayer.composerAt;
+
     const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
         if (tool !== 'pan' || event.button !== 0 || !wrapRef.current) return;
         props.onCancelFocus?.();
@@ -204,7 +220,7 @@ export function PdfStage(props: Props) {
                     hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
-                    hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    hoverKey={props.hoverKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
                     selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
@@ -229,9 +245,14 @@ export function PdfStage(props: Props) {
                     onMoveAnnotation={props.onMoveAnnotation}
                     coverOf={props.coverOf}
                 >
-                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
+                {showSelectionActions && selectionBounds && (
+                    <SelectionActions bounds={selectionBounds} zoom={zoom} pageWidth={page.width} pageHeight={page.height} count={props.selectedKeys!.size}
+                        onSelectSimilar={props.selectionActions!.onSelectSimilar}
+                        onComment={() => props.selectionActions!.onComment([selectionBounds[2], selectionBounds[1]])} />
+                )}
                 {pickNotice && <div className="pick-status" role="status">{pickNotice}</div>}
             </div>
         </div>

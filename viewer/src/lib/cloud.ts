@@ -119,7 +119,7 @@ export function elementsInCloud(a: Pick<Annotation, 'from' | 'to'>, sources: rea
 /** Record what a cloud covers, and tie it to the first covered element (or untie it when it covers nothing). */
 export function tieCloud<T extends Annotation>(a: T, sources: readonly BoundsSource[]): T {
     const contained = elementsInCloud(a, sources);
-    const { elementKey: _previous, contained: _old, ...rest } = a;
+    const { elementKey: _previous, elementKeys: _links, contained: _old, ...rest } = a;
     return { ...rest, ...(contained.length ? { elementKey: contained[0]!.key, contained } : {}) } as T;
 }
 

@@ -56,7 +56,7 @@ Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` a
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
 - `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook. It renders a full-page base raster capped at ~4 MP (this is the capture render, so its scale stops changing once zoom passes the cap), plus a full-resolution detail tile covering only the visible area and 10% margin, re-rendered after scroll/zoom settles. Do not go back to rasterizing the whole page at zoom × DPR.
-- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
+- `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. Selection is a set: one picked element, several (Select similar, or a note linked to several objects), or every filter match (filtering selects all matches until something is picked). `PropertiesPanel` merges the selection's parameters via `src/lib/selection.ts`, showing shared values and "Varies" otherwise. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
 - Drawing/view filters use stable `DrawingId` membership. Apply the same scope to picking, highlights, coverage, appearance counts, and focus bounds; never borrow an element's plan ink to locate its schedule membership.
 - `navigation.ts` fits existing page-space bounds. `PdfStage` applies a focus request after zoom layout, at most once per request. Preserve padding/centering, exclude DPR from scroll math, and cancel stale requests when the user changes context or navigates manually.
 - `MarkupLayer` owns annotation rendering, draft/editor state, and creation gestures. It forwards select-mode page gestures to the shared picker.
@@ -66,6 +66,10 @@ Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` a
 ## Annotations and object IDs
 
 Every annotation carries an optional `elementKey` (the object ID). It is set automatically from the element under the annotation's anchor point, and can be changed or cleared in the Notes tab ("Object ID" select).
+
+An annotation can link to several objects: `elementKeys` lists them all, and `elementKey` stays equal to its first entry so single-tie readers keep working. Read links through `linkedKeys` and write them through `withLinks` (`src/lib/links.ts`). A note linked to several objects keeps its links when it is dragged; re-tying it to one object in the Notes tab replaces them. Revision clouds keep their own `contained` list.
+
+With elements selected in the select tool, `SelectionActions` pins a small bar under the selection's bottom-right corner (above the top-right corner near the page bottom; comment pins use the top edge). **Select similar** adds every element on this page and drawing scope that shares a type (`typeIdentity` in `src/lib/selection.ts`: the exported `TypeKey`, else category + family + type). **Comment** opens the composer at the selection's top-right corner, and the comment links to every selected element.
 
 ## Session recovery
 

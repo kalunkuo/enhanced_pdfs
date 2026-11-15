@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-export type IconName = 'open' | 'search' | 'select' | 'pan' | 'annotate' | 'layers' | 'more' | 'left' | 'right' | 'plus' | 'minus' | 'check' | 'info' | 'warning' | 'error' | 'close' | 'copy' | 'home' | 'database' | 'geometry' | 'help' | 'chevronDown' | 'document' | 'reset';
+export type IconName = 'open' | 'search' | 'select' | 'pan' | 'annotate' | 'layers' | 'more' | 'left' | 'right' | 'plus' | 'minus' | 'check' | 'info' | 'warning' | 'error' | 'close' | 'copy' | 'home' | 'database' | 'geometry' | 'help' | 'chevronDown' | 'document' | 'reset' | 'upload' | 'export';
 
 const artwork: Record<IconName, ReactNode> = {
   open: <><path d="M3 7.5V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" /><path d="M3 9h18l-2 11H5L3 9Z" /></>,
@@ -26,7 +26,9 @@ const artwork: Record<IconName, ReactNode> = {
   help: <><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.7 1.5-1.7 3M12 17h.01" /></>,
   chevronDown: <path d="m7 10 5 5 5-5" />,
   document: <><path d="M6 3h9l3 3v15H6zM15 3v4h4M9 12h6M9 16h6" /></>,
-  reset: <path d="M4 11a8 8 0 1 1 2 6M4 5v6h6" />
+  reset: <path d="M4 11a8 8 0 1 1 2 6M4 5v6h6" />,
+  upload: <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />,
+  export: <><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v6H4V6h6" /></>
 };
 
 export function Icon({ name, size = 16, ...props }: SVGProps<SVGSVGElement> & { name: IconName; size?: number }) {

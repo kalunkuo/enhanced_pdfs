@@ -2,6 +2,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFStrin
 import { calloutBounds, leaderSegment, textBox } from './callout';
 import { cloudPolyline, cloudRect } from './cloud';
 import { initials, pdfDate, safeImage } from './comments';
+import { cleanLinks } from './links';
 import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
@@ -14,7 +15,7 @@ import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from 
 export const ANNOTATIONS_FILE = 'annotations.json';
 const NAME_PREFIX = 'ep-';
 const AUTHOR = 'Enhanced PDF Viewer';
-const KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
+export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['line', 'rect', 'ellipse', 'pen', 'highlight', 'text', 'comment', 'signature', 'cloud'];
 
 type Rgb = readonly [number, number, number];
 const TIED: Rgb = [0.937, 0.267, 0.267];
@@ -43,7 +44,7 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
     const isPoint = (p: unknown): p is Point => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
     return list
         .filter((a): a is Annotation =>
-            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
+            typeof a?.id === 'string' && Number.isInteger(a.page) && a.page >= 1 && ANNOTATION_KINDS.includes(a.kind) && isPoint(a.from) && isPoint(a.to) &&
             (a.points === undefined || (Array.isArray(a.points) && a.points.every(isPoint))),
         )
         .map(cleanComment);
@@ -53,14 +54,14 @@ export function parseAnnotations(bytes: Uint8Array): Annotation[] {
 const MAX_REPLIES = 500;
 const MAX_TEXT = 10_000;
 
-function cleanAuthor(author: unknown): { name: string; photo?: string } | undefined {
+export function cleanAuthor(author: unknown): { name: string; photo?: string } | undefined {
     const a = author as { name?: unknown; photo?: unknown } | undefined;
     const name = typeof a?.name === 'string' ? a.name.trim().slice(0, 80) : '';
     const photo = safeImage(a?.photo);
     return name ? { name, ...(photo ? { photo } : {}) } : undefined;
 }
 
-function cleanReplies(value: unknown): Reply[] {
+export function cleanReplies(value: unknown): Reply[] {
     if (!Array.isArray(value)) return [];
     const out: Reply[] = [];
     for (const r of value.slice(0, MAX_REPLIES) as Record<string, unknown>[]) {
@@ -73,7 +74,7 @@ function cleanReplies(value: unknown): Reply[] {
     return out;
 }
 
-function cleanContained(value: unknown): ContainedElement[] {
+export function cleanContained(value: unknown): ContainedElement[] {
     if (!Array.isArray(value)) return [];
     return (value.slice(0, MAX_REPLIES) as Record<string, unknown>[])
         .filter((c) => typeof c?.key === 'string' && c.key.length > 0 && c.key.length <= 200 && typeof c.fully === 'boolean')
@@ -81,21 +82,21 @@ function cleanContained(value: unknown): ContainedElement[] {
 }
 
 function cleanComment(a: Annotation): Annotation {
-    const { author, createdAt, image, replies, contained, ...rest } = a as Annotation & Record<string, unknown>;
+    const { author, createdAt, image, replies, contained, elementKey, elementKeys, ...rest } = a as Annotation & Record<string, unknown>;
     const cleanedContained = cleanContained(contained);
     const cleanedReplies = cleanReplies(replies);
     const name = typeof author?.name === 'string' ? author.name.trim().slice(0, 80) : '';
     const photo = safeImage(author?.photo);
     const when = typeof createdAt === 'string' && Number.isFinite(Date.parse(createdAt)) ? createdAt : undefined;
     const picture = safeImage(image);
-    return {
+    return cleanLinks({
         ...rest,
         ...(name ? { author: { name, ...(photo ? { photo } : {}) } } : {}),
         ...(when ? { createdAt: when } : {}),
         ...(picture ? { image: picture } : {}),
         ...(cleanedReplies.length ? { replies: cleanedReplies } : {}),
         ...(cleanedContained.length ? { contained: cleanedContained } : {}),
-    } as Annotation;
+    } as Annotation, { elementKey, elementKeys });
 }
 
 /** Side of the comment teardrop, in page points. Its tip is the comment's anchor point. */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { avatarColor, initials } from '../../lib/comments';
+import { linkedKeys } from '../../lib/links';
 import type { Profile } from '../../lib/profile';
 import type { Annotation, PageData, Point } from '../../lib/types';
 
@@ -11,13 +12,15 @@ export interface CommentLayerProps {
     selectedId: string | null;
     /** Where a new comment is being written, if any. */
     composerAt: Point | null;
+    /** What the new comment will be linked to, shown above its text ("On 3 objects"). */
+    composerContext?: string | null;
     profile: Profile;
     onProfile: (profile: Profile) => void;
     labelFor: (elementKey: string) => string;
     /** The element under a page point, or null for empty paper. Decides tied or untied while dragging. */
     pick: (point: Point) => string | null;
     onSelect: (id: string | null) => void;
-    /** A pin was dropped at `at`; the caller re-ties it to whatever is there. */
+    /** A pin was dropped at `at`; the caller re-ties it to whatever is there (a pin linked to several objects keeps them). */
     onMove: (id: string, at: Point) => void;
     /** The element a dragged pin is over, for highlighting. */
     onDragTarget: (key: string | null, client: { x: number; y: number }) => void;
@@ -49,7 +52,7 @@ interface Drag {
 export function CommentLayer(props: CommentLayerProps) {
     const { page, zoom } = props;
     const [drag, setDrag] = useState<Drag | null>(null);
-    const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean } | null>(null);
+    const press = useRef<{ id: string; x: number; y: number; start: Point; moved: boolean; linked: boolean } | null>(null);
     // The drop reads this ref, not `drag`: a quick flick can release before React re-renders the last move.
     const dragRef = useRef<Drag | null>(null);
     const updateDrag = (next: Drag | null) => {
@@ -74,7 +77,8 @@ export function CommentLayer(props: CommentLayerProps) {
         if (event.button !== 0) return;
         event.stopPropagation();
         try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* the pointer ended already; the drag still works from move events */ }
-        press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false };
+        // A pin linked to several objects moves without re-tying, so it has no drop target.
+        press.current = { id: comment.id, x: event.clientX, y: event.clientY, start: comment.from, moved: false, linked: linkedKeys(comment).length > 1 };
     };
     const move = (event: ReactPointerEvent<HTMLDivElement>) => {
         const p = press.current;
@@ -84,9 +88,9 @@ export function CommentLayer(props: CommentLayerProps) {
         if (!p.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
         p.moved = true;
         const at: Point = [clamp(p.start[0] + dx / zoom, page.width), clamp(p.start[1] + dy / zoom, page.height)];
-        const key = props.pick(at);
+        const key = p.linked ? null : props.pick(at);
         updateDrag({ id: p.id, at, key });
-        props.onDragTarget(key, { x: event.clientX, y: event.clientY });
+        if (!p.linked) props.onDragTarget(key, { x: event.clientX, y: event.clientY });
     };
     const end = (event: ReactPointerEvent<HTMLDivElement>) => {
         const p = press.current;
@@ -111,7 +115,9 @@ export function CommentLayer(props: CommentLayerProps) {
             {props.comments.map((comment) => {
                 const dragging = drag?.id === comment.id;
                 const at = dragging ? drag.at : comment.from;
-                const key = dragging ? drag.key : (comment.elementKey ?? null);
+                const links = linkedKeys(comment);
+                const key = dragging && links.length <= 1 ? drag.key : (links[0] ?? null);
+                const label = links.length > 1 ? `${links.length} objects` : key ? props.labelFor(key) : 'No object';
                 const name = comment.author?.name ?? 'Unknown';
                 const selected = comment.id === props.selectedId;
                 const flip = at[0] * zoom + PILL_ROOM > page.width * zoom;
@@ -122,7 +128,7 @@ export function CommentLayer(props: CommentLayerProps) {
                         style={{ left: at[0] * zoom, top: at[1] * zoom, '--pin': avatarColor(name) } as CSSProperties}
                         role="button"
                         tabIndex={0}
-                        aria-label={`Comment by ${name}${key ? `, on ${props.labelFor(key)}` : ', not tied to an object'}. Drag to move.`}
+                        aria-label={`Comment by ${name}${key ? `, on ${label}` : ', not tied to an object'}. Drag to move.`}
                         aria-pressed={selected}
                         onPointerDown={(e) => begin(e, comment)}
                         onPointerMove={move}
@@ -134,7 +140,7 @@ export function CommentLayer(props: CommentLayerProps) {
                             {comment.author?.photo ? <img src={comment.author.photo} alt="" draggable={false} /> : initials(name)}
                         </span>
                         <span className="cpill" aria-hidden="true">
-                            <strong>{key ? props.labelFor(key) : 'No object'}</strong>
+                            <strong>{label}</strong>
                             <span className="cpill-msg">{comment.text}</span>
                         </span>
                     </div>
@@ -145,7 +151,7 @@ export function CommentLayer(props: CommentLayerProps) {
     );
 }
 
-function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at: Point; flip: boolean } & CommentLayerProps) {
+function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel, composerContext }: { at: Point; flip: boolean } & CommentLayerProps) {
     const [text, setText] = useState('');
     const [name, setName] = useState(profile.name);
     const [emojiOpen, setEmojiOpen] = useState(false);
@@ -184,6 +190,7 @@ function Composer({ at, flip, zoom, profile, onProfile, onSend, onCancel }: { at
                 {needsName && (
                     <input className="cname" placeholder="Your name" aria-label="Your name" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={onKeyDown} />
                 )}
+                {composerContext && <p className="ccontext">{composerContext}</p>}
                 <textarea ref={area} autoFocus rows={3} placeholder="Add a comment…" aria-label="Comment" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown} />
                 <div className="cbar">
                     <div className="cemoji-wrap">

@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { groupParameters } from '../../lib/groups';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
-import type { ElementInfo, EnhancedPdf, ParameterInfo } from '../../lib/types';
+import { categoryCounts, combineParameters, identityParameters, type CombinedParameter } from '../../lib/selection';
+import type { ElementInfo, EnhancedPdf } from '../../lib/types';
 import { Button } from '../ui/Button';
 
 const isBool = (v: string) => v === 'Yes' || v === 'No';
@@ -15,45 +17,67 @@ function Wall() {
     );
 }
 
-export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }: { doc: EnhancedPdf; element: ElementInfo | undefined; hasShapes: boolean; location?: LocationStatus; onLocate?: (key: string) => void }) {
+const LOCATABLE: readonly (LocationStatus | undefined)[] = ['ready', 'partial', 'legacy'];
+
+export interface PropertiesPanelProps {
+    doc: EnhancedPdf;
+    /** Every selected element: one clicked element, or all filter matches. */
+    elements: readonly ElementInfo[];
+    hasShapes: boolean;
+    locations?: ReadonlyMap<string, LocationStatus>;
+    onLocate?: (key: string) => void;
+    /** Fits the view to the selected elements on the current page. */
+    onFitSelection?: () => void;
+}
+
+export function PropertiesPanel({ doc, elements, hasShapes, locations, onLocate, onFitSelection }: PropertiesPanelProps) {
+    const groups = useMemo<[string, CombinedParameter[]][]>(() => {
+        if (!elements.length) return [];
+        const identity = combineParameters(elements.map(identityParameters));
+        const exported = combineParameters(elements.map((element) => [
+            ...(doc.parameters.get(element.key) ?? []),
+            ...((element.typeKey && doc.parameters.get(element.typeKey)) || []),
+        ]));
+        return [['Identity Data', identity], ...groupParameters(exported)];
+    }, [doc, elements]);
+    const counts = useMemo(() => categoryCounts(elements), [elements]);
+    const element = elements[0];
     if (!element) {
         return (
             <div className="panel-empty">
                 {hasShapes
-                    ? 'Hover over the drawing to preview an element. Click one to see all of its parameters.'
+                    ? 'Hover over the drawing to preview an element. Click one, or filter in the Elements tab, to see parameters.'
                     : 'Pick an element from the Elements tab to see its parameters.'}
             </div>
         );
     }
-    const own = doc.parameters.get(element.key) ?? [];
-    const type = (element.typeKey && doc.parameters.get(element.typeKey)) || [];
-    const identity: ParameterInfo[] = [
-        { name: 'Element ID', scope: 'Instance', value: element.elementIdText ?? String(element.elementId) },
-        { name: 'Category', scope: 'Instance', value: element.category },
-        ...(element.family ? [{ name: 'Family', scope: 'Type' as const, value: element.family }] : []),
-        ...(element.type ? [{ name: 'Type', scope: 'Type' as const, value: element.type }] : []),
-        ...(element.level ? [{ name: 'Level', scope: 'Instance' as const, value: element.level }] : []),
-        ...(element.model ? [{ name: 'Model', scope: 'Instance' as const, value: element.model }] : []),
-        ...(element.modelKey ? [{ name: 'Model key', scope: 'Instance' as const, value: element.modelKey }] : []),
-        ...(element.linkInstanceId ? [{ name: 'Link instance', scope: 'Instance' as const, value: element.linkInstanceId }] : []),
-        ...(element.fireRating ? [{ name: 'Fire Rating', scope: element.fireRatingSource === 'Type' ? 'Type' as const : 'Instance' as const, value: element.fireRating }] : []),
-        ...(element.fireRatingSource ? [{ name: 'Fire Rating source', scope: element.fireRatingSource === 'Type' ? 'Type' as const : 'Instance' as const, value: element.fireRatingSource }] : []),
-    ];
-    const groups: [string, ParameterInfo[]][] = [['Identity Data', identity], ...groupParameters([...own, ...type])];
+    const single = elements.length === 1;
+    const location = single ? locations?.get(element.key) : undefined;
+    const locatable = single ? LOCATABLE.includes(location) : elements.some((e) => LOCATABLE.includes(locations?.get(e.key)));
+    const shared = (pick: (e: ElementInfo) => string | undefined) => {
+        const value = pick(element);
+        return elements.every((e) => pick(e) === value) ? value : undefined;
+    };
+    const title = single ? element.family ?? element.category : shared((e) => e.family) ?? (counts.length === 1 ? element.category : 'Multiple categories');
+    const subtitle = single ? element.type ?? element.name : shared((e) => e.type) ?? `${elements.length} elements selected`;
     return (
         <>
             {location && <div className={`location-status property-location location-${location}`}>{LOCATION_LABELS[location]}</div>}
-            {onLocate && <div className="property-actions"><Button disabled={!location || !['ready', 'partial', 'legacy'].includes(location)} onClick={() => onLocate(element.key)}>Locate on drawing</Button></div>}
-            {element.placeholder && <div className="notice">Placeholder data. Revit values will replace this.</div>}
+            {elements.some((e) => e.placeholder) && <div className="notice">Placeholder data. Revit values will replace this.</div>}
             <div className="prop-head">
                 <Wall />
                 <div>
-                    <div className="prop-title">{element.family ?? element.category}</div>
-                    <div className="prop-sub">{element.type ?? element.name}</div>
+                    <div className="prop-title">{title}</div>
+                    <div className="prop-sub">{subtitle}</div>
                 </div>
             </div>
-            <div className="prop-count">{element.category} (1)</div>
-            <p className="parameter-scope-note">Parameters retain their instance or type source.</p>
+            <div className="prop-count">
+                <span>{counts.map(([category, count]) => `${category} (${count})`).join(', ')}</span>
+                {single
+                    ? onLocate && <Button disabled={!locatable} onClick={() => onLocate(element.key)}>Locate on drawing</Button>
+                    : onFitSelection && <Button disabled={!locatable} onClick={onFitSelection}>Fit selection</Button>}
+            </div>
+            <p className="parameter-scope-note">{single ? 'Parameters retain their instance or type source.' : 'Values shared by every selected element are shown; others vary.'}</p>
             {groups.map(([group, params]) => (
                 <section className="group" key={group}>
                     <h3>{group}</h3>
@@ -68,11 +92,11 @@ export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }:
     );
 }
 
-function Row({ p }: { p: ParameterInfo }) {
+function Row({ p }: { p: CombinedParameter }) {
     return (
         <>
             <div className="k">{p.name} <span className="parameter-scope">{p.scope}</span></div>
-            <div>{isBool(p.value) ? <span className={`check ${p.value === 'Yes' ? 'on' : ''}`}>{p.value === 'Yes' ? '✓' : ''}</span> : p.value || <span className="muted">—</span>}</div>
+            <div>{p.varies ? <span className="muted">Varies</span> : isBool(p.value) ? <span className={`check ${p.value === 'Yes' ? 'on' : ''}`}>{p.value === 'Yes' ? '✓' : ''}</span> : p.value || <span className="muted">—</span>}</div>
         </>
     );
 }

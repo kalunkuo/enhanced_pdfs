@@ -25,8 +25,10 @@ import { buildAnnotatedPdf } from './lib/save';
 import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
+import { linkedKeys, withLinks } from './lib/links';
+import { similarElementKeys } from './lib/selection';
 import { useProfile } from './lib/profile';
-import type { Annotation, EnhancedPdf, PageData, Point, Reply } from './lib/types';
+import type { Annotation, ElementInfo, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 import type { AgentContext, AgentHighlight, DrawingComment } from './lib/drawingAgent';
 import { readPdfComments, viewerComments } from './lib/drawingComments';
 
@@ -58,13 +60,14 @@ export function App() {
     const [page, setPage] = useState(1);
     const [pageData, setPageData] = useState<PageData | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [status, setStatus] = useState<string | null>(null);
+    const [persistWarning, setPersistWarning] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [loading, setLoading] = useState<Loading | null>(null);
     const awaitingFirstPage = useRef<EnhancedPdf | null>(null);
     const [tool, setTool] = useState<Tool>('select');
     const [profile, setProfile] = useProfile();
-    const [composerAt, setComposerAt] = useState<Point | null>(null);
+    // A comment being written: where its pin goes, and the objects it links to when written from the selection bar.
+    const [composer, setComposer] = useState<{ at: Point; links?: readonly string[] } | null>(null);
     const [drawKind, setDrawKind] = useState<DrawKind>('pen');
     const [highlightColor, setHighlightColor] = useState<string>(HIGHLIGHT_COLORS[0].value);
     const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: 'fit-width' });
@@ -76,7 +79,13 @@ export function App() {
     const [commentsStatus, setCommentsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
     const [selectedPdfComment, setSelectedPdfComment] = useState<DrawingComment | null>(null);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
-    const [selectedKey, setSelectedKey] = useState<string | null>(null);
+    // Picked elements: one clicked element, or several (Select similar, a note linked to several objects).
+    const [pickedKeys, setPickedKeys] = useState<readonly string[]>([]);
+    const selectedKey = pickedKeys.length === 1 ? pickedKeys[0]! : null;
+    // Filtering selects every match until something is picked; picking anything replaces it.
+    const [filterSelected, setFilterSelected] = useState(false);
+    const setSelectedKeys = useCallback((keys: readonly string[]) => { setPickedKeys([...new Set(keys)]); setFilterSelected(false); }, []);
+    const setSelectedKey = useCallback((key: string | null) => setSelectedKeys(key ? [key] : []), [setSelectedKeys]);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
     const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
@@ -140,7 +149,9 @@ export function App() {
             setFilters(state?.filters ?? EMPTY_FILTERS);
             setFocusRequest(null);
             setAnnotations(annotations);
-            setSelectedKey(state?.selectedKey && next.elements.has(state.selectedKey) ? state.selectedKey : null);
+            const remembered = (state?.selectedKeys ?? []).filter((key) => next.elements.has(key));
+            setPickedKeys(remembered);
+            setFilterSelected(!!state?.filterSelected && !remembered.length);
             setSelectedAnnotationId(state?.selectedAnnotationId && annotations.some((a) => a.id === state.selectedAnnotationId) ? state.selectedAnnotationId : null);
             setHover(null);
             setZoomMode(state?.zoomMode ?? { kind: 'fit-width' });
@@ -151,10 +162,7 @@ export function App() {
             setSelectedPdfComment(null);
             if (state?.drawKind && DRAW_KINDS.has(state.drawKind)) setDrawKind(state.drawKind as DrawKind);
             if (state?.highlightColor && HIGHLIGHT_COLORS.some((c) => c.value === state.highlightColor)) setHighlightColor(state.highlightColor);
-            setStatus(
-                rememberFailure ? `This drawing will not be kept after a reload: ${rememberFailure}`
-                : !restore && next.savedAnnotations.length ? `Restored ${next.savedAnnotations.length} saved annotations` : null,
-            );
+            setPersistWarning(rememberFailure ? `This drawing will not be kept after a reload: ${rememberFailure}` : null);
         } catch (e) {
             if (request === openRequest.current) {
                 setLoading(null);
@@ -187,8 +195,8 @@ export function App() {
     }, [open]);
 
     const sessionState = useMemo<SessionState | null>(() => sessionId ? {
-        version: SESSION_VERSION, fingerprint: sessionId, page, annotations, selectedKey, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor,
-    } : null, [sessionId, page, annotations, selectedKey, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor]);
+        version: SESSION_VERSION, fingerprint: sessionId, page, annotations, selectedKeys: [...pickedKeys], filterSelected, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor,
+    } : null, [sessionId, page, annotations, pickedKeys, filterSelected, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor]);
     const pendingState = useRef<SessionState | null>(null);
     const persistWarned = useRef(false);
     const flushState = useCallback(() => {
@@ -198,7 +206,7 @@ export function App() {
         saveSessionState(state).catch((e) => {
             if (persistWarned.current) return;
             persistWarned.current = true;
-            setStatus(`Changes will not be kept after a reload: ${errorText(e)}`);
+            setPersistWarning(`Changes will not be kept after a reload: ${errorText(e)}`);
         });
     }, []);
     useEffect(() => {
@@ -259,7 +267,7 @@ export function App() {
             setPageData(null);
             setNativeGeometry(null);
             setHover(null);
-            setSelectedKey(null);
+            setPickedKeys([]);
             setSelectedAnnotationId(null);
             setAgentHighlight(null);
             setSelectedPdfComment(null);
@@ -279,14 +287,16 @@ export function App() {
 
     const describeTie = useCallback(
         (a: Annotation) => {
-            if (a.kind === 'cloud') {
-                const names = (a.contained ?? []).map((c) => {
-                    const el = doc?.elements.get(c.key);
-                    return el ? elementLabel(el) : c.key;
+            const list = (keys: readonly string[]) => {
+                const names = keys.map((key) => {
+                    const el = doc?.elements.get(key);
+                    return el ? elementLabel(el) : key;
                 });
-                if (!names.length) return 'Untied: covers no objects';
-                return `Covers ${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
-            }
+                return `${names.length} object${names.length === 1 ? '' : 's'}: ${names.slice(0, 8).join(', ')}${names.length > 8 ? `, and ${names.length - 8} more` : ''}`;
+            };
+            if (a.kind === 'cloud') return a.contained?.length ? `Covers ${list(a.contained.map((c) => c.key))}` : 'Untied: covers no objects';
+            const links = linkedKeys(a);
+            if (links.length > 1) return `Linked to ${list(links)}`;
             const e = a.elementKey ? doc?.elements.get(a.elementKey) : undefined;
             return e ? `Tied to ${elementLabel(e)}` : a.elementKey ? `Tied to ${a.elementKey}` : 'Untied';
         },
@@ -297,7 +307,7 @@ export function App() {
         setFocusRequest(null);
         setSelectedKey(key);
         setSelectedPdfComment(null);
-        setComposerAt(null);
+        setComposer(null);
         if (key) {
             setTab('properties');
             const drawingIds = new Set(doc?.appearances?.filter((appearance) => appearance.elementKey === key).map((appearance) => appearance.drawingId));
@@ -308,13 +318,14 @@ export function App() {
             // Properties is empty with nothing selected and no filters, so fall back to the agent.
             setTab((current) => (current === 'properties' ? 'agent' : current));
         }
-    }, [doc, page, drawingScope, filters]);
+    }, [doc, page, drawingScope, filters, setSelectedKey]);
 
     const onHover = useCallback((key: string | null, at: { x: number; y: number }) => {
         setHover((h) => (key ? { key, ...at } : h === null ? h : null));
     }, []);
 
-    const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'page'>) => {
+    /** `links` ties the annotation to those objects instead of to the object under its anchor. */
+    const addAnnotation = (a: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>, links?: readonly string[]) => {
         if (!pageData) return;
         const draft: Annotation = withAuthorship(
             { ...a, page: pageData.number, id: `a${nextId.current++}`, ...(a.kind === 'highlight' ? { color: highlightColor } : {}) },
@@ -322,35 +333,36 @@ export function App() {
             new Date().toISOString(),
         );
         // A cloud ties to what it covers; everything else ties to the object under its anchor.
-        const tied = draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
+        const tied = links?.length ? withLinks(draft, links) : draft.kind === 'cloud' ? tieCloud(draft, regionSources) : tieWithPicker(draft, pickElement, 4 / zoom);
         setAnnotations((list) => [...list, tied]);
         setSelectedAnnotationId(tied.id);
-        setSelectedKey(tied.elementKey ?? null);
+        setSelectedKeys(linkedKeys(tied));
         setTab('notes');
         setTool('select');
     };
 
     // A comment being written belongs to the comment tool and to one page.
     useEffect(() => {
-        setComposerAt(null);
+        setComposer(null);
     }, [tool, pageData?.number]);
 
     const sendComment = (c: { text: string; at: Point; name: string }) => {
         addAnnotation({
             kind: 'comment', from: c.at, to: c.at, text: c.text, createdAt: new Date().toISOString(),
             author: { name: c.name, ...(profile.photo ? { photo: profile.photo } : {}) },
-        });
-        setComposerAt(null);
+        }, composer?.links);
+        setComposer(null);
     };
 
     // Dropping a pin ties it to whatever is under its tip, or unties it on empty paper.
+    // A note linked to several objects keeps its links: they came from a selection, not from where it sits.
     const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
         const moved = annotations.find((a) => a.id === id);
         if (!moved) return;
         const next = { ...moved, ...patch };
-        const retied = next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
+        const retied = linkedKeys(moved).length > 1 ? next : next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
         setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
-        setSelectedKey(retied.elementKey ?? null);
+        setSelectedKeys(linkedKeys(retied));
     };
     const moveComment = (id: string, at: Point) => moveAnnotation(id, { from: at, to: at });
 
@@ -368,15 +380,9 @@ export function App() {
     }, []);
 
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
-        setAnnotations((list) =>
-            list.map((a) => {
-                if (a.id !== id) return a;
-                const { elementKey: _old, ...rest } = a;
-                return elementKey ? { ...rest, elementKey } : rest;
-            }),
-        );
+        setAnnotations((list) => list.map((a) => (a.id === id ? withLinks(a, elementKey ? [elementKey] : []) : a)));
         setSelectedKey(elementKey);
-    }, []);
+    }, [setSelectedKey]);
 
     const deleteSelected = useCallback(() => {
         setAnnotations((list) => list.filter((a) => a.id !== selectedAnnotationId));
@@ -396,7 +402,6 @@ export function App() {
             const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie);
             const name = annotatedName(doc.fileName);
             downloadPdf(bytes, name);
-            setStatus(`Saved ${name} with ${annotations.length} annotation${annotations.length === 1 ? '' : 's'}`);
         } catch (e) {
             setError(`Could not save: ${errorText(e)}`);
         } finally {
@@ -483,33 +488,45 @@ export function App() {
         ? new Set(geometry.parts.filter((part) => matchedKeys.has(part.elementKey) && matchesDrawingScope(part.drawingId, drawingScope)).map((part) => part.appearanceId)).size
         : new Set((pageData?.shapes ?? []).filter((shape) => matchedKeys.has(shape.elementKey) && matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => JSON.stringify([shape.drawingId, shape.elementKey]))).size,
     [geometry, pageData, matchedKeys, drawingScope]);
+    const filtersActive = hasActiveFilters(filters);
+    const selectedKeys = useMemo<ReadonlySet<string> | null>(() => pickedKeys.length ? new Set(pickedKeys) : filterSelected && filtersActive ? matchedKeys : null, [pickedKeys, filterSelected, filtersActive, matchedKeys]);
+    const selectedElements = useMemo(() => pickedKeys.length ? pickedKeys.map((key) => doc?.elements.get(key)).filter((e): e is ElementInfo => !!e) : filterSelected && filtersActive ? matchedElements : [], [doc, pickedKeys, filterSelected, filtersActive, matchedElements]);
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
 
-    const agentContext = useMemo<AgentContext | null>(() => {
-        if (!doc || !pageData) return null;
+    // Elements on this page within the drawing/view filter: what the agent sees and what Select similar picks from.
+    const pageElements = useMemo(() => {
+        if (!doc || !pageData) return [];
         const pageKeys = new Set([
             ...(pageData.elementKeys ?? []),
             ...(pageData.nativeTags?.resolvedElementKeys ?? []),
             ...pageData.shapes.map((shape) => shape.elementKey),
         ]);
         const scopedKeys = drawingScope ? new Set((doc.appearances ?? []).filter((appearance) => matchesDrawingScope(appearance.drawingId, drawingScope)).map((appearance) => appearance.elementKey)) : null;
-        const elements = elementList.filter((element) => pageKeys.has(element.key) && (!scopedKeys || scopedKeys.has(element.key)));
+        return elementList.filter((element) => pageKeys.has(element.key) && (!scopedKeys || scopedKeys.has(element.key)));
+    }, [doc, pageData, elementList, drawingScope]);
+
+    const agentContext = useMemo<AgentContext | null>(() => {
+        if (!doc || !pageData) return null;
+        const elements = pageElements;
         return {
             elements, parameters: doc.parameters, pageNumber: pageData.number,
             scopeKey: drawingScope ? JSON.stringify([...drawingScope].sort()) : 'all-views',
             locatableKeys: new Set(elements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).map((element) => element.key)),
             comments: [...pdfComments, ...viewerComments(pageAnnotations)], commentsStatus,
         };
-    }, [doc, pageData, elementList, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus]);
+    }, [doc, pageData, pageElements, drawingScope, locations, pdfComments, pageAnnotations, commentsStatus]);
 
     const cancelFocus = useCallback(() => setFocusRequest(null), []);
-    const changeFilters = useCallback((next: FilterState) => { setFilters(next); setAgentHighlight(null); setFocusRequest(null); }, []);
+    const changeFilters = useCallback((next: FilterState) => {
+        setFilters(next);
+        setPickedKeys([]);
+        setFilterSelected(hasActiveFilters(next));
+        setAgentHighlight(null);
+        setFocusRequest(null);
+    }, []);
     const changeZoomMode = useCallback((next: ZoomMode) => { setFocusRequest(null); setZoomMode(next); }, []);
     const changeTool = useCallback((next: Tool) => { setFocusRequest(null); setTool(next); }, []);
-    const focusComplete = useCallback((request: FocusRequest, located: boolean) => {
-        setStatus(located ? request.elementKeys.size === 1 ? 'Located element on drawing.' : 'Fitted filtered results on this page.' : 'No mapped geometry to locate in this drawing/view.');
-    }, []);
     const locateElement = (key: string) => {
         if (!pageData || !['ready', 'partial', 'legacy'].includes(locations.get(key) ?? '')) return;
         setSelectedKey(key);
@@ -530,8 +547,34 @@ export function App() {
         setSelectedAnnotationId(null);
         setFocusRequest(null);
         setTool('select');
-        setComposerAt(null);
+        setComposer(null);
     };
+
+    // Selection bar: widen the selection to every element of the same type on this page and view.
+    const selectSimilar = () => {
+        if (!selectedElements.length) return;
+        setSelectedKeys(similarElementKeys(selectedElements, pageElements));
+        setSelectedAnnotationId(null);
+        setSelectedPdfComment(null);
+        setComposer(null);
+        setFocusRequest(null);
+        setTab('properties');
+    };
+    // Selection bar: start a comment at `at` that links to every selected element.
+    const commentOnSelection = (at: Point) => {
+        if (!selectedKeys?.size) return;
+        setSelectedAnnotationId(null);
+        setSelectedPdfComment(null);
+        setFocusRequest(null);
+        setComposer({ at, links: [...selectedKeys] });
+    };
+    const composerContext = (() => {
+        const links = composer?.links;
+        if (!links?.length) return null;
+        if (links.length > 1) return `On ${links.length} selected objects`;
+        const element = doc?.elements.get(links[0]!);
+        return `On ${element ? elementLabel(element) : links[0]}`;
+    })();
     const fitAgentHighlights = () => {
         if (!pageData || !agentHighlight) return;
         setTool('select');
@@ -564,12 +607,6 @@ export function App() {
                 onZoomIn={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
                 onUpload={() => fileInput.current?.click()}
-                info={
-                    <>
-                        {doc && <span className="file-name" title={doc.fileName}>{doc.fileName}</span>}
-                        {status && <span className="status" role="status">{status}</span>}
-                    </>
-                }
                 account={<ProfileMenu profile={profile} onChange={setProfile} />}
             />
             <Dialog open={loading !== null} onClose={() => undefined} dismissible={false} title="Opening drawing" titleClassName="type-h3" description={loading?.fileName} className={`load-dialog${loading?.revealing ? ' is-revealing' : ''}`}>
@@ -577,10 +614,12 @@ export function App() {
             </Dialog>
             <div className="viewer-notices">
                 {error && <StatusMessage tone="error" variant="banner" title={error} />}
+                {persistWarning && <StatusMessage tone="warning" variant="banner" title={persistWarning} />}
                 {doc?.warnings.map((w) => <StatusMessage tone="warning" variant="banner" title={w} key={w} />)}
             </div>
             <main className="main">
                 <div className="stage-wrap">
+                    {doc && <div className="file-chip" title={doc.fileName}>{doc.fileName}</div>}
                     {doc && pageData ? (
                         <PdfStage
                             pdf={doc.pdf}
@@ -589,7 +628,7 @@ export function App() {
                             hideEmbeddedAnnotations={doc.savedAnnotations.length > 0}
                             tool={tool}
                             hoverKey={hover?.key ?? null}
-                            selectedKey={selectedKey}
+                            selectedKeys={selectedKeys}
                             annotations={pageAnnotations}
                             selectedAnnotationId={selectedAnnotationId}
                             highlightColor={highlightColor}
@@ -598,38 +637,48 @@ export function App() {
                             onZoomMode={setZoomMode}
                             onHover={onHover}
                             onSelectElement={selectElement}
-                            onSelectAnnotation={(id) => { setSelectedAnnotationId(id); if (id) { setSelectedPdfComment(null); setTab('notes'); } }}
+                            onSelectAnnotation={(id) => {
+                                setSelectedAnnotationId(id);
+                                if (!id) return;
+                                // The markup layer has already picked the note's first tie; a note linked to several objects selects them all.
+                                const a = annotations.find((x) => x.id === id);
+                                if (a && linkedKeys(a).length > 1) setSelectedKeys(linkedKeys(a));
+                                setSelectedPdfComment(null);
+                                setTab('notes');
+                            }}
                             onAddAnnotation={addAnnotation}
                             onMoveAnnotation={moveAnnotation}
                             coverOf={(cloud) => elementsInCloud(cloud, regionSources)}
-                            onStartComment={(point) => { setSelectedAnnotationId(null); setComposerAt(point); }}
+                            onStartComment={(point) => { setSelectedAnnotationId(null); setComposer({ at: point }); }}
                             commentLayer={{
                                 selectedId: selectedAnnotationId,
-                                composerAt,
+                                composerAt: composer?.at ?? null,
+                                composerContext,
                                 profile,
                                 onProfile: setProfile,
                                 labelFor,
                                 onSelect: (id) => {
                                     setSelectedAnnotationId(id);
-                                    setComposerAt(null);
-                                    setSelectedKey(annotations.find((a) => a.id === id)?.elementKey ?? null);
+                                    setComposer(null);
+                                    const a = id ? annotations.find((x) => x.id === id) : undefined;
+                                    setSelectedKeys(a ? linkedKeys(a) : []);
                                     if (id) { setSelectedPdfComment(null); setTab('notes'); }
                                 },
                                 onMove: moveComment,
                                 onDragTarget: (key, client) => onHover(key, client),
                                 onSend: sendComment,
-                                onCancel: () => setComposerAt(null),
+                                onCancel: () => setComposer(null),
                             }}
                             pickElement={pickElement}
                             onRenderError={onRenderError}
                             createCapture={createCapture}
                             geometry={geometry}
-                            matchedKeys={hasActiveFilters(filters) ? matchedKeys : null}
+                            matchedKeys={filtersActive ? matchedKeys : null}
                             elementColors={agentHighlight?.colors}
                             drawingIds={drawingScope}
                             focusRequest={focusRequest}
-                            onFocusComplete={focusComplete}
                             onCancelFocus={cancelFocus}
+                            selectionActions={{ onSelectSimilar: selectSimilar, onComment: commentOnSelection }}
                         />
                     ) : (
                         <div className="stage">
@@ -667,7 +716,7 @@ export function App() {
                         {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
-                            <PropertiesPanel doc={doc} element={selectedKey ? doc.elements.get(selectedKey) : undefined} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} location={selectedKey ? locations.get(selectedKey) : undefined} onLocate={locateElement} />
+                            <PropertiesPanel doc={doc} elements={selectedElements} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} locations={locations} onLocate={locateElement} onFitSelection={fitMatches} />
                         ) : tab === 'elements' ? (
                             <>
                                 <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={changeFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} context={filterContext} pageNumber={page} onFitMatches={fitMatches} />
@@ -691,7 +740,7 @@ export function App() {
                                 onReply={sendReply}
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
-                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKey(a.elementKey ?? null); }}
+                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKeys(linkedKeys(a)); }}
                             />
                             </>
                         )}

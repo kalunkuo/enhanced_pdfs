@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { elementLabel } from '../../lib/elementLabel';
+import { linkedKeys } from '../../lib/links';
 import { searchObjects } from '../../lib/objectSearch';
 import type { Annotation, ElementInfo } from '../../lib/types';
 import { CheckIcon, ChevronDownIcon } from '../ui/icons';
@@ -7,7 +8,7 @@ import { CheckIcon, ChevronDownIcon } from '../ui/icons';
 interface Props {
     annotation: Annotation;
     elements: Map<string, ElementInfo>;
-    /** Tie the note to an object, or pass null to untie it. */
+    /** Tie the note to one object (replacing every link), or pass null to untie it. */
     onTie: (annotationId: string, elementKey: string | null) => void;
     /** Show an object's properties. */
     onOpenElement: (elementKey: string) => void;
@@ -24,6 +25,7 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
     const search = useRef<HTMLInputElement>(null);
     const current = annotation.elementKey ? elements.get(annotation.elementKey) : undefined;
     const tied = annotation.elementKey !== undefined;
+    const links = linkedKeys(annotation);
 
     useEffect(() => {
         if (!open) return;
@@ -47,7 +49,7 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
     return (
         <div className="tie-tag" ref={root}>
             <button className={`chip ${tied ? 'tied' : 'untied'} tie-button`} aria-haspopup="listbox" aria-expanded={open} title="Change what this note is tied to" onClick={() => setOpen(!open)}>
-                {tied ? `↳ ${current ? elementLabel(current) : annotation.elementKey}` : 'untied'}
+                {links.length > 1 ? `↳ ${links.length} objects` : tied ? `↳ ${current ? elementLabel(current) : annotation.elementKey}` : 'untied'}
                 <ChevronDownIcon />
             </button>
             {open && (
@@ -65,7 +67,8 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
                         }}
                     />
                     <div className="tie-actions">
-                        {tied && current && (
+                        {links.length > 1 && <p className="tie-hint">Choosing one object replaces all {links.length} links.</p>}
+                        {tied && current && links.length === 1 && (
                             <button className="tie-action" onClick={() => { onOpenElement(current.key); close(); }}>Show properties of {elementLabel(current)}</button>
                         )}
                     </div>
@@ -76,9 +79,9 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
                             </button>
                         </li>
                         {items.map((o) => (
-                            <li key={o.key} role="option" aria-selected={o.key === annotation.elementKey}>
+                            <li key={o.key} role="option" aria-selected={links.includes(o.key)}>
                                 <button className="tie-option" onClick={() => choose(o.key)}>
-                                    <span className="tie-check">{o.key === annotation.elementKey && <CheckIcon />}</span>
+                                    <span className="tie-check">{links.includes(o.key) && <CheckIcon />}</span>
                                     <span className="tie-name">{elementLabel(o)}</span>
                                     {(o.level || o.placeholder) && <span className="muted tie-meta">{o.placeholder ? 'placeholder' : o.level}</span>}
                                 </button>

@@ -6,6 +6,10 @@ const icon = (path: ReactNode) => () => <svg {...base} aria-hidden="true">{path}
 // A solid pointer reads larger than the outline icons around it, so it is drawn at 80% to match their size.
 export const SelectIcon = icon(<path d="M6 3l12 9-5.5 1 3 6-2.5 1.2-3-6L6 18z" fill="currentColor" transform="translate(12 12) scale(0.8) translate(-12 -12)" />);
 export const CommentIcon = icon(<><path d="M4 5h16v11H10l-4 3.5V16H4z" /><path d="M12 8v5M9.5 10.5h5" /></>);
+/** Select similar: one solid square and the matching outlines it adds to the selection. */
+export const SelectSimilarIcon = icon(<><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" fill="currentColor" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" /></>);
+/** Comment on the selection: a speech bubble tied to a small square. */
+export const CommentOnSelectionIcon = icon(<><path d="M9 4h11v9h-5l-3 3v-3H9z" /><rect x="3.5" y="13.5" width="6.5" height="6.5" rx="1.5" fill="currentColor" /></>);
 export const HighlightIcon = icon(<><path d="M14 4l6 6-8 8H7l-2 2H3v-2l2-2v-4z" /><path d="M3 21h8" strokeWidth={3} opacity={0.45} /></>);
 export const DrawIcon = icon(<path d="M4 15c3-9 8-10 8-6 0 5-6 7-3 9 4 2 9-6 11-4" />);
 export const TextBoxIcon = icon(<><rect x="4" y="4" width="16" height="16" rx="1.5" strokeDasharray="2.5 2" /><path d="M8.5 17l3.5-10 3.5 10M9.7 13.5h4.6" /></>);
