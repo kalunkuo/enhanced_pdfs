@@ -64,6 +64,15 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         Content = root;
 
         _controller.Changed += QueueRefresh;
+        // The panel runs on Revit's UI thread: an exception from our handlers (including async void ones) would end
+        // Revit. Catch only ours, log it with its stack and show it in the panel instead.
+        Dispatcher.UnhandledException += (_, e) =>
+        {
+            if (!ReviewController.IsOurs(e.Exception)) return;
+            e.Handled = true;
+            _controller.LogException("panel", e.Exception);
+            _status.Text = $"Something went wrong in the review panel ({e.Exception.GetBaseException().Message}). It was logged; the review is still open.";
+        };
         Refresh();
     }
 

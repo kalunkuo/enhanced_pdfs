@@ -44,27 +44,24 @@ internal static class MarkupCrop
         return bitmap;
     }
 
-    private static (string Path, PdfDocument Document)? _cached;
+    private static readonly Dictionary<string, string> Copies = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Loads from an in-memory copy: a document loaded from the file keeps it open until GC, which locks the
-    /// returned PDF while the review is open. One document per review, reused for every crop.
+    /// Renders from a private temp copy: a document loaded from a file keeps that file open until GC, which would
+    /// lock the user's returned PDF while the review is open. (An in-memory stream variant was tried and removed:
+    /// Revit crashed in the run that used it.)
     /// </summary>
     private static async Task<PdfDocument> LoadAsync(string path)
     {
-        if (_cached is { } c && c.Path == path) return c.Document;
-        var memory = new InMemoryRandomAccessStream();
-        using (var writer = new DataWriter(memory.GetOutputStreamAt(0)))
+        if (!Copies.TryGetValue(path, out var copy) || !File.Exists(copy))
         {
-            writer.WriteBytes(await File.ReadAllBytesAsync(path));
-            await writer.StoreAsync();
-            await writer.FlushAsync();
-            writer.DetachStream();
+            copy = Path.Combine(Path.GetTempPath(), "EnhancedPdfs-review", "crop-" + Guid.NewGuid().ToString("N") + ".pdf");
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(path, copy);
+            Copies[path] = copy;
         }
-        memory.Seek(0);
-        var document = await PdfDocument.LoadFromStreamAsync(memory);
-        _cached = (path, document);
-        return document;
+        var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(copy));
+        return await PdfDocument.LoadFromFileAsync(file);
     }
 
     private static PdfRect Expand(PdfRect r, PdfRect box)

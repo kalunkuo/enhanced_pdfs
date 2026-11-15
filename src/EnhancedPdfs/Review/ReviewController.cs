@@ -43,7 +43,34 @@ internal sealed class ReviewController
     /// <summary>Raised on any thread when proposals, notes or status change; the pane marshals to its dispatcher.</summary>
     public event Action? Changed;
 
-    public void Initialize() => _dispatcher.Initialize();
+    public void Initialize()
+    {
+        _dispatcher.Initialize();
+        // Last-resort records: a background-thread exception still ends Revit, but its stack trace reaches the log first.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex && IsOurs(ex)) LogException("unhandled (process ending)", ex);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            if (!IsOurs(e.Exception)) return;
+            LogException("unobserved task", e.Exception);
+            e.SetObserved();
+        };
+    }
+
+    /// <summary>True when our code is on the exception's stack, so Revit's and other add-ins' faults are left alone.</summary>
+    public static bool IsOurs(Exception e) =>
+        e.ToString().Contains("EnhancedPdfs.Review", StringComparison.Ordinal) || e.ToString().Contains("MarkupReview.", StringComparison.Ordinal);
+
+    public void LogException(string context, Exception e)
+    {
+        Log($"EXCEPTION ({context}): {e}");
+        // Before any import there is no review folder yet; keep a fallback so nothing is lost.
+        if (_log is null)
+            try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "EnhancedPdfs-review-errors.log"), $"{DateTime.Now:O} {context}: {e}\n"); }
+            catch (IOException) { }
+    }
 
     /// <summary>Runs on Revit's API thread (from the Import command). Returns an error message, or null when the review started.</summary>
     public string? Start(UIApplication app, string pdfPath)
