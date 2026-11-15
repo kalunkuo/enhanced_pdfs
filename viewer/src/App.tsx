@@ -87,6 +87,8 @@ export function App() {
     const setSelectedKeys = useCallback((keys: readonly string[]) => { setPickedKeys([...new Set(keys)]); setFilterSelected(false); }, []);
     const setSelectedKey = useCallback((key: string | null) => setSelectedKeys(key ? [key] : []), [setSelectedKeys]);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
+    // Objects previewed on the canvas while a category pill or list row in Properties is hovered.
+    const [previewKeys, setPreviewKeys] = useState<ReadonlySet<string> | null>(null);
     const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
     const [nativeGeometry, setNativeGeometry] = useState<NativeGeometry | null>(null);
     const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -646,6 +648,7 @@ export function App() {
                             hideEmbeddedAnnotations={doc.savedAnnotations.length > 0}
                             tool={tool}
                             hoverKey={hover?.key ?? null}
+                            previewKeys={previewKeys}
                             selectedKeys={selectedKeys}
                             onSelectElements={selectElements}
                             regionOf={(rect) => elementsInCloud({ from: [rect[0], rect[1]], to: [rect[2], rect[3]] }, regionSources)}
@@ -736,7 +739,7 @@ export function App() {
                         {tab === 'agent' ? null : !doc ? (
                             <div className="panel-empty">Nothing loaded.</div>
                         ) : tab === 'properties' ? (
-                            <PropertiesPanel doc={doc} elements={selectedElements} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} locations={locations} onLocate={locateElement} onFitSelection={fitMatches} />
+                            <PropertiesPanel doc={doc} elements={selectedElements} hasShapes={!!geometry?.parts.length || (pageData?.shapes.length ?? 0) > 0} locations={locations} onLocate={locateElement} onFitSelection={fitMatches} onPreview={setPreviewKeys} />
                         ) : tab === 'elements' ? (
                             <>
                                 <FilterPanel elements={elementList} parameters={doc.parameters} value={filters} onChange={changeFilters} matchedCount={matchedElements.length} locatableCount={locatableCount} appearanceCount={appearanceCount} context={filterContext} pageNumber={page} onFitMatches={fitMatches} />
