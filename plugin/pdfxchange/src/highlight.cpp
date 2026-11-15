@@ -104,6 +104,11 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box) {
             sq->put_Border(&border);
             annot->put_Data(data.Get());
         }
+        // Re-applying the rect regenerates the appearance at full size (without it the Editor kept the
+        // default-size appearance from InsertNewAnnot: only a small box at one corner was filled).
+        annot->put_Rect(&rect);
+        // Not selectable/movable by the user: ReadOnly (64) | Locked (128).
+        annot->put_Flags(64 | 128);
         doc->FireAnnotInsertedEvent(annot.Get());  // lets the Editor redraw; our collector skips the name
 
         doc->AddRef();

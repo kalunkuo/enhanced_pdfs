@@ -230,14 +230,28 @@ bool ResolveClick(IUnknown* from, IUIX_Event* ev, ComPtr<IPXV_Document>& doc, Co
     return true;
 }
 
+bool gSwallowUp = false;  // the mouse-down was ours: also swallow its mouse-up (the Editor selects on up)
+
+void Consume(IEvent* event, IUIX_Event* uixEvent) {
+    event->put_Handled(VARIANT_TRUE);
+    uixEvent->put_Handled(VARIANT_TRUE);
+    uixEvent->put_Result(1);
+}
+
 void OnMouse(IEvent* event, IUnknown* from) {
     if (!gOn || !event) return;
     PARAM_T p1 = 0, p2 = 0;
     event->get_Param1(&p1);
-    if (p1 != WM_LBUTTONDOWN) return;
+    if (p1 != WM_LBUTTONDOWN && p1 != WM_LBUTTONUP) return;
     event->get_Param2(&p2);
     auto* uixEvent = reinterpret_cast<IUIX_Event*>(p2);  // borrowed: owned by the Editor for this call
     if (!uixEvent) return;
+    if (p1 == WM_LBUTTONUP) {
+        if (gSwallowUp) Consume(event, uixEvent);
+        gSwallowUp = false;
+        return;
+    }
+    gSwallowUp = false;
 
     ComPtr<IPXV_Document> doc;
     ComPtr<IPXC_Document> core;
@@ -260,9 +274,8 @@ void OnMouse(IEvent* event, IUnknown* from) {
     if (rows.empty()) return;
     ShowHighlight(doc.Get(), pageIndex, map.at(*hit));
     ShowInspectWindow(GetActiveWindow(), *hit, rows);
-    event->put_Handled(VARIANT_TRUE);
-    uixEvent->put_Handled(VARIANT_TRUE);
-    uixEvent->put_Result(1);
+    Consume(event, uixEvent);
+    gSwallowUp = true;
 }
 
 std::string SelfTestInspect(IPXV_Document* doc, const std::string&) {
