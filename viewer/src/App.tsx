@@ -246,11 +246,10 @@ export function App() {
         setComposerAt(null);
     }, [tool, pageData?.number]);
 
-    const sendComment = (c: { text: string; image?: string; at: Point; name: string }) => {
+    const sendComment = (c: { text: string; at: Point; name: string }) => {
         addAnnotation({
             kind: 'comment', from: c.at, to: c.at, text: c.text, createdAt: new Date().toISOString(),
             author: { name: c.name, ...(profile.photo ? { photo: profile.photo } : {}) },
-            ...(c.image ? { image: c.image } : {}),
         });
         setComposerAt(null);
     };

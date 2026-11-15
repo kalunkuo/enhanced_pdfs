@@ -7,7 +7,7 @@ import { TrashIcon } from '../ui/icons';
 
 interface Person { name: string; photo?: string | undefined }
 
-function Message({ author, createdAt, text, image, now, action }: { author: Person | undefined; createdAt: string | undefined; text: string; image?: string | undefined; now: number; action?: React.ReactNode }) {
+function Message({ author, createdAt, text, now, action }: { author: Person | undefined; createdAt: string | undefined; text: string; now: number; action?: React.ReactNode }) {
     const name = author?.name ?? 'Unknown';
     return (
         <div className="tmsg">
@@ -20,7 +20,6 @@ function Message({ author, createdAt, text, image, now, action }: { author: Pers
                 {action}
             </div>
             <p className="ttext">{text}</p>
-            {image && <img className="timg" src={image} alt="Attached to the message" />}
         </div>
     );
 }
@@ -60,14 +59,14 @@ export function CommentThread({ comment, profile, onProfile, now, onReply, onDel
     return (
         <section className="thread" aria-label={`Comment thread by ${comment.author?.name ?? 'Unknown'}`}>
             <Message
-                author={comment.author} createdAt={comment.createdAt} text={comment.text ?? ''} image={comment.image} now={now}
+                author={comment.author} createdAt={comment.createdAt} text={comment.text ?? ''} now={now}
                 action={<button className="icon-btn tdel" aria-label="Delete comment and its replies" title="Delete comment and its replies" onClick={() => onDelete(comment.id)}><TrashIcon /></button>}
             />
             {children}
             {replies.length > 0 && (
                 <ul className="treplies" aria-label={`${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}>
                     {replies.map((r) => (
-                        <li key={r.id}><Message author={r.author} createdAt={r.createdAt} text={r.text} image={r.image} now={now} /></li>
+                        <li key={r.id}><Message author={r.author} createdAt={r.createdAt} text={r.text} now={now} /></li>
                     ))}
                 </ul>
             )}
