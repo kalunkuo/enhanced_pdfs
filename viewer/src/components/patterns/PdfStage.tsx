@@ -11,6 +11,7 @@ import { NativeElementOverlay } from './NativeElementOverlay';
 import { SelectionActions } from './SelectionActions';
 import type { NativeGeometry } from '../../lib/nativeGeometry';
 import { collectFocusBounds, fitBounds, getFocusScrollOffset, type FocusRequest } from '../../lib/navigation';
+import { NARROW_LAYOUT, PHONE_LANDSCAPE, pinchZoom, useMediaQuery } from '../../lib/mobile';
 
 // Preserve toolbar imports while shared interfaces live outside the stage.
 export { clampZoom, MAX_ZOOM, MIN_ZOOM, type Tool, type ZoomMode } from '../../lib/presentation';
@@ -68,8 +69,12 @@ interface Props {
     };
 }
 
+/** Horizontal room kept free of the page: the tool rail on the right plus margins. On small screens the rail sits below the page instead. */
 const PAD_X = 104;
+const PAD_X_NARROW = 24;
 const PAD_Y = 32;
+
+const touchDistance = (touches: TouchList) => Math.hypot(touches[0]!.clientX - touches[1]!.clientX, touches[0]!.clientY - touches[1]!.clientY);
 
 /** Composes the renderer, semantic overlay, and review layer. Shared wiring has one owner. */
 export function PdfStage(props: Props) {
@@ -83,12 +88,16 @@ export function PdfStage(props: Props) {
     const [pickNotice, setPickNotice] = useState<string | null>(null);
     const previousPick = useRef<{ x: number; y: number; keys: string; index: number; time: number } | null>(null);
     const pickElement = useMemo(() => props.pickElement ?? createShapePicker(page.shapes), [props.pickElement, page.shapes]);
+    // A phone in landscape keeps the rail on the right (mobile.css), so it needs the desktop allowance.
+    const phoneLandscape = useMediaQuery(PHONE_LANDSCAPE);
+    const narrow = useMediaQuery(NARROW_LAYOUT) && !phoneLandscape;
+    const padX = narrow ? PAD_X_NARROW : PAD_X;
     const zoom = useMemo(() => {
-        const fitWidth = (size.w - PAD_X) / page.width;
+        const fitWidth = (size.w - padX) / page.width;
         if (zoomMode.kind === 'fit-width') return clampZoom(fitWidth);
         if (zoomMode.kind === 'fit-page') return clampZoom(Math.min(fitWidth, (size.h - PAD_Y) / page.height));
         return clampZoom(zoomMode.value);
-    }, [zoomMode, size, page.width, page.height]);
+    }, [zoomMode, size, page.width, page.height, padX]);
 
     useEffect(() => {
         onZoom(zoom);
@@ -124,11 +133,48 @@ export function PdfStage(props: Props) {
             zoomRef.current = next;
             setMode({ kind: 'value', value: next });
         };
+        // Two fingers on a touch screen zoom around their midpoint. One finger is left to the browser
+        // (native panning) or to the markup layer, depending on the tool; see touch-action in app.css.
+        let pinch: { distance: number; zoom: number } | null = null;
+        const onTouchStart = (event: TouchEvent) => {
+            pinch = event.touches.length === 2 ? { distance: touchDistance(event.touches), zoom: zoomRef.current } : null;
+        };
+        const onTouchMove = (event: TouchEvent) => {
+            const setMode = onZoomModeRef.current;
+            const pageEl = pageRef.current;
+            if (!pinch || event.touches.length !== 2 || !setMode || !pageEl) return;
+            event.preventDefault();
+            const next = clampZoom(pinchZoom(pinch.zoom, pinch.distance, touchDistance(event.touches)));
+            if (next === zoomRef.current) return;
+            const clientX = (event.touches[0]!.clientX + event.touches[1]!.clientX) / 2;
+            const clientY = (event.touches[0]!.clientY + event.touches[1]!.clientY) / 2;
+            const rect = pageEl.getBoundingClientRect();
+            anchorRef.current = {
+                clientX,
+                clientY,
+                fx: rect.width ? (clientX - rect.left) / rect.width : 0.5,
+                fy: rect.height ? (clientY - rect.top) / rect.height : 0.5,
+            };
+            zoomRef.current = next;
+            setMode({ kind: 'value', value: next });
+        };
+        const onTouchEnd = (event: TouchEvent) => {
+            if (event.touches.length < 2) pinch = null;
+        };
         element.addEventListener('wheel', onWheel, { passive: false });
-        return () => element.removeEventListener('wheel', onWheel);
+        element.addEventListener('touchstart', onTouchStart, { passive: true });
+        element.addEventListener('touchmove', onTouchMove, { passive: false });
+        element.addEventListener('touchend', onTouchEnd, { passive: true });
+        element.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        return () => {
+            element.removeEventListener('wheel', onWheel);
+            element.removeEventListener('touchstart', onTouchStart);
+            element.removeEventListener('touchmove', onTouchMove);
+            element.removeEventListener('touchend', onTouchEnd);
+            element.removeEventListener('touchcancel', onTouchEnd);
+        };
     }, []);
-    // Scrolls so the anchored fraction of the page sits under the anchor's client point.
-    const applyAnchor = () => {
+    useLayoutEffect(() => {
         const anchor = anchorRef.current;
         const element = wrapRef.current;
         const pageEl = pageRef.current;
@@ -137,68 +183,7 @@ export function PdfStage(props: Props) {
         const rect = pageEl.getBoundingClientRect();
         element.scrollLeft += rect.left + anchor.fx * rect.width - anchor.clientX;
         element.scrollTop += rect.top + anchor.fy * rect.height - anchor.clientY;
-    };
-    const applyAnchorRef = useRef(applyAnchor);
-    applyAnchorRef.current = applyAnchor;
-    useLayoutEffect(applyAnchor, [zoom]);
-
-    // Two-finger touch pinch zooms around the fingers' midpoint and pans with it. The markup layer drops
-    // any box select or drawing the first finger started, so a pinch never also selects.
-    const onCancelFocusRef = useRef(props.onCancelFocus);
-    onCancelFocusRef.current = props.onCancelFocus;
-    useEffect(() => {
-        const element = wrapRef.current;
-        if (!element) return;
-        const touches = new Map<number, { x: number; y: number }>();
-        let pinch: { distance: number; zoom: number; fx: number; fy: number } | null = null;
-        const span = () => {
-            const [a, b] = [...touches.values()] as [{ x: number; y: number }, { x: number; y: number }];
-            return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) };
-        };
-        const begin = () => {
-            const pageEl = pageRef.current;
-            pinch = null;
-            if (touches.size !== 2 || !pageEl) return;
-            const { x, y, distance } = span();
-            const rect = pageEl.getBoundingClientRect();
-            pinch = { distance, zoom: zoomRef.current, fx: rect.width ? (x - rect.left) / rect.width : 0.5, fy: rect.height ? (y - rect.top) / rect.height : 0.5 };
-            panRef.current = null;
-            setPanning(false);
-            onCancelFocusRef.current?.();
-        };
-        const down = (event: PointerEvent) => {
-            if (event.pointerType !== 'touch') return;
-            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-            begin();
-        };
-        const move = (event: PointerEvent) => {
-            if (!touches.has(event.pointerId)) return;
-            touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-            const setMode = onZoomModeRef.current;
-            if (!pinch || !setMode) return;
-            event.preventDefault();
-            const { x, y, distance } = span();
-            anchorRef.current = { clientX: x, clientY: y, fx: pinch.fx, fy: pinch.fy };
-            const next = clampZoom(pinch.zoom * distance / pinch.distance);
-            if (next === zoomRef.current) { applyAnchorRef.current(); return; }
-            zoomRef.current = next;
-            setMode({ kind: 'value', value: next });
-        };
-        const up = (event: PointerEvent) => {
-            if (!touches.delete(event.pointerId)) return;
-            begin();
-        };
-        element.addEventListener('pointerdown', down, true);
-        element.addEventListener('pointermove', move, true);
-        element.addEventListener('pointerup', up, true);
-        element.addEventListener('pointercancel', up, true);
-        return () => {
-            element.removeEventListener('pointerdown', down, true);
-            element.removeEventListener('pointermove', move, true);
-            element.removeEventListener('pointerup', up, true);
-            element.removeEventListener('pointercancel', up, true);
-        };
-    }, []);
+    }, [zoom]);
     useEffect(() => {
         panRef.current = null;
         setPanning(false);
@@ -224,7 +209,7 @@ export function PdfStage(props: Props) {
         if (page.geometrySource === 'native' && !props.geometry) return;
         const raw = collectFocusBounds(props.geometry?.parts ?? [], page.shapes, request.elementKeys, request.drawingIds);
         const bounds = raw && [Math.max(0, raw[0]), Math.max(0, raw[1]), Math.min(page.width, raw[2]), Math.min(page.height, raw[3])] as const;
-        const available = { width: size.w - PAD_X, height: size.h - PAD_Y };
+        const available = { width: size.w - padX, height: size.h - PAD_Y };
         const plan = bounds && fitBounds(bounds, available);
         if (!plan) {
             appliedFocus.current = request.id;

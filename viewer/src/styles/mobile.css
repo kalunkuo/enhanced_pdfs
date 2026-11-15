@@ -2,7 +2,8 @@
  * Phone in landscape: short and wide, so the stacked narrow layout (app.css, max-width 860px) would leave the
  * drawing a sliver. Use the desktop arrangement instead, with the inspector on the right, and strip the chrome:
  * a single-line document bar, no logo or file chip, tighter panel spacing. Imported last so it overrides the
- * narrow-width rules in app.css, review.css and agent.css.
+ * narrow-width rules in app.css, review.css and agent.css, including the stacked inspector, panel grabber,
+ * two-row document bar and bottom tool strip those set up below 860px.
  */
 @media (orientation: landscape) and (max-height: 500px) {
     /* One line: drop the optional controls (see DocBar) and separators; scroll sideways rather than wrap. */
@@ -11,6 +12,9 @@
     .docbar > .docbar-optional, .docbar > .sep { display: none; }
     .docbar > * { flex: none; }
     .docbar > .docbar-spacer { flex: 1; }
+    .docbar > * { order: 0; }
+    .docbar > .docbar-break { display: none; }
+    .page-ctl { margin-right: 0; }
     .docbar .profile-btn { width: var(--toolbar-control-height); height: var(--toolbar-control-height); }
     .zoom-btn { min-width: 0; }
 
@@ -21,10 +25,20 @@
     .main { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); }
     .side { width: clamp(240px, 36vw, 340px); min-width: 0; }
     .side > .tabs { margin-block: var(--primitive-space-1); }
+    /* Undo the stacked panel from app.css: no grabber, and the panel always shows beside the drawing. */
+    .main[data-panel] { grid-template-rows: minmax(0, 1fr); }
+    .main[data-panel] .side .panel { display: block; }
+    .side { border-left: var(--primitive-border-1) solid var(--color-border); }
+    .panel-grabber { display: none; }
 
     .file-chip { display: none; }
     .stage { padding: var(--primitive-space-2) calc(var(--viewer-rail-width) + var(--primitive-space-4)) var(--primitive-space-2) var(--primitive-space-2); }
-    .vtoolbar { top: var(--primitive-space-2); right: var(--primitive-space-2); max-height: calc(100% - 2 * var(--primitive-space-2)); overflow-y: auto; scrollbar-width: none; }
+    /* Tool rail back on the right edge, vertical, with menus opening to the left (undoes the bottom strip). */
+    .vtoolbar { bottom: auto; left: auto; translate: none; width: var(--viewer-rail-width); flex-direction: column; padding: 0 var(--toolbar-padding) var(--toolbar-padding);
+        top: var(--primitive-space-2); right: var(--primitive-space-2); max-height: calc(100% - 2 * var(--primitive-space-2)); overflow-y: auto; scrollbar-width: none; }
+    .vtoolbar .grip { display: block; }
+    .vtoolbar .flyout, .vtoolbar .tool-slot:last-child .flyout { left: auto; right: calc(100% + var(--primitive-space-2)); top: 0; bottom: auto; transform-origin: calc(100% + 20px) var(--primitive-space-3); }
+    .pick-status { bottom: 12px; }
 
     /* Agent: less padding around the welcome and composer. */
     .agent-welcome { padding: var(--primitive-space-2) var(--primitive-space-3); }

@@ -1,18 +1,24 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi';
-import { AgentProviderError } from './agentProviderError';
-import { planAgentRequest } from './agentProvider';
-import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig';
-export type { AgentServerConfig } from './agentConfig';
+import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi.ts';
+import { AgentProviderError } from './agentProviderError.ts';
+import { planAgentRequest } from './agentProvider.ts';
+import { openAiKeyAccepted } from './openaiAgent.ts';
+import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig.ts';
+export type { AgentServerConfig } from './agentConfig.ts';
 
 type Next = (error?: unknown) => void;
 type Planner = typeof planAgentRequest;
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_HISTORY = 12;
 
-class RequestError extends Error {
-    constructor(readonly status: number, message: string) { super(message); }
+// Plain field assignments: Node's strip-only TypeScript loader (which Vercel uses for api/) rejects parameter properties.
+export class RequestError extends Error {
+    readonly status: number;
+    constructor(status: number, message: string) {
+        super(message);
+        this.status = status;
+    }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -77,7 +83,7 @@ function sameLocalOrigin(request: IncomingMessage) {
     } catch { return false; }
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+export async function readJson(request: IncomingMessage): Promise<unknown> {
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) {
         throw new RequestError(415, 'Send agent requests as JSON.');
     }
@@ -95,20 +101,52 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
     catch { throw new RequestError(400, 'The agent request is not valid JSON.'); }
 }
 
-/** A loopback-only API for this local hackathon app, shared by Vite dev and preview. */
-export function createAgentMiddleware(config: AgentServerConfig, options: { plan?: Planner; timeoutMs?: number } = {}) {
+export interface AgentMiddlewareOptions {
+    plan?: Planner;
+    timeoutMs?: number;
+    /** Decides whether a request may use the API. The default admits only the loopback viewer; the hosted function admits the site itself. */
+    allowRequest?: (request: IncomingMessage) => boolean;
+    /** Supplies the parsed JSON body. The default reads the request stream; hosts that parse bodies before the handler runs pass theirs. */
+    readBody?: (request: IncomingMessage) => Promise<unknown>;
+    /** Whether the provider accepts the configured credential (null = unknown). The default checks OpenAI keys; Bedrock tokens are not pre-checked. */
+    verifyKey?: (config: AgentServerConfig, signal: AbortSignal) => Promise<boolean | null>;
+}
+
+const defaultVerifyKey = (config: AgentServerConfig, signal: AbortSignal): Promise<boolean | null> =>
+    agentProvider(config) === 'openai' ? openAiKeyAccepted(config, { signal }) : Promise.resolve(true);
+
+/** The agent API shared by Vite dev and preview (loopback only) and, through hostedAgent.ts, the deployed site. */
+export function createAgentMiddleware(config: AgentServerConfig, options: AgentMiddlewareOptions = {}) {
     const plan = options.plan ?? planAgentRequest;
+    const allowRequest = options.allowRequest ?? sameLocalOrigin;
+    const readBody = options.readBody ?? readJson;
+    const verifyKey = options.verifyKey ?? defaultVerifyKey;
     let inFlight = 0;
     return (request: IncomingMessage, response: ServerResponse, next: Next) => {
         const path = request.url?.split('?')[0];
         if (path !== '/api/agent' && path !== '/api/agent/status') return next();
-        if (!sameLocalOrigin(request)) return json(response, 403, { error: 'The drawing agent API is available only from this local viewer.' });
+        if (!allowRequest(request)) return json(response, 403, { error: 'The drawing agent API is available only from this viewer.' });
         const method = path === '/api/agent/status' ? 'GET' : 'POST';
         if (request.method !== method) {
             response.setHeader('Allow', method);
             return json(response, 405, { error: `Use ${method} for this endpoint.` });
         }
-        if (path === '/api/agent/status') return json(response, 200, { configured: agentConfigured(config), provider: agentProvider(config), model: config.model });
+        if (path === '/api/agent/status') {
+            // "configured" means a credential that works, not merely one that is set: a rejected key would
+            // put the viewer into an API mode whose every request fails. Unknown verdicts keep the key.
+            void (async () => {
+                let configured = agentConfigured(config);
+                if (configured) {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 5_000);
+                    try { configured = (await verifyKey(config, controller.signal)) !== false; }
+                    catch { /* inconclusive: leave the configuration as it is */ }
+                    finally { clearTimeout(timer); }
+                }
+                json(response, 200, { configured, provider: agentProvider(config), model: config.model });
+            })();
+            return;
+        }
         if (!agentConfigured(config)) return json(response, 503, { error: agentProvider(config) === 'bedrock'
             ? 'Configure AWS_BEARER_TOKEN_BEDROCK, AWS_REGION, and BEDROCK_MODEL_ID on the server, or use Local demo.'
             : 'Configure OPENAI_API_KEY and OPENAI_MODEL on the server, or use Local demo.' });
@@ -120,7 +158,7 @@ export function createAgentMiddleware(config: AgentServerConfig, options: { plan
         response.on('close', onClose);
         void (async () => {
             try {
-                const input = parseAgentRequest(await readJson(request));
+                const input = parseAgentRequest(await readBody(request));
                 if (controller.signal.aborted) throw new RequestError(504, 'The drawing agent timed out. Try again.');
                 const result = await plan(input, config, { signal: controller.signal });
                 json(response, 200, result);

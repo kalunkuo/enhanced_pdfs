@@ -1,20 +1,25 @@
-import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi';
-import { agentConfigured, validBedrockRegion, type AgentServerConfig } from './agentConfig';
-import { AgentProviderError } from './agentProviderError';
-import { AGENT_INSTRUCTIONS, AGENT_TOOLS } from './drawingAgentPlan';
+import { parseAgentAction, type AgentAction, type AgentApiRequest, type AgentApiResponse } from '../src/lib/agentApi.ts';
+import { agentConfigured, validBedrockRegion, type AgentServerConfig } from './agentConfig.ts';
+import { AgentProviderError } from './agentProviderError.ts';
+import { AGENT_INSTRUCTIONS, AGENT_TOOLS } from './drawingAgentPlan.ts';
 
-/** Standard Converse tool use avoids model-specific strict-schema compilation for the local demo. */
+/**
+ * Standard Converse tool use avoids model-specific strict-schema compilation for the local demo. The
+ * numeric and length bounds stay in the schema: parseAgentAction rejects an out-of-range value, so a
+ * model that never saw the bound (for example `limit` above 25 on query_elements) would have every such
+ * call refused with a 502 after Bedrock had already answered.
+ */
 const TOOLS = AGENT_TOOLS.map(({ name, description, parameters }) => ({ toolSpec: { name, description, inputSchema: { json: basicSchema(parameters) } } }));
 
 function record(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Provider schemas describe shape; parseAgentAction enforces exact keys, types, and numeric bounds. */
+/** Provider schemas describe shape and bounds; parseAgentAction still enforces exact keys, types, and numeric bounds. */
 function basicSchema(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(basicSchema);
     if (!record(value)) return value;
-    return Object.fromEntries(Object.entries(value).filter(([key]) => !['maxLength', 'maximum', 'exclusiveMinimum'].includes(key)).map(([key, item]) => [key, basicSchema(item)]));
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'exclusiveMinimum').map(([key, item]) => [key, basicSchema(item)]));
 }
 
 function upstreamFailure(status: number): AgentProviderError {

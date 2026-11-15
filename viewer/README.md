@@ -63,7 +63,7 @@ BEDROCK_MODEL_ID=us.anthropic.claude-opus-5-5
 
 A Bedrock API key authenticates with an authorization bearer token. It is distinct from an AWS access-key ID and secret-access-key pair, which require AWS request signing. This local provider accepts the Bedrock bearer-token form. Both short-term and long-term Bedrock API keys are scoped to the Region in which they were generated. Short-term keys expire with their originating session, up to 12 hours. The key's identity must have model access and permission to invoke the selected model. The example uses the selected US East Region and [Claude Opus 5.5 inference profile](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5-5.html); change them to match your key and model access. See [Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html) and the [Converse request contract](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html).
 
-Restart `bun run dev` after changing server configuration. The Agent panel selects the configured provider; use its mode selector to return to Local demo. **Check connection** reads configuration status without making a billable model request. Configured means the required settings are present; the first request verifies the token, Region, model access, and quota. Failed requests show an error and retain the draft for retry. They do not silently switch modes, and requests can be canceled.
+Restart `bun run dev` after changing server configuration. The Agent panel selects the configured provider; use its mode selector to return to Local demo. **Check connection** reads configuration status without making a billable model request. Configured means the required settings are present; the first request verifies the token, Region, model access, and quota. Failed requests show an error and retain the draft for retry. They do not silently switch modes, and requests can be canceled. A configured status means the server has an OpenAI key that OpenAI accepts (checked once per ten minutes, so a stale or placeholder key leaves the viewer in Local demo instead of failing its first request); Bedrock tokens are not pre-checked.
 
 Bedrock uses standard Converse tool calls. The server and browser validate tool names and arguments before any drawing action runs; the model does not execute drawing operations. This path does not request Bedrock's optional strict-output schema compilation.
 
@@ -98,3 +98,16 @@ uv run --python 3.13 --script scripts/make-demo-pdf.py public/demo/demo-enhanced
 ```
 
 The visual system lives in `src/styles/tokens/`, `src/components/ui/`, and `docs/design-system.md`. Reusable controls are exported from `src/components/ui/index.ts`. `src/components/patterns/` contains the viewer compositions that connect those controls to PDF, Parquet, and annotation state. The former design-library test screen has been removed.
+
+## Hosted agent API (Vercel)
+
+The Vercel deployment serves the static build, and `api/agent.ts` and `api/agent/status.ts` run the same drawing agent as the local Vite server as serverless functions (`server/hostedAgent.ts`). Set the provider variables on the Vercel project for Production and Preview (Settings → Environment Variables, or from `viewer/` with the CLI after `vercel login` and `vercel link`), then redeploy:
+
+```sh
+vercel env add AGENT_PROVIDER production            # bedrock
+vercel env add AWS_REGION production                # us-east-1
+vercel env add BEDROCK_MODEL_ID production          # us.anthropic.claude-opus-5-5
+vercel env add AWS_BEARER_TOKEN_BEDROCK production  # paste the token when prompted; never commit it
+```
+
+`GET /api/agent/status` on the site reports `configured: true` once the variables are in place. The function admits browser requests from the site itself (same host, no cross-site fetches) and keeps the local API's bounded inputs, at most two concurrent requests per instance and a 60-second limit. It is still a public URL: anyone who finds it can spend the configured quota, so treat it as a demo setting and remove the variables after the event.

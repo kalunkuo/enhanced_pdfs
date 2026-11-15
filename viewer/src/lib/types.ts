@@ -1,5 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import type { NativeTagIndex } from './nativeTypes';
+import type { NativeTagIndex } from './nativeTypes.ts';
 
 export type Point = readonly [number, number];
 
