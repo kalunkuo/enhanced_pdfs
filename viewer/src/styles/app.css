@@ -272,8 +272,8 @@ button, input { font: inherit; color: inherit; }
 .pick-status { position: absolute; left: 12px; bottom: 12px; pointer-events: none; padding: 7px 10px; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); font-size: var(--primitive-font-size-xs); box-shadow: var(--viewer-shadow-md); }
 /* Contextual selection actions: a small rail under the selection's bottom-right corner, styled like the tool rail. */
 .selection-actions { position: absolute; z-index: 4; display: flex; gap: var(--primitive-space-1); padding: var(--toolbar-padding); background: var(--color-surface); border: var(--primitive-border-1) solid var(--color-border); border-radius: var(--radius-control); box-shadow: var(--viewer-shadow-md);
-    transform: translate(-100%, var(--primitive-space-2)); transform-origin: top right; animation: selection-actions-in var(--duration-content-reveal) var(--ease-enter); }
-.selection-actions.above { transform: translate(-100%, calc(-100% - var(--primitive-space-2))); transform-origin: bottom right; }
+    transform-origin: top right; animation: selection-actions-in var(--duration-content-reveal) var(--ease-enter); }
+.selection-actions.above { transform-origin: bottom right; }
 @keyframes selection-actions-in { from { opacity: 0; scale: var(--menu-scale-closed); } to { opacity: 1; scale: 1; } }
 @media (prefers-reduced-motion: reduce) { .selection-actions { animation-duration: .01ms; } }
 

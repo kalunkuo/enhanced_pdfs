@@ -262,7 +262,7 @@ export function PdfStage(props: Props) {
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {showSelectionActions && selectionBounds && (
-                    <SelectionActions bounds={selectionBounds} zoom={zoom} pageWidth={page.width} pageHeight={page.height} count={props.selectedKeys!.size}
+                    <SelectionActions bounds={selectionBounds} zoom={zoom} pageWidth={page.width} pageHeight={page.height} viewport={wrapRef} count={props.selectedKeys!.size}
                         onSelectSimilar={props.selectionActions!.onSelectSimilar}
                         onComment={() => props.selectionActions!.onComment([selectionBounds[2], selectionBounds[1]])} />
                 )}
