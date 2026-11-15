@@ -98,8 +98,13 @@ Var EmbeddedStream(IPXS_PDFVariant* filespec) {
 }
 
 // Collects key -> filespec from a name-tree node (first occurrence of a key wins).
+// Anything that cannot be carried over exactly marks the walk truncated, so WriteAttachments refuses to
+// rebuild the tree from an incomplete list (it would silently drop entries).
 void CollectNames(IPXS_PDFVariant* node, int depth, std::map<std::string, Var>& out, TreeWalk& walk) {
-    if (TypeOf(node) != PVT_Dictionary) return;
+    if (TypeOf(node) != PVT_Dictionary) {
+        walk.truncated = true;
+        return;
+    }
     if (depth > kMaxTreeDepth || ++walk.nodes > kMaxTreeNodes) {
         walk.truncated = true;
         return;
@@ -118,10 +123,17 @@ void CollectNames(IPXS_PDFVariant* node, int depth, std::map<std::string, Var>& 
         names->get_Count(&n);
         for (ULONG_T i = 0; i + 1 < n; i += 2) {
             Var key, value;
-            if (FAILED(names->get_Item(i, key.Put())) || TypeOf(key.Get()) != PVT_String) continue;
-            if (FAILED(names->get_Item(i + 1, value.Put()))) continue;
+            if (FAILED(names->get_Item(i, key.Put())) || TypeOf(key.Get()) != PVT_String ||
+                FAILED(names->get_Item(i + 1, value.Put()))) {
+                walk.truncated = true;
+                continue;
+            }
             std::string k = StringBytes(key.Get());
-            if (!out.count(k)) out.emplace(std::move(k), std::move(value));
+            if (out.count(k)) {
+                walk.truncated = true;  // duplicate key: a flat rebuild would drop one of them
+                continue;
+            }
+            out.emplace(std::move(k), std::move(value));
         }
     }
     Var kids = Get(node, L"Kids");
@@ -130,7 +142,10 @@ void CollectNames(IPXS_PDFVariant* node, int depth, std::map<std::string, Var>& 
         kids->get_Count(&n);
         for (ULONG_T i = 0; i < n; ++i) {
             Var kid;
-            if (SUCCEEDED(kids->get_Item(i, kid.Put()))) CollectNames(kid.Get(), depth + 1, out, walk);
+            if (SUCCEEDED(kids->get_Item(i, kid.Put())))
+                CollectNames(kid.Get(), depth + 1, out, walk);
+            else
+                walk.truncated = true;
         }
     }
 }

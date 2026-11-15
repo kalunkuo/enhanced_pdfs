@@ -151,6 +151,16 @@ void ClearHighlightIn(IPXV_Document* doc) {
     if (doc && doc == gDoc) ClearHighlight();
 }
 
+void RemoveAllHighlights(IPXV_Document* doc) {
+    if (!doc) return;
+    try {
+        RemoveFrom(doc);
+    } catch (...) {
+        LogLine("highlight: remove-all threw");
+    }
+    ForgetHighlight(doc);
+}
+
 void ForgetHighlight(IPXV_Document* doc) {
     if (doc && doc == gDoc) {
         gDoc->Release();

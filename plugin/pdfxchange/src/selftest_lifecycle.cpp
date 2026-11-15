@@ -7,6 +7,7 @@
 
 #include "com_ptr.h"
 #include "element_map.h"
+#include "highlight.h"
 #include "lifecycle.h"
 #include "log.h"
 #include "markups.h"
@@ -166,11 +167,23 @@ std::string StepFaultDuckDb(IPXV_Document* doc, const std::string& outDir) {
     return "{\"saved\": " + Bool(saved) + ", \"faultHit\": " + Bool(FaultHit()) + "}";
 }
 
+// Review finding 1: a highlight showing at save time must never reach the file. Shows the inspect
+// highlight on wall 676281 and saves a copy; the caller checks hl.pdf has no smh-highlight annotation.
+std::string StepHighlightSave(IPXV_Document* doc, const std::string& outDir) {
+    sm::Box box = BoxOf(doc, 676281);
+    ShowHighlight(doc, 0, box);
+    std::string path = outDir + "\\hl.pdf";
+    bool saved = SaveCopy(doc, path);
+    doc->put_Modified(VARIANT_FALSE);  // keep the scripted close prompt-free
+    return std::string("{\"saved\": ") + (saved ? "true" : "false") + ", \"file\": " + JsonString(path) + "}";
+}
+
 struct RegisterSteps {
     RegisterSteps() {
         RegisterSelfTestStep("lifecycle-open", &StepOpen);
         RegisterSelfTestStep("addmarkup", &StepAddMarkup);
         RegisterSelfTestStep("fault-duckdb", &StepFaultDuckDb);
+        RegisterSelfTestStep("highlight-save", &StepHighlightSave);
     }
 } gRegisterSteps;
 

@@ -12,6 +12,9 @@ void RegisterLifecycle(IPXV_Inst* inst);
 void UnregisterLifecycle();
 
 // Instances captured by RegisterLifecycle (null before / after).
+// plugin.cpp: false when duckdb.dll could not be loaded; every table operation must then be skipped.
+bool DuckDbAvailable();
+
 IPXV_Inst* PxvInst();
 IPXS_Inst* PxsInst();
 

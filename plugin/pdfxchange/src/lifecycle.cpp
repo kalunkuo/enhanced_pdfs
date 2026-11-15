@@ -4,6 +4,7 @@
 // e.document.beforeSave / afterSave, e.document.beforeClose / closed.
 #include "lifecycle.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <exception>
 #include <map>
@@ -144,6 +145,10 @@ bool IsModified(IPXV_Document* doc) {
 
 void OpenDoc(IPXV_Document* doc, IPXC_Document* core) {
     gDocs.erase(core);
+    if (!DuckDbAvailable()) {  // no DuckDB: never touch the tables (a call would crash the host)
+        LogLine("lifecycle: duckdb.dll unavailable, document left alone");
+        return;
+    }
     DocState& s = gDocs[core];
     s.core.Attach(core);
     sm::Attachments files;
@@ -231,16 +236,20 @@ void OnAnnots(IUnknown* from, const char* what) {
     ComPtr<IPXC_Document> core = CoreOf(AsDoc(from).Get());
     DocState* s = core ? Find(core.Get()) : nullptr;
     if (!s) return;
-    if (!Guarded(what, [&] { Recompute(core.Get(), *s); })) MakeInert(core.Get());
+    // Advisory only: a failure (e.g. a lock timeout) is logged and the next change or save retries.
+    Guarded(what, [&] { Recompute(core.Get(), *s); });
 }
 
 void OnBeforeSave(IUnknown* from) {
-    ClearHighlightIn(AsDoc(from).Get());  // the inspect highlight must never be saved
+    // The inspect highlight must never be saved, even if we lost track of it (e.g. close-prompt saves).
+    RemoveAllHighlights(AsDoc(from).Get());
     ComPtr<IPXC_Document> core = CoreOf(AsDoc(from).Get());
     DocState* s = core ? Find(core.Get()) : nullptr;
     if (!s) return;
     gBusy = true;
-    if (!Guarded("save", [&] { SaveDoc(core.Get(), *s); })) MakeInert(core.Get());
+    // A failed table write is logged; the save itself proceeds and the next save retries (no MakeInert:
+    // one transient error must not silently stop all later table writes).
+    Guarded("save", [&] { SaveDoc(core.Get(), *s); });
     gBusy = false;
 }
 
@@ -252,12 +261,18 @@ void OnAfterSave(IEvent* event, IUnknown* from) {
     LogLine("lifecycle: afterSave hr=0x%08lx", static_cast<unsigned long>(hr));
 }
 
-void OnClose(IUnknown* from, const char* what) {
-    Guarded(what, [&] {
+// beforeClose may precede a "Save changes?" prompt (and the close may be cancelled): remove the highlight
+// for real, but keep the document's state. Only `closed` drops the state.
+void OnBeforeClose(IUnknown* from) {
+    Guarded("beforeClose", [&] { RemoveAllHighlights(AsDoc(from).Get()); });
+}
+
+void OnClosed(IUnknown* from) {
+    Guarded("closed", [&] {
         ForgetHighlight(AsDoc(from).Get());
         ComPtr<IPXC_Document> core = CoreOf(AsDoc(from).Get());
         if (!core) return;
-        if (gDocs.erase(core.Get())) LogLine("lifecycle: %s: state dropped", what);
+        if (gDocs.erase(core.Get())) LogLine("lifecycle: closed: state dropped");
         ForgetElementMaps(core.Get());
     });
 }
@@ -281,8 +296,8 @@ void RegisterLifecycle(IPXV_Inst* inst) {
     Subscribe(inst, "e.annots.deleted", [](IEvent*, IUnknown* from) { OnAnnots(from, "annots.deleted"); });
     Subscribe(inst, "e.document.beforeSave", [](IEvent*, IUnknown* from) { OnBeforeSave(from); });
     Subscribe(inst, "e.document.afterSave", [](IEvent* e, IUnknown* from) { OnAfterSave(e, from); });
-    Subscribe(inst, "e.document.beforeClose", [](IEvent*, IUnknown* from) { OnClose(from, "beforeClose"); });
-    Subscribe(inst, "e.document.closed", [](IEvent*, IUnknown* from) { OnClose(from, "closed"); });
+    Subscribe(inst, "e.document.beforeClose", [](IEvent*, IUnknown* from) { OnBeforeClose(from); });
+    Subscribe(inst, "e.document.closed", [](IEvent*, IUnknown* from) { OnClosed(from); });
     LogLine("lifecycle: registered");
 }
 
@@ -330,4 +345,15 @@ bool FaultHit() { return gFaultHit; }
 const sm::ModelData* FindModel(IPXC_Document* doc) {
     DocState* s = Find(doc);
     return s ? &s->model : nullptr;
+}
+
+std::vector<int64_t> LinkedElementIds(IPXC_Document* doc, const std::string& annotationId) {
+    std::vector<int64_t> ids;
+    DocState* s = Find(doc);
+    if (!s) return ids;
+    for (const auto& link : s->current.links)
+        if (link.annotationId == annotationId) ids.push_back(link.elementId);
+    std::sort(ids.begin(), ids.end());
+    ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    return ids;
 }

@@ -97,8 +97,14 @@ private:
 
 }  // namespace
 
+namespace {
+bool gDuckDbLoaded = false;
+}
+
 // duckdb.dll is delay-loaded (CMakeLists.txt): load it from this plug-in's folder so the delay-load
-// helper finds it already in the process.
+// helper finds it already in the process. If that fails, the delay-load helper would raise an SEH
+// exception on the first DuckDB call (not catchable by catch(...)), so the lifecycle checks
+// DuckDbAvailable() and stays inert instead.
 void PreloadDuckDb() {
     HMODULE self = nullptr;
     wchar_t path[MAX_PATH] = {};
@@ -109,9 +115,12 @@ void PreloadDuckDb() {
     wchar_t* slash = wcsrchr(path, L'\\');
     if (!slash) return;
     wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"duckdb.dll");
-    if (!LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH))
-        LogLine("pxc: could not load duckdb.dll next to the plug-in (error %lu)", GetLastError());
+    gDuckDbLoaded = LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH) != nullptr;
+    if (!gDuckDbLoaded)
+        LogLine("pxc: could not load duckdb.dll next to the plug-in (error %lu); linking disabled", GetLastError());
 }
+
+bool DuckDbAvailable() { return gDuckDbLoaded; }
 
 extern "C" HRESULT __stdcall PXCE_GetPlugin(ULONG apiVersion, void*, IPXV_Plugin** plugin) {
     LogLine("pxc: PXCE_GetPlugin api=0x%08lx", apiVersion);

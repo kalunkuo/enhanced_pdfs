@@ -14,6 +14,9 @@ void ShowHighlight(IPXV_Document* doc, int pageIndex, const sm::Box& box);
 // Removes the highlight from whichever document shows it (no-op if none).
 void ClearHighlight();
 
-// Removes the highlight if it is on `doc` (before save) / forgets it (on close).
+// Removes the highlight if it is on `doc` / forgets it without touching the document.
 void ClearHighlightIn(IPXV_Document* doc);
 void ForgetHighlight(IPXV_Document* doc);
+
+// Before save: removes EVERY annotation named kHighlightName from `doc`, whether or not we still track it.
+void RemoveAllHighlights(IPXV_Document* doc);
