@@ -25,7 +25,7 @@ import { buildAnnotatedPdf } from './lib/save';
 import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
-import { linkedKeys, withLinks } from './lib/links';
+import { linkedKeys, linksSummary, withLinks } from './lib/links';
 import { similarElementKeys } from './lib/selection';
 import { useProfile } from './lib/profile';
 import type { Annotation, ElementInfo, EnhancedPdf, PageData, Point, Reply } from './lib/types';
@@ -278,6 +278,7 @@ export function App() {
         [doc, page],
     );
 
+    const linksLabel = useCallback((keys: readonly string[]) => linksSummary(keys, doc?.elements), [doc]);
     const labelFor = useCallback(
         (key: string) => {
             const e = doc?.elements.get(key);
@@ -591,7 +592,7 @@ export function App() {
     const composerContext = (() => {
         const links = composer?.links;
         if (!links?.length) return null;
-        if (links.length > 1) return `On ${links.length} selected objects`;
+        if (links.length > 1) return `On ${linksSummary(links, doc?.elements)}`;
         const element = doc?.elements.get(links[0]!);
         return `On ${element ? elementLabel(element) : links[0]}`;
     })();
@@ -656,6 +657,7 @@ export function App() {
                             selectedAnnotationId={selectedAnnotationId}
                             highlightColor={highlightColor}
                             labelFor={labelFor}
+                            linksLabel={linksLabel}
                             onZoom={setZoom}
                             onZoomMode={setZoomMode}
                             onHover={onHover}
@@ -680,6 +682,7 @@ export function App() {
                                 profile,
                                 onProfile: setProfile,
                                 labelFor,
+                                linksLabel,
                                 onSelect: (id) => {
                                     setSelectedAnnotationId(id);
                                     setComposer(null);

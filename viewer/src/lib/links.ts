@@ -1,4 +1,5 @@
-import type { Annotation } from './types';
+import { singularCategory } from './elementLabel';
+import type { Annotation, ElementInfo } from './types';
 
 /**
  * The objects an annotation is linked to. One link is stored as `elementKey`; several also fill `elementKeys`,
@@ -29,4 +30,19 @@ export function cleanLinks<T extends Annotation>(a: T, raw: { elementKey?: unkno
     const first = valid(raw.elementKey) ? [raw.elementKey] : [];
     // elementKey goes first: it is the tie every reader shows.
     return withLinks(a, [...first, ...list]);
+}
+
+/**
+ * What a multi-object link is called where space is tight: its categories with counts, largest first
+ * ("Wall (12)", or "Wall (8), Floor (4)"). More than two categories end in "+N more" instead of a long list.
+ */
+export function linksSummary(keys: readonly string[], elements: ReadonlyMap<string, Pick<ElementInfo, 'category'>> | undefined): string {
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+        const category = singularCategory(elements?.get(key)?.category ?? '') || 'Object';
+        counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    const sorted = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const shown = sorted.slice(0, 2).map(([category, n]) => `${category} (${n})`).join(', ');
+    return sorted.length > 2 ? `${shown}, +${sorted.length - 2} more` : shown;
 }

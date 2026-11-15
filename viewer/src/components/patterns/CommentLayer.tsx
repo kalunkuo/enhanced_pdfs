@@ -17,6 +17,7 @@ export interface CommentLayerProps {
     profile: Profile;
     onProfile: (profile: Profile) => void;
     labelFor: (elementKey: string) => string;
+    linksLabel: (elementKeys: readonly string[]) => string;
     /** The element under a page point, or null for empty paper. Decides tied or untied while dragging. */
     pick: (point: Point) => string | null;
     onSelect: (id: string | null) => void;
@@ -117,7 +118,7 @@ export function CommentLayer(props: CommentLayerProps) {
                 const at = dragging ? drag.at : comment.from;
                 const links = linkedKeys(comment);
                 const key = dragging && links.length <= 1 ? drag.key : (links[0] ?? null);
-                const label = links.length > 1 ? `${links.length} objects` : key ? props.labelFor(key) : 'No object';
+                const label = links.length > 1 ? props.linksLabel(links) : key ? props.labelFor(key) : 'No object';
                 const name = comment.author?.name ?? 'Unknown';
                 const selected = comment.id === props.selectedId;
                 const flip = at[0] * zoom + PILL_ROOM > page.width * zoom;

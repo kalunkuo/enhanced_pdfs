@@ -33,6 +33,8 @@ interface Props {
     selectedAnnotationId: string | null;
     highlightColor: string;
     labelFor: (elementKey: string) => string;
+    /** Names a multi-object link by category and count, e.g. "Wall (12)". */
+    linksLabel: (elementKeys: readonly string[]) => string;
     onZoom: (effective: number) => void;
     onHover: (key: string | null, at: { x: number; y: number }) => void;
     onSelectElement: (key: string | null) => void;
@@ -227,7 +229,7 @@ export function PdfStage(props: Props) {
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
                     hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
-                    selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
+                    selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor} linksLabel={props.linksLabel}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
                     onElementMove={(point, client) => props.onHover(pickElement(point, 4 / zoom)[0]?.elementKey ?? null, client)}
                     onElementSelect={(point, additive) => {

@@ -2,7 +2,7 @@ import { categoryColor } from '../../lib/categoryColor';
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { formatExactDate, formatTimeAgo } from '../../lib/comments';
 import { elementLabel } from '../../lib/elementLabel';
-import { linkedKeys } from '../../lib/links';
+import { linkedKeys, linksSummary } from '../../lib/links';
 import type { Profile } from '../../lib/profile';
 import { useNow } from '../../lib/useNow';
 import type { Annotation, ElementInfo } from '../../lib/types';
@@ -108,7 +108,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                 const chip = a.kind === 'cloud'
                     ? (covered ? <span className="chip tied">covers {covered} object{covered === 1 ? '' : 's'}</span> : <span className="chip untied">no objects</span>)
                     : links.length > 1
-                    ? <span className="chip tied">linked to {links.length} objects</span>
+                    ? <span className="chip tied">↳ {linksSummary(links, elements)}</span>
                     : a.elementKey
                     ? <span className="chip tied" style={e ? { color: categoryColor(e.category) } : undefined}>↳ {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
