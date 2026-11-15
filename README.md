@@ -15,7 +15,7 @@ flowchart TD
 
 ## Install in Revit 2025
 
-In the Windows guest, close Revit and run the following from the repository root in PowerShell. A source build requires the .NET 8 SDK or later and a local Revit 2025 installation.
+In the Windows guest, close Revit and run the following from the repository root in PowerShell. A source build requires a local Revit 2025 installation and the .NET SDK matching its runtime: Revit 2025.0–2025.4 runs on .NET 8, later 2025 updates on .NET 10 (the installer reads `RevitAPI.runtimeconfig.json` and builds for the right one).
 
 ```powershell
 .\scripts\Install-RevitAddin.ps1
@@ -45,6 +45,18 @@ For example, ask a PDF reader that extracts text: **“What Fire Rating values a
 Join appearances to drawings on `DrawingId` and to elements on `ElementKey`. An element shown on multiple pages has one element record and an appearance for each drawing in which it occurs. Join instance parameters using `OwnerKey = ElementKey` and type parameters using `OwnerKey = TypeKey`. Use the view and model identifiers alongside element IDs when checking linked elements. Share the enhanced PDF only with recipients who should receive its embedded model properties.
 
 For plans, elevations, sections, details, and 3D views, membership is collected from Revit's drawing callbacks. Sheet-owned elements and schedule cells use the corresponding Revit APIs. Elements from view types such as legends and drafting views use their view-owned element lists. View data follows Revit's custom exporter, so its callbacks can differ from the PDF engine where printing hides annotations or rasterizes effects. Split schedules currently include data for the full schedule. Linked schedule rows contribute displayed cell text. Imported CAD or raster graphics carry the Revit container's properties when it is exposed.
+
+## Review a marked-up PDF
+
+When an enhanced PDF comes back with markups, select **Add-Ins → Enhanced PDFs → Import marked-up PDF** in the project it was exported from. Claude reads each markup and the elements it is tied to, and proposes a concrete change: a parameter value or a type swap. Markups that are not a model change become notes. Proposals appear one at a time in the **Markup review** panel while Claude works, so you can start deciding straight away.
+
+- **Approve** applies one change in its own undoable transaction (`Markup: Walls 676281 Fire Rating`). It re-checks the element first and refuses if it changed since the proposal. Type swaps also show the dimensions that change.
+- **Reject…** takes an optional reason. Nothing is written to the model.
+- Clicking a card zooms to the element and shows the contractor's markup cropped from the PDF.
+- **Save review** writes `<name>-reviewed.pdf` with a `review-decisions.parquet` attachment. The original PDF is never modified.
+- **Stop Claude** ends the analysis and keeps the proposals so far. **End review** discards pending proposals and closes the panel; approved changes stay (Ctrl+Z reverts them).
+
+Requirements: [Claude Code](https://claude.com/claude-code) installed and signed in (`claude auth login`) on the same machine. The add-in runs it headless with only the review tools: Claude can read the model and stage proposals, but no tool changes the model. Each run is capped at $2. Markups come from the web viewer (`annotations.json`), the Acrobat smart-markup plug-in (`annotations.parquet`, `annotation-links.parquet`), or plain PDF annotations. Each import writes a log under `%TEMP%\…\EnhancedPdfs-review\` (`latest.txt` points to the newest). Design: `docs/superpowers/specs/2026-11-14-markup-reimport-design.md`.
 
 ## Verify a PDF
 
