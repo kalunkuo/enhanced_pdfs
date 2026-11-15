@@ -86,6 +86,14 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Type_swap_reports_only_the_sizes_that_change()
+    {
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("36\" x 84\""));
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal([new SizeChange("Width", "2' - 8\"", "3' - 0\"")], r.SizeChanges);
+    }
+
+    [Fact]
     public async Task Unknown_type_name_rejected()
     {
         var r = await Validate(FixturePdf.DoorKey, new ChangeType("40\" x 84\""));

@@ -184,6 +184,9 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         if (!selected)
         {
             body.Children.Add(new TextBlock { Text = $"{p.OldValue} → {p.NewValue}", Foreground = Muted, TextTrimming = TextTrimming.CharacterEllipsis });
+            // Collapsed cards still say what gets bigger or smaller.
+            if (p.SizeChanges.Count > 0)
+                body.Children.Add(new TextBlock { Text = string.Join(" · ", p.SizeChanges.Select(s => $"{s.Name} {s.OldValue ?? "—"} → {s.NewValue ?? "—"}")), Foreground = Accent, TextTrimming = TextTrimming.CharacterEllipsis });
         }
         else
         {
@@ -193,6 +196,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             if (!string.IsNullOrWhiteSpace(markup?.Text))
                 body.Children.Add(Quote(markup!.Text!));
             body.Children.Add(Diff(what, p.OldValue, p.NewValue));
+            foreach (var size in p.SizeChanges)
+                body.Children.Add(Diff(size.Name, size.OldValue, size.NewValue));
             if (p.AffectsCount > 1)
                 body.Children.Add(new TextBlock { Text = $"Type parameter: affects {p.AffectsCount} {element?.Category?.ToLowerInvariant() ?? "elements"}.", Foreground = Accent, Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap });
             body.Children.Add(new Border { Background = QuoteBg, CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 4, 6, 4), Margin = new Thickness(0, 6, 0, 0),

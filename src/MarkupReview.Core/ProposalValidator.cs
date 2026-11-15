@@ -7,6 +7,9 @@ namespace MarkupReview.Core;
 public sealed record ValidationResult(bool Ok, string? Error, string? OldValue, string? NormalisedValue, int AffectsCount, string? BlockReason = null)
 {
     public static ValidationResult Reject(string error) => new(false, error, null, null, 0);
+
+    /// <summary>For a type swap: the dimensions that differ between the current and the proposed type.</summary>
+    public IReadOnlyList<SizeChange> SizeChanges { get; init; } = [];
 }
 
 /// <summary>Checks a proposed change against the open model. Used when Claude proposes and again at Approve.</summary>
@@ -78,7 +81,21 @@ public static class ProposalValidator
         string? block = changedSinceExport && !Same(exported.Type, current.Type)
             ? $"Type changed since export (was '{exported.Type}', now '{current.Type}')"
             : null;
-        return new(true, null, current.Type, target.Name, 1, block);
+        var from = types.FirstOrDefault(t => Same(t.Name, current.Type) && (current.Family is null || Same(t.Family, current.Family)))
+            ?? types.FirstOrDefault(t => Same(t.Name, current.Type));
+        return new(true, null, current.Type, target.Name, 1, block) { SizeChanges = SizeDiff(from, target) };
+    }
+
+    private static List<SizeChange> SizeDiff(ModelType? from, ModelType to)
+    {
+        var names = to.Sizes.Keys.Concat(from?.Sizes.Keys ?? []).Distinct(StringComparer.OrdinalIgnoreCase);
+        var changes = new List<SizeChange>();
+        foreach (var name in names)
+        {
+            string? before = from?.Sizes.GetValueOrDefault(name), after = to.Sizes.GetValueOrDefault(name);
+            if (!Same(before, after)) changes.Add(new SizeChange(name, before, after));
+        }
+        return changes;
     }
 
     /// <summary>Returns the value to apply, or null with an error. Never passes a non-numeric string to a numeric parameter.</summary>

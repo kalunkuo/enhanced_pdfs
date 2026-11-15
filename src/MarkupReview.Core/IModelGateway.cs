@@ -9,7 +9,12 @@ public sealed record ModelElement(
 public sealed record ModelType(string? Family, string Name)
 {
     public string FullName => Family is null ? Name : $"{Family}: {Name}";
+    /// <summary>Size-defining type parameters as Revit displays them (Width, Height, Thickness…); empty when none apply.</summary>
+    public IReadOnlyDictionary<string, string> Sizes { get; init; } = new Dictionary<string, string>();
 }
+
+/// <summary>One dimension that differs between an element's current type and the proposed type.</summary>
+public sealed record SizeChange(string Name, string? OldValue, string? NewValue);
 
 /// <param name="Storage">Revit storage type: String, Integer, Double, ElementId.</param>
 /// <param name="Allowed">Display values Revit can enumerate (yes/no, enums, element references); null when free-form.</param>

@@ -19,6 +19,8 @@ public sealed record Proposal
     public string? OldValue { get; set; }
     public string? NewValue { get; set; }
     public int AffectsCount { get; set; } = 1;
+    /// <summary>Type swaps: dimensions that change (e.g. Width 2'-8" → 3'-0"), so the reviewer sees the size, not just names.</summary>
+    public IReadOnlyList<SizeChange> SizeChanges { get; set; } = [];
     public string? BlockReason { get; set; }
     public string? DecisionReason { get; set; }
     public DateTimeOffset? DecidedUtc { get; set; }

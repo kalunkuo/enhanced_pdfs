@@ -289,3 +289,13 @@ lesson as the Acrobat plug-in spec).
 - WPF styling (follow the viewer's design tokens in `viewer/docs/design-system.md` loosely, if it
   helps).
 - Markup crop margin and resolution.
+
+## Backlog
+
+- **On-model ghost for size changes (goal 5, deferred 2026-11-15).** Today a type swap shows its size delta in
+  the card (Width/Height/Thickness from the types' built-in parameters) and the preview zooms to and selects the
+  element. Still to build: a DirectContext3D server drawing the current outline (orange) and the proposed
+  type's outline (dashed green) at the element's location. Cheaper first version: a box at the new
+  width/thickness rather than the new family's real geometry (real geometry needs a rolled-back type swap to
+  read it). Only verifiable inside Revit.
+- **The old → new tag on the canvas** (same DirectContext3D server).

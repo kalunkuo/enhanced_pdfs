@@ -19,7 +19,8 @@ public sealed class McpServerTests : IDisposable
         {
             ViewerJson = FixturePdf.ViewerAnnotations(
                 new { id = "m1", page = 1, kind = "rect", from = new { x = 1.0, y = 1.0 }, to = new { x = 9.0, y = 9.0 }, text = "should be 1 HR per code review", elementKey = FixturePdf.WallKey },
-                new { id = "m2", page = 1, kind = "text", from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 }, text = "check with structural" }),
+                new { id = "m2", page = 1, kind = "text", from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 }, text = "check with structural" },
+                new { id = "m3", page = 1, kind = "comment", from = new { x = 5.0, y = 5.0 }, to = new { x = 5.0, y = 5.0 }, text = "door too narrow", elementKey = FixturePdf.DoorKey }),
         };
         var pdf = ReturnedPdf.Open(fixture.Save(_dir.Path));
         var tables = ExportTables.Load(pdf);
@@ -99,6 +100,28 @@ public sealed class McpServerTests : IDisposable
         var p = Assert.Single(_session.Proposals);
         Assert.Equal((ProposalStatus.Pending, "2 HR", "1 HR", 14, "Markup says 'should be 1 HR'."), (p.Status, p.OldValue, p.NewValue, p.AffectsCount, p.Reason));
         Assert.Contains("14", (string)r["result"]!["content"]![0]!["text"]!);
+    }
+
+    [Fact]
+    public async Task List_types_includes_each_types_sizes()
+    {
+        var r = Assert.Single(await Exchange(Call(11, "list_types", new { handle = FixturePdf.DoorKey })));
+        var payload = JsonNode.Parse((string)r["result"]!["content"]![0]!["text"]!)!;
+        var wide = payload["types"]!.AsArray().Single(t => (string?)t!["name"] == "36\" x 84\"")!;
+        Assert.Equal("3' - 0\"", (string?)wide["sizes"]!["Width"]);
+    }
+
+    [Fact]
+    public async Task Propose_type_swap_keeps_size_changes_and_reports_them()
+    {
+        var r = Assert.Single(await Exchange(Call(10, "propose_change", new
+        {
+            markup_id = "m3", handle = FixturePdf.DoorKey, reason = "Markup says the door is too narrow.",
+            change = new { change_type = new { type_name = "36\" x 84\"" } },
+        })));
+        Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
+        Assert.Equal([new SizeChange("Width", "2' - 8\"", "3' - 0\"")], Assert.Single(_session.Proposals).SizeChanges);
+        Assert.Contains("Width 2' - 8\" → 3' - 0\"", (string)r["result"]!["content"]![0]!["text"]!);
     }
 
     [Fact]

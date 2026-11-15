@@ -129,7 +129,11 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         return new JsonObject
         {
             ["current"] = current.Type,
-            ["types"] = new JsonArray([.. types.Select(t => (JsonNode)new JsonObject { ["family"] = t.Family, ["name"] = t.Name })]),
+            ["types"] = new JsonArray([.. types.Select(t => (JsonNode)new JsonObject
+            {
+                ["family"] = t.Family, ["name"] = t.Name,
+                ["sizes"] = new JsonObject([.. t.Sizes.Select(s => KeyValuePair.Create(s.Key, (JsonNode?)s.Value))]),
+            })]),
         };
     }
 
@@ -155,12 +159,14 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         proposal.OldValue = result.OldValue;
         proposal.NewValue = result.NormalisedValue;
         proposal.AffectsCount = result.AffectsCount;
+        proposal.SizeChanges = result.SizeChanges;
         if (result.BlockReason is not null) { proposal.Status = ProposalStatus.Blocked; proposal.BlockReason = result.BlockReason; }
         session.Add(proposal);
 
         string text = result.BlockReason is not null
             ? $"Staged {proposal.Id} as blocked: {result.BlockReason}. The reviewer will see it but cannot approve it."
-            : $"Staged {proposal.Id}: '{result.OldValue}' → '{result.NormalisedValue}'" + (result.AffectsCount > 1 ? $" (type change, affects {result.AffectsCount} elements)." : ".");
+            : $"Staged {proposal.Id}: '{result.OldValue}' → '{result.NormalisedValue}'" + (result.AffectsCount > 1 ? $" (type change, affects {result.AffectsCount} elements)." : ".")
+              + (result.SizeChanges.Count > 0 ? " Size: " + string.Join("; ", result.SizeChanges.Select(s => $"{s.Name} {s.OldValue ?? "—"} → {s.NewValue ?? "—"}")) + "." : "");
         return Text(text, isError: false);
     }
 

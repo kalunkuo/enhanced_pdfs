@@ -27,7 +27,7 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
         return element.GetValidTypes()
             .Select(id => Document.GetElement(id) as ElementType)
             .OfType<ElementType>()
-            .Select(t => new ModelType(t.FamilyName, t.Name))
+            .Select(t => new ModelType(t.FamilyName, t.Name) { Sizes = Sizes(t) })
             .OrderBy(t => t.FullName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     });
@@ -58,6 +58,29 @@ internal sealed class RevitModelGateway(RevitDispatcher dispatcher, Document doc
             .GroupBy(p => p.Definition.Name)
             .Select(g => g.OrderBy(p => p.IsReadOnly).First())
             .Select(p => new ModelParameter(p.Definition.Name, scope, Storage(p), p.AsValueString() ?? p.AsString(), p.IsReadOnly));
+
+    // Size-defining type parameters, by built-in id so they resolve in any Revit language. First hit per label wins.
+    private static readonly (string Label, BuiltInParameter Id)[] SizeParameters =
+    [
+        ("Width", BuiltInParameter.FAMILY_WIDTH_PARAM),
+        ("Width", BuiltInParameter.WALL_ATTR_WIDTH_PARAM),
+        ("Height", BuiltInParameter.FAMILY_HEIGHT_PARAM),
+        ("Thickness", BuiltInParameter.FAMILY_THICKNESS_PARAM),
+        ("Thickness", BuiltInParameter.FLOOR_ATTR_DEFAULT_THICKNESS_PARAM),
+        ("Rough Width", BuiltInParameter.FAMILY_ROUGH_WIDTH_PARAM),
+        ("Rough Height", BuiltInParameter.FAMILY_ROUGH_HEIGHT_PARAM),
+    ];
+
+    private static Dictionary<string, string> Sizes(ElementType type)
+    {
+        var sizes = new Dictionary<string, string>();
+        foreach (var (label, id) in SizeParameters)
+        {
+            if (sizes.ContainsKey(label)) continue;
+            if (type.get_Parameter(id)?.AsValueString() is { Length: > 0 } value) sizes[label] = value;
+        }
+        return sizes;
+    }
 
     private static string Storage(Parameter p) =>
         p.Definition.GetDataType() == SpecTypeId.Boolean.YesNo ? "Integer" : p.StorageType.ToString();
