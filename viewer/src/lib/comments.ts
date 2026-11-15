@@ -68,3 +68,9 @@ export function withAuthorship<T extends { author?: { name: string; photo?: stri
     const author = annotation.author ?? (name ? { name, ...(profile.photo ? { photo: profile.photo } : {}) } : undefined);
     return { ...annotation, createdAt: annotation.createdAt ?? nowIso, ...(author ? { author } : {}) };
 }
+
+/** Only the person who wrote a message can edit it, judged by the name on the message and the name in the profile. */
+export function isAuthor(author: { name: string } | undefined, profile: { name: string }): boolean {
+    const mine = profile.name.trim().toLowerCase();
+    return mine !== '' && author?.name.trim().toLowerCase() === mine;
+}

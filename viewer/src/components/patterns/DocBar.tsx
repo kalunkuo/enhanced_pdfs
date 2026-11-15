@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconButton } from '../ui/Button';
 import { FlyoutMenu, Logo } from '../ui';
-import { CheckIcon, ChevronDownIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SaveIcon, SelectIcon } from '../ui/icons';
+import { CheckIcon, ChevronDownIcon, DownloadIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SelectIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -34,7 +34,7 @@ export function DocBar(p: Props) {
         <div className="docbar" role="toolbar" aria-label="Document">
             <Logo />
             <span className="sep" />
-            <IconButton label={p.saving ? 'Saving…' : 'Save with annotations (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><SaveIcon /></IconButton>
+            <IconButton label={p.saving ? 'Saving…' : 'Download PDF with markups and review data (Ctrl+S)'} disabled={p.disabled || p.saving} onClick={p.onSave}><DownloadIcon /></IconButton>
             <IconButton label="Print (Ctrl+P)" disabled={p.disabled} onClick={p.onPrint}><PrintIcon /></IconButton>
             <span className="sep" />
             <IconButton label="Previous page (PageUp)" disabled={p.disabled || p.page <= 1} onClick={() => p.onPage(p.page - 1)}><PrevPageIcon /></IconButton>

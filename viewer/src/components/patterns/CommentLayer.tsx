@@ -17,6 +17,9 @@ export interface CommentLayerProps {
     profile: Profile;
     onProfile: (profile: Profile) => void;
     labelFor: (elementKey: string) => string;
+    linksLabel: (elementKeys: readonly string[]) => string;
+    /** Hovering a pin previews the objects it is linked to on the canvas. */
+    onPreview?: (keys: ReadonlySet<string> | null) => void;
     /** The element under a page point, or null for empty paper. Decides tied or untied while dragging. */
     pick: (point: Point) => string | null;
     onSelect: (id: string | null) => void;
@@ -117,7 +120,7 @@ export function CommentLayer(props: CommentLayerProps) {
                 const at = dragging ? drag.at : comment.from;
                 const links = linkedKeys(comment);
                 const key = dragging && links.length <= 1 ? drag.key : (links[0] ?? null);
-                const label = links.length > 1 ? `${links.length} objects` : key ? props.labelFor(key) : 'No object';
+                const label = links.length > 1 ? props.linksLabel(links) : key ? props.labelFor(key) : 'No object';
                 const name = comment.author?.name ?? 'Unknown';
                 const selected = comment.id === props.selectedId;
                 const flip = at[0] * zoom + PILL_ROOM > page.width * zoom;
@@ -130,6 +133,10 @@ export function CommentLayer(props: CommentLayerProps) {
                         tabIndex={0}
                         aria-label={`${comment.source ? 'Imported markup' : 'Comment'} by ${name}${key ? `, on ${label}` : ', not tied to an object'}.${comment.source ? ' Open review details.' : ' Drag to move.'}`}
                         aria-pressed={selected}
+                        onPointerEnter={() => links.length && props.onPreview?.(new Set(links))}
+                        onPointerLeave={() => props.onPreview?.(null)}
+                        onFocus={() => links.length && props.onPreview?.(new Set(links))}
+                        onBlur={() => props.onPreview?.(null)}
                         onPointerDown={(e) => begin(e, comment)}
                         onPointerMove={move}
                         onPointerUp={end}

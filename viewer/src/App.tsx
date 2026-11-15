@@ -25,7 +25,7 @@ import { buildAnnotatedPdf } from './lib/save';
 import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
-import { linkedKeys, withLinks } from './lib/links';
+import { linkedKeys, linksSummary, withLinks } from './lib/links';
 import { similarElementKeys } from './lib/selection';
 import { useProfile } from './lib/profile';
 import type { Annotation, ElementInfo, EnhancedPdf, PageData, Point, Reply } from './lib/types';
@@ -344,6 +344,7 @@ export function App() {
         [doc, page],
     );
 
+    const linksLabel = useCallback((keys: readonly string[]) => linksSummary(keys, doc?.elements), [doc]);
     const labelFor = useCallback(
         (key: string) => {
             const e = doc?.elements.get(key);
@@ -458,7 +459,15 @@ export function App() {
         setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: [...(a.replies ?? []), reply] } : a)));
     }, [profile.photo]);
 
+    const editComment = useCallback((id: string, text: string) => {
+        setAnnotations((list) => list.map((a) => (a.id === id && !a.source ? { ...a, text, modifiedAt: new Date().toISOString() } : a)));
+    }, []);
+    const editReply = useCallback((id: string, replyId: string, text: string) => {
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: (a.replies ?? []).map((r) => (r.id === replyId && !r.source ? { ...r, text } : r)) } : a)));
+    }, []);
+
     const deleteById = useCallback((id: string) => {
+        setPreviewKeys(null);
         setAnnotations((list) => list.filter((a) => a.id !== id));
         setSelectedAnnotationId((current) => (current === id ? null : current));
     }, []);
@@ -493,7 +502,7 @@ export function App() {
         setSaving(true);
         setError(null);
         try {
-            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations });
+            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations, elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances });
             const name = annotatedName(doc.fileName);
             downloadPdf(bytes, name);
         } catch (e) {
@@ -506,7 +515,7 @@ export function App() {
     const print = useCallback(async () => {
         if (!doc) return;
         try {
-            printPdf(annotations.length || doc.importedAnnotationCount ? await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations }) : doc.bytes);
+            printPdf(annotations.length || doc.importedAnnotationCount ? await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations, elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances }) : doc.bytes);
         } catch (e) {
             setError(`Could not print: ${errorText(e)}`);
         }
@@ -671,7 +680,7 @@ export function App() {
     const composerContext = (() => {
         const links = composer?.links;
         if (!links?.length) return null;
-        if (links.length > 1) return `On ${links.length} selected objects`;
+        if (links.length > 1) return `On ${linksSummary(links, doc?.elements)}`;
         const element = doc?.elements.get(links[0]!);
         return `On ${element ? elementLabel(element) : links[0]}`;
     })();
@@ -754,6 +763,7 @@ export function App() {
                             selectedAnnotationId={selectedAnnotationId}
                             highlightColor={highlightColor}
                             labelFor={labelFor}
+                            linksLabel={linksLabel}
                             onZoom={setZoom}
                             onZoomMode={setZoomMode}
                             onHover={onHover}
@@ -778,6 +788,8 @@ export function App() {
                                 profile,
                                 onProfile: setProfile,
                                 labelFor,
+                                linksLabel,
+                                onPreview: setPreviewKeys,
                                 onSelect: (id) => {
                                     setSelectedAnnotationId(id);
                                     setComposer(null);
@@ -828,7 +840,7 @@ export function App() {
                 <aside className="side" data-doc={doc ? 'open' : 'none'}>
                     <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
                         value: t,
-                        label: t === 'agent' ? 'Agent' : t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? 'Elements' :'Properties',
+                        label: t === 'agent' ? 'Agent' : t === 'notes' ? 'Notes' : t === 'elements' ? 'Elements' :'Properties',
                     }))} />
                     <div className="panel" role="tabpanel" aria-label={tab === 'agent' ? 'Agent' : tab === 'properties' ? 'Properties' : tab === 'elements' ? 'Elements' : 'Notes'}>
                         <div className="agent-panel-host" hidden={tab !== 'agent'}>
@@ -859,6 +871,9 @@ export function App() {
                                 onProfile={setProfile}
                                 onTie={tieAnnotation}
                                 onReply={sendReply}
+                                onEdit={editComment}
+                                onEditReply={editReply}
+                                onPreview={setPreviewKeys}
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
                                 onLinkImported={linkImported}

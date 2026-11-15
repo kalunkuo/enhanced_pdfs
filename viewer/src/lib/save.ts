@@ -1,16 +1,18 @@
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString, StandardFonts, type PDFFont } from 'pdf-lib';
 import { calloutBounds, leaderSegment, textBox } from './callout';
 import { cloudPolyline, cloudRect } from './cloud';
 import { initials, pdfDate, safeImage } from './comments';
 import { cleanLinks } from './links';
 import { cleanImportedSource, cleanSourceRef } from './annotationSource';
 import { collectViewerOwnedNames, isViewerOwnedAnnotation, listPdfAnnotationEntries, pdfText, readViewerManifest, removeEmbeddedFile, sortEmbeddedFileNames, VIEWER_ANNOTATION_MARKER, VIEWER_ANNOTATION_PREFIX, type PdfAnnotationEntry } from './pdfAnnotationOwnership';
+import { buildMarkupTables, MARKUP_FILES, markupParquetFiles, type MarkupSource, type PageFrame } from './markupTables';
 import type { Annotation, AnnotationKind, ContainedElement, Point, Reply } from './types';
 
 /**
- * Save annotations into the PDF two ways:
+ * Save annotations into the PDF three ways:
  *  - as standard PDF annotations with their own appearance streams, so Acrobat and other viewers show them, and
- *  - as an `annotations.json` attachment, which keeps the object-ID ties and lets this viewer restore them.
+ *  - as an `annotations.json` attachment, which keeps the object-ID ties and lets this viewer restore them, and
+ *  - as `markups`, `markup-links`, and `markup-replies` Parquet attachments for a Revit import (see `markupTables.ts`).
  * Only annotations listed in this viewer's manifest are replaced. Imported
  * markups retain their standard PDF geometry, appearance, and original identity.
  */
@@ -114,7 +116,7 @@ const DROP = 22;
 interface Box { x0: number; y0: number; x1: number; y1: number }
 
 /** Page-space (top-left origin) bounds of everything an annotation draws. */
-function boundsOf(a: Annotation): Box {
+export function boundsOf(a: Annotation): Box {
     const [x0, y0] = a.from;
     const [x1, y1] = a.to;
     const text = a.text ?? '';
@@ -150,7 +152,7 @@ function encode(font: PDFFont, text: string): string {
     return font.encodeText(safe).toString();
 }
 
-export interface PageFrame { cropX: number; cropY: number; cropH: number }
+export type { PageFrame };
 
 /** Content stream for one annotation, in PDF user space. */
 function drawing(a: Annotation, frame: PageFrame, fonts: Fonts, tied: boolean): { content: string; resources: Record<string, unknown> } {
@@ -309,14 +311,15 @@ function deletedSources(doc: PDFDocument, entries: readonly PdfAnnotationEntry[]
     return result;
 }
 
-export interface AnnotatedPdfOptions {
+export interface AnnotatedPdfOptions extends MarkupSource {
     /** Original imported inventory lets an explicit browser deletion remove exactly that source markup. */
     originalAnnotations?: readonly Annotation[];
 }
 
 /**
  * Write annotations into a copy of the PDF. `describe` gives the text shown in a viewer's comment list,
- * such as "Tied to Wall 02 (ID 900002)".
+ * such as "Tied to Wall 02 (ID 900002)". `options` holds the document's BIM tables, so the markup Parquet
+ * resolves each linked object's Revit identity and drawing.
  */
 export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly Annotation[], describe: (a: Annotation) => string, options: AnnotatedPdfOptions = {}): Promise<Uint8Array> {
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -329,7 +332,8 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
     const removed = deletedSources(doc, sourceEntries, original, annotations);
     for (const entry of sourceEntries) if (isViewerOwnedAnnotation(entry.dict, ownedNames)) removed.add(entry.dict);
     removeEntries(doc, sourceEntries, removed);
-    removeEmbeddedFile(doc, ANNOTATIONS_FILE);
+    for (const name of [ANNOTATIONS_FILE, ...MARKUP_FILES]) removeEmbeddedFile(doc, name);
+    const frames = new Map<number, PageFrame>();
 
     const fonts: Fonts = { sans: await doc.embedFont(StandardFonts.Helvetica), script: await doc.embedFont(StandardFonts.TimesRomanItalic) };
     const pages = doc.getPages();
@@ -371,6 +375,16 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
     for (const a of annotations) {
         const page = pages[a.page - 1];
         if (!page) continue;
+        // Match PDF.js page.view: a usable CropBox/MediaBox intersection, or
+        // MediaBox when those boxes do not overlap. Source anchors use that view.
+        const crop = page.getCropBox(), media = page.getMediaBox();
+        const viewX0 = Math.max(crop.x, media.x), viewY0 = Math.max(crop.y, media.y);
+        const viewX1 = Math.min(crop.x + crop.width, media.x + media.width), viewY1 = Math.min(crop.y + crop.height, media.y + media.height);
+        const view = viewX1 > viewX0 && viewY1 > viewY0 ? { x: viewX0, y: viewY0, width: viewX1 - viewX0, height: viewY1 - viewY0 } : media;
+        const rawUnit = page.node.lookupMaybe(PDFName.of('UserUnit'), PDFNumber)?.asNumber();
+        const frame = { cropX: view.x, cropY: view.y, cropW: view.width, cropH: view.height, rotation: page.getRotation().angle,
+            userUnit: rawUnit && Number.isFinite(rawUnit) && rawUnit > 0 ? rawUnit : 1 };
+        frames.set(a.page, frame);
         if (a.source) {
             const entry = sourceEntry(sourceEntries, a.page, a.source);
             if (!entry || removed.has(entry.dict)) throw new Error('An imported markup could not be found in the source PDF. Reopen the source before saving; its original appearance has been preserved.');
@@ -405,8 +419,6 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
         }
         normalized.push(a);
         if (page.getRotation().angle % 360 !== 0) throw new Error(`Page ${a.page} is rotated; saving annotations on rotated pages is not supported yet.`);
-        const crop = page.getCropBox();
-        const frame: PageFrame = { cropX: crop.x, cropY: crop.y, cropH: crop.height };
         const tied = a.elementKey !== undefined;
         const { content, resources } = drawing(a, frame, fonts, tied);
 
@@ -464,6 +476,10 @@ export async function buildAnnotatedPdf(bytes: Uint8Array, annotations: readonly
     await doc.attach(new TextEncoder().encode(json), ANNOTATIONS_FILE, {
         mimeType: 'application/json', description: 'Enhanced PDF Viewer annotations and their object-ID ties',
     });
+    const tables = buildMarkupTables(normalized, frames, boundsOf, options);
+    for (const [name, data] of markupParquetFiles(tables)) {
+        await doc.attach(data, name, { mimeType: 'application/vnd.apache.parquet', description: 'Enhanced PDF Viewer markups for Revit import' });
+    }
     await doc.flush();
     sortEmbeddedFileNames(doc);
     return doc.save();

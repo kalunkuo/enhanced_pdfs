@@ -33,7 +33,7 @@ The viewer reads the Parquet attachments the add-in already writes (`elements`, 
 
 `nativeTags.ts` resolves identities; `nativeGeometry.ts` captures paths and clips from a complete main-thread render and builds a Flatbush/Path2D picker. Unresolved/ambiguous identities and unsupported graphics remain explicit. Capture must index the exact operator list for the render's annotation mode and honor its abort signal before publishing.
 
-Existing standard PDF review marks are imported by `importPdfAnnotations.ts` as comments with source provenance. Preserve native graphics and attachments; use `annotations.json` for browser links and review state. `upgradeDocumentAnnotations.ts` matches pending notes across all annotated pages with bounded sequential native capture. Only pending results may merge into current state, so background work cannot overwrite manual links, replies, or deletions. Text references are separate from geometry links. Keep uncertain matches explicit. Ownership and source identity use `pdfAnnotationOwnership.ts`; never remove or hide annotations by a blanket `ep-` prefix. Session import inventories distinguish old recovery states from intentional source deletions.
+Existing standard PDF review marks are imported by `importPdfAnnotations.ts` as comments with source provenance. Preserve native graphics and attachments; use `annotations.json` for browser links and review state. Native root/reply text stays read-only; new browser replies remain editable. The viewer's markup Parquet export represents imported records as comment review pins, retaining links and replies without reconstructing the native shapes. `upgradeDocumentAnnotations.ts` matches pending notes across all annotated pages with bounded sequential native capture. Only pending results may merge into current state, so background work cannot overwrite manual links, replies, or deletions. Text references are separate from geometry links. Keep uncertain matches explicit. Ownership and source identity use `pdfAnnotationOwnership.ts`; never remove or hide annotations by a blanket `ep-` prefix. Session import inventories distinguish old recovery states from intentional source deletions.
 
 The loader also accepts optional `geometry.parquet` for compatibility with the synthetic demo, one row per element drawn on the page:
 
@@ -43,6 +43,18 @@ The loader also accepts optional `geometry.parquet` for compatibility with the s
 | `ElementKey` | string | Matches `elements.ElementKey`. |
 | `MinX`, `MinY`, `MaxX`, `MaxY` | double | Bounding box in PDF points, origin bottom-left. |
 | `Outline` | string, optional | JSON `[[x,y],...]` polygon in the same space. Used for hit-testing when present. |
+
+### Saved review data (for Revit import)
+
+Download (Ctrl+S) writes standard PDF annotations, the lossless `annotations.json` the viewer restores from, and three Parquet tables for a Revit import (`src/lib/markupTables.ts`). They follow the add-in's conventions (PascalCase columns, `ElementKey`/`DrawingId` join keys, ISO 8601 UTC strings, `SchemaVersion`). Required columns are written non-nullable, so they deserialize into C# non-nullable record fields; the rest are optional. Coordinates are PDF user-space points with the origin at the bottom left, crop box applied, the same space as `geometry.parquet`. Each save replaces earlier copies, and the tables are left out when there are no markups.
+
+| File | Row | Columns |
+| --- | --- | --- |
+| `markups.parquet` | one per annotation | `MarkupId`, `Page`, `DrawingId`/`ViewId`/`ViewUniqueId` (page's root drawing), `Kind`, `RevitKind` (hint: `DetailLine`, `TextNote`, `RevisionCloud`, ...), `Text`, `Author`, `CreatedUtc`, `ModifiedUtc`, `Color`, `MinX`/`MinY`/`MaxX`/`MaxY`, `AnchorX`/`AnchorY`, `Points` (JSON `[[x,y],...]`), `ElementKey` (first link), `LinkCount`, `ReplyCount`, `HasImage`, `SchemaVersion` |
+| `markup-links.parquet` | one per referenced element | `MarkupId`, `Ordinal`, `ElementKey`, `Relation` (`Linked`, or `Contained`/`Overlaps` for revision clouds), `DrawingId` (viewport on that page), `ModelKey`, `UniqueId`, `ElementId`, `LinkInstanceId`, `Category`, `Resolved` (false when the key is not in `elements`) |
+| `markup-replies.parquet` | one per reply | `MarkupId`, `ReplyId`, `Ordinal`, `Author`, `CreatedUtc`, `Text`, `HasImage` |
+
+Image data URLs stay in `annotations.json` only. Add columns rather than changing existing ones, and bump `MARKUP_SCHEMA_VERSION` for breaking changes.
 
 `scripts/make-demo-pdf.py` writes a synthetic PDF with this optional table (`public/demo/demo-enhanced.pdf`); its data is made up. Its legacy geometry conversion assumes the simple demo frame; use the shared viewport transformations for native PDF geometry, including cropped and negative-origin pages.
 

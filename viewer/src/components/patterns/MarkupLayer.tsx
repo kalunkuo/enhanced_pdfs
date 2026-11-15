@@ -22,6 +22,7 @@ export interface MarkupLayerProps {
     selectedAnnotationId: string | null;
     highlightColor: string;
     labelFor: (elementKey: string) => string;
+    linksLabel: (elementKeys: readonly string[]) => string;
     onSelectAnnotation: (id: string | null) => void;
     onSelectElement: (key: string | null) => void;
     onAddAnnotation: (annotation: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>) => void;
@@ -295,7 +296,7 @@ export function MarkupLayer(props: MarkupLayerProps) {
                         selected={annotation.id === props.selectedAnnotationId}
                         interactive={tool === 'select'}
                         tied={key !== null}
-                        label={links.length > 1 ? `${links.length} objects` : key ? props.labelFor(key) : undefined}
+                        label={links.length > 1 ? props.linksLabel(links) : key ? props.labelFor(key) : undefined}
                         onPart={(event, part) => beginMove(event, stored, part)}
                         onClick={() => {
                             // Object first, then the markup: the last selection decides which panel opens.

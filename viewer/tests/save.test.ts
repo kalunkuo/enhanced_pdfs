@@ -6,6 +6,9 @@ import type { Annotation } from '../src/lib/types';
 import { getViewerOwnedAnnotationRefs } from '../src/lib/pdfAnnotationOwnership';
 import { importPdfAnnotations } from '../src/lib/importPdfAnnotations';
 import { parseSessionState } from '../src/lib/session';
+import { parquetReadObjects } from 'hyparquet';
+import { compressors } from 'hyparquet-compressors';
+import { MARKUPS_FILE, MARKUP_LINKS_FILE, MARKUP_REPLIES_FILE } from '../src/lib/markupTables';
 
 const ANNOTATIONS: Annotation[] = [
     { id: 'a1', page: 1, kind: 'rect', from: [100, 100], to: [160, 140], elementKey: 'w1' },
@@ -66,7 +69,7 @@ describe('buildAnnotatedPdf', () => {
     it('keeps existing attachments and stores the annotations so the ties can be restored', async () => {
         const out = await buildAnnotatedPdf(await source(), ANNOTATIONS, describe_);
         const files = await attachments(out);
-        expect([...files.keys()].sort()).toEqual([ANNOTATIONS_FILE, 'elements.parquet']);
+        expect([...files.keys()].sort()).toEqual([ANNOTATIONS_FILE, 'elements.parquet', 'markup-links.parquet', 'markup-replies.parquet', 'markups.parquet']);
         expect(new TextDecoder().decode(files.get('elements.parquet')![0])).toBe('parquet-bytes');
         expect(parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!)).toEqual(ANNOTATIONS);
     });
@@ -344,12 +347,19 @@ describe('imported PDF markups and ownership', () => {
         expect(original.lookup(PDFName.of('M'), PDFString).decodeText()).toBe('D:20261114123000Z');
         const files = await attachments(out);
         for (const [file, content] of originalFiles) expect(files.get(file)).toEqual([content]);
+        const parquet = async (file: string) => parquetReadObjects({ file: files.get(file)![0]!.slice().buffer, compressors });
+        expect(await parquet(MARKUPS_FILE)).toMatchObject([{ MarkupId: annotation.id, Kind: 'comment', Text: annotation.text, ReplyCount: 2 }]);
+        expect(await parquet(MARKUP_LINKS_FILE)).toMatchObject([{ MarkupId: annotation.id, ElementKey: 'w1' }]);
+        expect(await parquet(MARKUP_REPLIES_FILE)).toHaveLength(2);
         const [restored] = parseAnnotations(files.get(ANNOTATIONS_FILE)![0]!);
         expect(restored?.replies).toHaveLength(2);
         expect(restored?.replies?.[0]).toMatchObject({ createdAt: '', author: { name: '' }, source: { ref: annotation.replies![0]!.source!.ref } });
         const twice = await buildAnnotatedPdf(out, [restored!], describe_);
         expect(await annots(twice, 0)).toHaveLength(5);
         expect(decodedAppearance((await annots(twice, 0)).find((dict) => subtype(dict) === 'Polygon')!)).toBe(decodedAppearance(original));
+        const secondFiles = await attachments(twice);
+        expect(await parquetReadObjects({ file: secondFiles.get(MARKUPS_FILE)![0]!.slice().buffer, compressors })).toHaveLength(1);
+        expect(await parquetReadObjects({ file: secondFiles.get(MARKUP_REPLIES_FILE)![0]!.slice().buffer, compressors })).toHaveLength(2);
     });
 
     it('assigns a stable name to an unnamed source and preserves it through repeated saves', async () => {

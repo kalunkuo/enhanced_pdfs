@@ -210,5 +210,25 @@
 /* The Upload button is a capsule in both states. */
 .ui-action-button.upload-btn { border-radius: 999px; padding-inline: var(--primitive-space-4); }
 
+/* An open note in the Notes tab keeps the card shape of the collapsed rows. When it is opened from the page,
+   it scrolls to the top of the panel with a little room above it. */
+.notes-list > li { scroll-margin-top: var(--primitive-space-3); }
+.notes-list > li > .thread { border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* Collapsible "Linked objects (n)" header, closed by default. */
+.linked-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.linked-toggle svg { width: 14px; height: 14px; transition: transform 300ms var(--ease-interaction); }
+.linked-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+.linked-toggle:focus-visible { outline: 2px solid var(--color-selection); outline-offset: 2px; border-radius: var(--radius-control); }
+@media (prefers-reduced-motion: reduce) { .linked-toggle svg { transition: none; } }
+/* Opened rows reveal like menu rows: 150ms each, 30ms apart. */
+.linked-list > li { animation: viewer-menu-row-in var(--menu-options-transition-duration) var(--ease-enter) both; animation-delay: calc(var(--menu-row-index, 0) * var(--menu-row-stagger)); }
+@media (prefers-reduced-motion: reduce) { .linked-list > li { animation: none; } }
+
 /* Tie pills in the Notes tab are capsules. */
 .chip { border-radius: 999px; padding-inline: 10px; }
+
+/* Editing your own message in place. */
+.tedit { display: grid; gap: 8px; }
+.tedit textarea { width: 100%; resize: vertical; min-height: 72px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input); background: var(--background); color: var(--foreground); font: inherit; }
+.tedit-actions { display: flex; justify-content: flex-end; gap: 8px; }

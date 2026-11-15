@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-export type IconName = 'open' | 'search' | 'select' | 'pan' | 'annotate' | 'layers' | 'more' | 'left' | 'right' | 'plus' | 'minus' | 'check' | 'info' | 'warning' | 'error' | 'close' | 'copy' | 'home' | 'database' | 'geometry' | 'help' | 'chevronDown' | 'document' | 'reset' | 'upload' | 'export';
+export type IconName = 'open' | 'search' | 'select' | 'pan' | 'annotate' | 'layers' | 'more' | 'left' | 'right' | 'plus' | 'minus' | 'check' | 'info' | 'warning' | 'error' | 'close' | 'copy' | 'home' | 'database' | 'geometry' | 'help' | 'chevronDown' | 'document' | 'reset' | 'upload' | 'download' | 'export';
 
 const artwork: Record<IconName, ReactNode> = {
   open: <><path d="M3 7.5V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" /><path d="M3 9h18l-2 11H5L3 9Z" /></>,
@@ -28,6 +28,7 @@ const artwork: Record<IconName, ReactNode> = {
   document: <><path d="M6 3h9l3 3v15H6zM15 3v4h4M9 12h6M9 16h6" /></>,
   reset: <path d="M4 11a8 8 0 1 1 2 6M4 5v6h6" />,
   upload: <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />,
+  download: <path d="M12 4v12M7 11l5 5 5-5M4 20h16" />,
   export: <><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v6H4V6h6" /></>
 };
 
