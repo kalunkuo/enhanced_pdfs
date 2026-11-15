@@ -303,6 +303,22 @@ export function App() {
         [doc],
     );
 
+    /** Replace, extend or toggle the selection (shift-click, box drag). Extending a filter selection starts from its matches. */
+    const selectElements = useCallback((keys: readonly string[], mode: 'replace' | 'add' | 'toggle') => {
+        setFocusRequest(null);
+        setSelectedPdfComment(null);
+        setComposer(null);
+        setSelectedAnnotationId(null);
+        const next = mode === 'replace' ? [] : [...(selectedKeysRef.current ?? [])];
+        for (const key of keys) {
+            const at = next.indexOf(key);
+            if (mode === 'toggle' && at >= 0) next.splice(at, 1);
+            else if (at < 0) next.push(key);
+        }
+        setSelectedKeys(next);
+        if (next.length > 0) setTab('properties');
+    }, [setSelectedKeys]);
+
     const selectElement = useCallback((key: string | null) => {
         setFocusRequest(null);
         setSelectedKey(key);
@@ -490,6 +506,8 @@ export function App() {
     [geometry, pageData, matchedKeys, drawingScope]);
     const filtersActive = hasActiveFilters(filters);
     const selectedKeys = useMemo<ReadonlySet<string> | null>(() => pickedKeys.length ? new Set(pickedKeys) : filterSelected && filtersActive ? matchedKeys : null, [pickedKeys, filterSelected, filtersActive, matchedKeys]);
+    const selectedKeysRef = useRef(selectedKeys);
+    selectedKeysRef.current = selectedKeys;
     const selectedElements = useMemo(() => pickedKeys.length ? pickedKeys.map((key) => doc?.elements.get(key)).filter((e): e is ElementInfo => !!e) : filterSelected && filtersActive ? matchedElements : [], [doc, pickedKeys, filterSelected, filtersActive, matchedElements]);
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
@@ -629,6 +647,8 @@ export function App() {
                             tool={tool}
                             hoverKey={hover?.key ?? null}
                             selectedKeys={selectedKeys}
+                            onSelectElements={selectElements}
+                            regionOf={(rect) => elementsInCloud({ from: [rect[0], rect[1]], to: [rect[2], rect[3]] }, regionSources)}
                             annotations={pageAnnotations}
                             selectedAnnotationId={selectedAnnotationId}
                             highlightColor={highlightColor}

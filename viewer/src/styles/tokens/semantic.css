@@ -21,6 +21,8 @@
   --color-geometry-highlight-soft: color-mix(in srgb, var(--color-geometry-highlight) 16%, transparent);
   --color-geometry-highlight-strong: color-mix(in srgb, var(--color-geometry-highlight) 34%, transparent);
   --color-selection: var(--color-secondary);
+  --color-hover: color-mix(in srgb, var(--color-selection) 62%, #000);
+  --color-hover-strong: color-mix(in srgb, var(--color-hover) 40%, transparent);
   --color-selection-strong: color-mix(in srgb, var(--color-selection) 34%, transparent);
   --color-annotation: var(--color-secondary);
   --color-annotation-tied: var(--color-annotation);

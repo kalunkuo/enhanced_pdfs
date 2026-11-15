@@ -26,7 +26,10 @@ export interface MarkupLayerProps {
     onSelectElement: (key: string | null) => void;
     onAddAnnotation: (annotation: Omit<Annotation, 'id' | 'elementKey' | 'elementKeys' | 'page'>) => void;
     onElementMove: (point: Point, client: { x: number; y: number }) => void;
-    onElementSelect: (point: Point) => void;
+    /** A click in the Select tool. `additive` (shift, ctrl or cmd held) toggles the object in the selection. */
+    onElementSelect: (point: Point, additive: boolean) => void;
+    /** A box dragged in the Select tool. `crossing` (dragged right to left) also takes objects the box only touches. */
+    onSelectRegion: (rect: readonly [number, number, number, number], additive: boolean, crossing: boolean) => void;
     onElementLeave: () => void;
     /** The comment tool was clicked at a page point; the comment layer opens its composer. */
     onStartComment: (point: Point) => void;
@@ -72,6 +75,9 @@ export function MarkupLayer(props: MarkupLayerProps) {
     const textPress = useRef<{ tip: Point; moved: boolean } | null>(null);
     const [leaderPreview, setLeaderPreview] = useState<{ from: Point; to: Point } | null>(null);
     const movePress = useRef<{ id: string; part: MovePart; x: number; y: number; from: Point; to: Point; moved: boolean } | null>(null);
+    // A box being dragged out in the Select tool. Kept in a ref as well so a quick flick still lands.
+    const boxPress = useRef<{ from: Point; to: Point; additive: boolean; moved: boolean; click: boolean } | null>(null);
+    const [box, setBox] = useState<{ from: Point; to: Point } | null>(null);
     const [moving, setMoving] = useState<Moving | null>(null);
     // The drop reads this ref, not `moving`: a quick flick can release before React re-renders the last move.
     const movingRef = useRef<Moving | null>(null);
@@ -155,6 +161,12 @@ export function MarkupLayer(props: MarkupLayerProps) {
             props.onDragTarget(key, { x: event.clientX, y: event.clientY });
             return;
         }
+        const press = boxPress.current;
+        if (press) {
+            press.to = point;
+            if (!press.moved && Math.hypot(point[0] - press.from[0], point[1] - press.from[1]) * zoom >= MIN_DRAG) press.moved = true;
+            if (press.moved) { setBox({ from: press.from, to: point }); props.onDragTarget(null, { x: 0, y: 0 }); return; }
+        }
         const placing = textPress.current;
         if (placing && Math.hypot(point[0] - placing.tip[0], point[1] - placing.tip[1]) >= MIN_DRAG) {
             placing.moved = true;
@@ -183,7 +195,9 @@ export function MarkupLayer(props: MarkupLayerProps) {
             try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
             textPress.current = { tip: point, moved: false };
         } else if (tool === 'select') {
-            props.onElementSelect(point);
+            // Press starts either a click or a box drag; which one is decided when the pointer moves or lifts.
+            try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* the pointer ended already */ }
+            boxPress.current = { from: point, to: point, additive: event.shiftKey || event.metaKey || event.ctrlKey, moved: false, click: true };
         }
     };
 
@@ -213,6 +227,14 @@ export function MarkupLayer(props: MarkupLayerProps) {
     };
 
     const onUp = () => {
+        const press = boxPress.current;
+        if (press) {
+            boxPress.current = null;
+            setBox(null);
+            if (press.moved) props.onSelectRegion([Math.min(press.from[0], press.to[0]), Math.min(press.from[1], press.to[1]), Math.max(press.from[0], press.to[0]), Math.max(press.from[1], press.to[1])], press.additive, press.to[0] < press.from[0]);
+            else props.onElementSelect(press.from, press.additive);
+            return;
+        }
         const drag = movePress.current;
         if (drag) {
             movePress.current = null;
@@ -253,11 +275,13 @@ export function MarkupLayer(props: MarkupLayerProps) {
                 onPointerMove={onMove}
                 onPointerDown={onDown}
                 onPointerUp={onUp}
-                onPointerCancel={() => { updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; updateMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
+                onPointerCancel={() => { boxPress.current = null; setBox(null); updateDraft(null); textPress.current = null; setLeaderPreview(null); movePress.current = null; updateMoving(null); props.onDragTarget(null, { x: 0, y: 0 }); props.onElementLeave(); }}
                 onClick={onClick}
                 onPointerLeave={() => !draftRef.current && props.onElementLeave()}
             >
                 {props.children}
+                {box && <rect className="select-box" x={Math.min(box.from[0], box.to[0])} y={Math.min(box.from[1], box.to[1])} width={Math.abs(box.to[0] - box.from[0])} height={Math.abs(box.to[1] - box.from[1])}
+                    strokeDasharray={box.to[0] < box.from[0] ? `${4 / zoom} ${3 / zoom}` : undefined} strokeWidth={1.5 / zoom} pointerEvents="none" />}
                 {annotations.filter((annotation) => annotation.kind !== 'comment').map((stored) => {
                     // While a text box is dragged it follows the pointer and shows the tie it would get.
                     const live = moving?.id === stored.id;
