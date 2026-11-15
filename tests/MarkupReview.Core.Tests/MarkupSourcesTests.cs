@@ -205,6 +205,28 @@ public sealed class MarkupSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Tables_with_all_columns_nullable_are_read_like_required_ones()
+    {
+        // demo/snowdon-demo.pdf: rewritten by DuckDB, every column optional → "definition level" mismatch before.
+        var fixture = new FixturePdf
+        {
+            AllNullable = true,
+            AcrobatAnnotations = [new() { AnnotationId = "a1", DrawingId = FixturePdf.DrawingId, Page = 1, Kind = "Cloud", Text = "should be 1 HR", SheetRect = [-1400, 700, -1300, 900] }],
+            AcrobatLinks = [new() { AnnotationId = "a1", ElementKey = FixturePdf.WallKey, ElementId = 676281, Relation = "linked" }],
+        };
+
+        var (markups, source, tables) = Read(fixture);
+
+        Assert.Equal("acrobat", source);
+        Assert.Equal(1, tables.Drawings.Single().Page);
+        Assert.Equal(676281, tables.ElementsByKey[FixturePdf.WallKey].ElementId);
+        var markup = Assert.Single(markups);
+        Assert.Equal(1, markup.Page);
+        Assert.Equal(new PdfRect(-1400, 700, -1300, 900), markup.Rect);
+        Assert.Equal(FixturePdf.WallKey, Assert.Single(markup.Links).ElementKey);
+    }
+
+    [Fact]
     public void Falls_back_to_annots_when_no_markup_attachments()
     {
         var fixture = new FixturePdf();

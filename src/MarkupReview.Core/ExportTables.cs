@@ -74,10 +74,32 @@ public sealed class ExportTables
         if (!pdf.Attachments.TryGetValue(name, out var bytes)) return [];
         // Off the caller's SynchronizationContext: Revit calls this on its UI thread, where blocking on
         // Parquet.Net's awaits would deadlock.
-        return Task.Run(async () =>
+        var rows = Task.Run(async () =>
         {
             using var stream = new MemoryStream(bytes);
-            return (await ParquetSerializer.DeserializeAsync<T>(stream)).Data;
+            return (await ParquetSerializer.DeserializeUntypedAsync(stream)).Data;
         }).GetAwaiter().GetResult();
+        // Untyped + our own mapping: the exporter writes required columns, other tools (DuckDB) write every column
+        // optional, and the typed serializer rejects any nullability mismatch. Missing or null values become defaults.
+        var properties = typeof(T).GetProperties().Where(p => p.CanWrite).ToArray();
+        var list = new List<T>(rows.Count);
+        foreach (var row in rows)
+        {
+            var item = new T();
+            foreach (var p in properties)
+                if (row.TryGetValue(p.Name, out var value) && value is not null)
+                    p.SetValue(item, ConvertTo(value, p.PropertyType));
+            list.Add(item);
+        }
+        return list;
+    }
+
+    private static object? ConvertTo(object value, Type target)
+    {
+        var type = Nullable.GetUnderlyingType(target) ?? target;
+        if (type.IsInstanceOfType(value)) return value;
+        if (type == typeof(List<double>) && value is System.Collections.IEnumerable items)
+            return items.Cast<object?>().Where(v => v is not null).Select(v => Convert.ToDouble(v, System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        return Convert.ChangeType(value, type, System.Globalization.CultureInfo.InvariantCulture);
     }
 }

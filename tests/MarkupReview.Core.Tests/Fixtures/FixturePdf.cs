@@ -104,6 +104,58 @@ public sealed class AcrobatLinkW
     public string Relation { get; set; } = "linked";
 }
 
+// Nullable twins: tools like DuckDB write every column as optional (definition level 1).
+public sealed class DrawingRowN
+{
+    public string? DrawingId { get; set; }
+    public string? ParentDrawingId { get; set; }
+    public string? ViewUniqueId { get; set; }
+    public long? ViewId { get; set; }
+    public int? Page { get; set; }
+    public string? Name { get; set; }
+    public string? Model { get; set; }
+    public string? ModelKey { get; set; }
+    public string? ExportedUtc { get; set; }
+    public bool? HasUnsavedChanges { get; set; }
+    public int? SchemaVersion { get; set; }
+}
+
+public sealed class ElementRowN
+{
+    public string? ElementKey { get; set; }
+    public string? ModelKey { get; set; }
+    public long? LinkInstanceId { get; set; }
+    public string? UniqueId { get; set; }
+    public long? ElementId { get; set; }
+    public string? Category { get; set; }
+    public string? Name { get; set; }
+    public string? Family { get; set; }
+    public string? Type { get; set; }
+    public string? TypeKey { get; set; }
+    public string? VersionGuid { get; set; }
+}
+
+public sealed class AcrobatAnnotationN
+{
+    public string? AnnotationId { get; set; }
+    public int? Page { get; set; }
+    public string? Kind { get; set; }
+    public string? Text { get; set; }
+    public string? Author { get; set; }
+    public string? Status { get; set; }
+    public string? CreatedUtc { get; set; }
+    public List<double>? SheetRect { get; set; }
+    public int? SchemaVersion { get; set; }
+}
+
+public sealed class AcrobatLinkN
+{
+    public string? AnnotationId { get; set; }
+    public string? ElementKey { get; set; }
+    public long? ElementId { get; set; }
+    public string? Relation { get; set; }
+}
+
 /// <summary>Builds a synthetic enhanced PDF in memory: one Snowdon-like page plus exporter tables.</summary>
 public sealed class FixturePdf
 {
@@ -131,6 +183,9 @@ public sealed class FixturePdf
         new() { OwnerKey = "model-key-1:t1", Scope = "Type", ParameterId = -1001, Name = "Fire Rating", Storage = "String", DisplayValue = "2 HR", TextValue = "2 HR" },
     ];
 
+    /// <summary>Write drawings, elements and the Acrobat tables with every column optional, as DuckDB does.</summary>
+    public bool AllNullable { get; set; }
+
     public string? ViewerJson { get; set; }
     public List<AcrobatAnnotationW>? AcrobatAnnotations { get; set; }
     public List<AcrobatLinkW>? AcrobatLinks { get; set; }
@@ -150,16 +205,34 @@ public sealed class FixturePdf
             page.Annotations.Add(annot);
         }
 
-        Attach(pdf, "drawings.parquet", Drawings);
-        Attach(pdf, "elements.parquet", Elements);
+        if (AllNullable)
+        {
+            Attach(pdf, "drawings.parquet", Drawings.Select(d => new DrawingRowN { DrawingId = d.DrawingId, ParentDrawingId = d.ParentDrawingId, ViewUniqueId = d.ViewUniqueId, ViewId = d.ViewId, Page = d.Page, Name = d.Name, Model = d.Model, ModelKey = d.ModelKey, ExportedUtc = d.ExportedUtc, HasUnsavedChanges = d.HasUnsavedChanges, SchemaVersion = d.SchemaVersion }));
+            Attach(pdf, "elements.parquet", Elements.Select(e => new ElementRowN { ElementKey = e.ElementKey, ModelKey = e.ModelKey, LinkInstanceId = e.LinkInstanceId, UniqueId = e.UniqueId, ElementId = e.ElementId, Category = e.Category, Name = e.Name, Family = e.Family, Type = e.Type, TypeKey = e.TypeKey, VersionGuid = e.VersionGuid }));
+        }
+        else
+        {
+            Attach(pdf, "drawings.parquet", Drawings);
+            Attach(pdf, "elements.parquet", Elements);
+        }
         Attach(pdf, "appearances.parquet", Elements.Select(e => new AppearanceRowW { DrawingId = DrawingId, ElementKey = e.ElementKey, Source = "Exporter" }));
         Attach(pdf, "parameters.parquet", Parameters);
         if (ViewerJson is not null)
             pdf.AddEmbeddedFile("annotations.json", new MemoryStream(Encoding.UTF8.GetBytes(ViewerJson)));
         if (AcrobatAnnotations is not null)
-            Attach(pdf, "annotations.parquet", AcrobatAnnotations);
+        {
+            if (AllNullable)
+                Attach(pdf, "annotations.parquet", AcrobatAnnotations.Select(a => new AcrobatAnnotationN { AnnotationId = a.AnnotationId, Page = a.Page, Kind = a.Kind, Text = a.Text, Author = a.Author, Status = a.Status, CreatedUtc = a.CreatedUtc, SheetRect = a.SheetRect, SchemaVersion = a.SchemaVersion }));
+            else
+                Attach(pdf, "annotations.parquet", AcrobatAnnotations);
+        }
         if (AcrobatLinks is not null)
-            Attach(pdf, "annotation-links.parquet", AcrobatLinks);
+        {
+            if (AllNullable)
+                Attach(pdf, "annotation-links.parquet", AcrobatLinks.Select(l => new AcrobatLinkN { AnnotationId = l.AnnotationId, ElementKey = l.ElementKey, ElementId = l.ElementId, Relation = l.Relation }));
+            else
+                Attach(pdf, "annotation-links.parquet", AcrobatLinks);
+        }
 
         string path = Path.Combine(directory, name);
         pdf.Save(path);
