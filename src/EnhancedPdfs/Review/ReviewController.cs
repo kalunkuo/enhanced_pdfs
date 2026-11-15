@@ -133,7 +133,8 @@ internal sealed class ReviewController
         Session.Finished += summary => SetStatus($"Claude finished: {summary}");
 
         app.GetDockablePane(PaneId).Show();
-        Launch(claude);
+        _claudePath = claude;
+        Launch(claude, null);
         Log("claude launched");
         return null;
     }
@@ -148,7 +149,7 @@ internal sealed class ReviewController
         File.WriteAllText(Path.Combine(root, "latest.txt"), WorkDir);
     }
 
-    private void Launch(string claudePath)
+    private void Launch(string claudePath, string? prompt)
     {
 
         string pipe = "enhancedpdfs-review-" + Guid.NewGuid().ToString("N");
@@ -161,14 +162,14 @@ internal sealed class ReviewController
             .ContinueWith(t => Log($"pipe host ended: {t.Exception?.GetBaseException().Message ?? "ok"}"), TaskScheduler.Default);
 
         Log($"bridge: {bridge} exists={File.Exists(bridge)} pipe={pipe}");
-        var info = ClaudeLaunch.Build(claudePath, bridge, pipe, token, WorkDir!);
+        var info = ClaudeLaunch.Build(claudePath, bridge, pipe, token, WorkDir!, prompt);
         _claude = Process.Start(info) ?? throw new InvalidOperationException("Claude Code did not start.");
         _claude.StandardInput.Close();
         StartedAt = DateTimeOffset.Now;
         LastThought = null;
         ElementsChecked = 0;
         _toolCalls = 0;
-        SetStatus("Starting Claude…");
+        SetStatus(prompt is null ? "Starting Claude…" : $"Claude is revising {Revising?.Id}…");
         _ = Task.Run(() => PumpOutput(_claude, cancel));
         var stderr = _claude.StandardError.ReadToEndAsync();
         _stderr = stderr;
@@ -213,6 +214,13 @@ internal sealed class ReviewController
         {
             if (!sawResult && Session?.IsFinished != true)
                 SetStatus(cancel.IsCancellationRequested ? "Review cancelled. Proposals so far are kept." : ClaudeStatus.Stopped(null, StderrTail()));
+            if (Revising is { } revised)
+            {
+                Revising = null;
+                SetStatus(revised.Status == ProposalStatus.Revised
+                    ? $"Claude revised {revised.Id} as {revised.RevisedBy}. Review the new card."
+                    : $"Claude could not revise {revised.Id} (see its note); the original is still pending.");
+            }
             _cancel?.Cancel();
             Changed?.Invoke();
         }
@@ -285,6 +293,38 @@ internal sealed class ReviewController
             Preview.Clear(app);
             app.GetDockablePane(PaneId).Hide();
         });
+    }
+
+    private string? _claudePath;
+
+    /// <summary>The proposal a follow-up run is revising ("Approve, but…"), while it runs.</summary>
+    public Proposal? Revising { get; private set; }
+
+    /// <summary>
+    /// "Approve, but…": starts a short follow-up Claude run that replaces <paramref name="proposal"/> with a revised one.
+    /// Returns an error message, or null when the run started. Runs on the UI thread; launches no Revit API calls itself.
+    /// </summary>
+    public string? Revise(Proposal proposal, string instruction)
+    {
+        if (Session is not { } session || _claudePath is null) return "No review is open.";
+        if (IsRunning) return "Claude is still working on this review. Try again when it has finished.";
+        if (proposal.Status is not (ProposalStatus.Pending or ProposalStatus.Blocked)) return "Only pending proposals can be revised.";
+        if (string.IsNullOrWhiteSpace(instruction)) return "Write what Claude should change.";
+        var markup = session.FindMarkup(proposal.MarkupId);
+        if (markup is null) return "The proposal's markup is missing.";
+
+        proposal.DecisionReason = $"Approve, but: {instruction.Trim()}";
+        Revising = proposal;
+        Log($"revise {proposal.Id}: {instruction.Trim()}");
+        var related = proposal.RelatedMarkupIds.Select(session.FindMarkup).OfType<Markup>().ToList();
+        try { Launch(_claudePath, ClaudeLaunch.RevisionPrompt(proposal, markup, related, instruction.Trim())); }
+        catch (Exception e)
+        {
+            Revising = null;
+            LogException("revise launch", e);
+            return $"Claude could not be started: {e.Message}";
+        }
+        return null;
     }
 
     public void Reject(Proposal proposal, string? reason)

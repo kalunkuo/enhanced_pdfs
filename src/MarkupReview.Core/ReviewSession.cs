@@ -11,7 +11,7 @@ public enum FlipSide { Facing, Hand }
 /// <summary>Flip a door or window: facing (which side it opens to) or hand (hinge side).</summary>
 public sealed record FlipInstance(FlipSide Side) : Change;
 
-public enum ProposalStatus { Pending, Approved, Rejected, Blocked }
+public enum ProposalStatus { Pending, Approved, Rejected, Blocked, Revised }
 
 public sealed record Proposal
 {
@@ -30,6 +30,9 @@ public sealed record Proposal
     public IReadOnlyList<SizeChange> SizeChanges { get; set; } = [];
     public string? BlockReason { get; set; }
     public string? DecisionReason { get; set; }
+    /// <summary>"Approve, but…": the proposal this one revises, and (on the old one) the proposal that replaced it.</summary>
+    public string? Replaces { get; init; }
+    public string? RevisedBy { get; set; }
     public DateTimeOffset? DecidedUtc { get; set; }
 }
 

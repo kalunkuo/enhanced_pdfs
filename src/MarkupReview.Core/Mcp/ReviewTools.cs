@@ -21,6 +21,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         Tool("propose_change", "Stage one proposed change for the user to approve or reject. Does not change the model. The value is validated; an error explains what is allowed. `change` holds exactly one of set_parameter or change_type.",
             Props(
                 ("markup_id", Str("The markup this change comes from.")),
+                ("replaces", Str("Optional: id of the proposal this one revises (\"Approve, but…\" follow-ups only).")),
                 ("related_markup_ids", new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Optional: other markups read together with it (an arrow pointing at the element, a text box next to a cloud). The handle may be linked by any of them." }),
                 ("handle", Str("Element handle linked to or mentioned by that markup.")),
                 ("reason", Str("One line for the reviewer, citing the markup's words.")),
@@ -144,6 +145,13 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         string markupId = Arg(args, "markup_id"), handle = Arg(args, "handle"), reason = Arg(args, "reason");
         var markup = session.FindMarkup(markupId) ?? throw new ToolError($"No markup '{markupId}'.");
         var related = StrList(args, "related_markup_ids");
+        Proposal? replaced = null;
+        if (args["replaces"] is JsonValue rv && rv.TryGetValue(out string? replacesId) && !string.IsNullOrWhiteSpace(replacesId))
+        {
+            replaced = session.Proposals.FirstOrDefault(p => p.Id == replacesId) ?? throw new ToolError($"No proposal '{replacesId}' to replace.");
+            if (replaced.Status is not (ProposalStatus.Pending or ProposalStatus.Blocked))
+                throw new ToolError($"Proposal '{replacesId}' is already {replaced.Status.ToString().ToLowerInvariant()}; it cannot be replaced.");
+        }
         foreach (var id in related)
             if (session.FindMarkup(id) is null) throw new ToolError($"No related markup '{id}'.");
         var allowed = related.Select(id => session.FindMarkup(id)!).Prepend(markup).SelectMany(m => m.Links).Select(l => l.ElementKey).Distinct().ToList();
@@ -164,7 +172,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
             _ => throw new ToolError("`change` must contain set_parameter, change_type or flip."),
         };
 
-        var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, RelatedMarkupIds = related, ElementKey = handle, Change = change, Reason = reason };
+        var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, RelatedMarkupIds = related, ElementKey = handle, Change = change, Reason = reason, Replaces = replaced?.Id };
         var result = await ProposalValidator.ValidateAsync(proposal, model, session.Tables);
         if (!result.Ok) return Fail(result.Error!);
 
@@ -174,6 +182,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         proposal.SizeChanges = result.SizeChanges;
         if (result.BlockReason is not null) { proposal.Status = ProposalStatus.Blocked; proposal.BlockReason = result.BlockReason; }
         session.Add(proposal);
+        if (replaced is not null) { replaced.Status = ProposalStatus.Revised; replaced.RevisedBy = proposal.Id; replaced.DecidedUtc = DateTimeOffset.UtcNow; }
 
         string text = result.BlockReason is not null
             ? $"Staged {proposal.Id} as blocked: {result.BlockReason}. The reviewer will see it but cannot approve it."

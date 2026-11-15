@@ -71,6 +71,33 @@ public sealed class ClaudeLaunchTests : IDisposable
     }
 
     [Fact]
+    public void Revision_prompt_carries_markup_proposal_and_instruction()
+    {
+        var markup = new Markup("m1", 1, "cloud", "should be 1 HR per code review", "J. Contractor", null, default, []);
+        var proposal = new Proposal
+        {
+            Id = "proposal-2", MarkupId = "m1", ElementKey = "k1", Reason = "Markup says 1 HR.",
+            Change = new SetParameter("Fire Rating", ParamScope.Type, "1 HR"), OldValue = "2 HR", NewValue = "1 HR",
+        };
+        string prompt = ClaudeLaunch.RevisionPrompt(proposal, markup, [], "only this wall, not the whole type");
+
+        Assert.Contains("only this wall, not the whole type", prompt);
+        Assert.Contains("should be 1 HR per code review", prompt);
+        Assert.Contains("proposal-2", prompt);
+        Assert.Contains("Fire Rating", prompt);
+        Assert.Contains("2 HR → 1 HR", prompt);
+        Assert.Contains("replaces", prompt);
+        Assert.DoesNotContain("finish_review", prompt); // the main run's summary must survive
+    }
+
+    [Fact]
+    public void Build_uses_the_prompt_it_is_given()
+    {
+        var info = ClaudeLaunch.Build(@"C:\c.exe", @"C:\b.exe", "p", "t", _dir.Path, "revise this");
+        Assert.Equal("revise this", info.ArgumentList[1]);
+    }
+
+    [Fact]
     public void Prompt_names_every_review_tool()
     {
         string prompt = Build().ArgumentList[1];

@@ -33,7 +33,7 @@ public static class ClaudeLaunch
         Keep your own text short; the reviewer reads the proposals, not your messages.
         """;
 
-    public static ProcessStartInfo Build(string claudePath, string bridgePath, string pipeName, string token, string workDir)
+    public static ProcessStartInfo Build(string claudePath, string bridgePath, string pipeName, string token, string workDir, string? prompt = null)
     {
         Directory.CreateDirectory(workDir);
         string configPath = Path.Combine(workDir, ConfigFileName);
@@ -65,7 +65,7 @@ public static class ClaudeLaunch
         };
         foreach (var arg in new[]
         {
-            "-p", Prompt,
+            "-p", prompt ?? Prompt,
             "--mcp-config", configPath,
             "--strict-mcp-config",
             "--tools", "",
@@ -77,6 +77,39 @@ public static class ClaudeLaunch
         })
             info.ArgumentList.Add(arg);
         return info;
+    }
+
+    /// <summary>
+    /// "Approve, but…": a short follow-up run that revises one proposal the way the reviewer asked. No finish_review —
+    /// the main run's summary stays at the top of the panel.
+    /// </summary>
+    public static string RevisionPrompt(Proposal proposal, Markup markup, IReadOnlyList<Markup> related, string instruction)
+    {
+        string what = proposal.Change switch
+        {
+            SetParameter s => $"set {s.Scope.ToString().ToLowerInvariant()} parameter '{s.Name}'",
+            ChangeType => "change type",
+            FlipInstance f => $"flip {f.Side.ToString().ToLowerInvariant()}",
+            _ => "change",
+        };
+        string relatedText = related.Count == 0 ? "" :
+            "\nRelated markups read with it:\n" + string.Join("\n", related.Select(m => $"- {m.Id} ({m.Kind}): \"{m.Text}\""));
+        return $"""
+            You are revising one proposal from a markup review of a Revit model. The reviewer agreed with its intent but
+            asked for a change. Your tools are read-only on the model: you can only stage proposals.
+
+            Markup {markup.Id} ({markup.Kind}{(markup.Author is null ? "" : $", by {markup.Author}")}): "{markup.Text}"{relatedText}
+            Proposal {proposal.Id} on element {proposal.ElementKey}: {what}, {proposal.OldValue} → {proposal.NewValue}.
+            Its reason: {proposal.Reason}
+
+            The reviewer's instruction: "{instruction}"
+
+            Use get_element, get_parameter_options and list_types as needed, then call propose_change once with
+            replaces = "{proposal.Id}" and a one-line reason that mentions the reviewer's instruction. It may target
+            another element the markup (or a related markup, via related_markup_ids) is tied to.
+            If the instruction cannot be done with the available change kinds (set_parameter, change_type, flip), call
+            add_review_note for markup {markup.Id} explaining why, and stop. Keep your own text short.
+            """;
     }
 
     /// <summary>Finds claude.exe on PATH (and the native installer's default location). Null when absent.</summary>

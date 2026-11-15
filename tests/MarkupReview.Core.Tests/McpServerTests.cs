@@ -174,6 +174,44 @@ public sealed class McpServerTests : IDisposable
         Assert.Equal(new FlipInstance(FlipSide.Facing), Assert.Single(_session.Proposals).Change);
     }
 
+    private Proposal StageWallProposal() => _session.Add(new Proposal
+    {
+        Id = _session.NextProposalId(), MarkupId = "m1", ElementKey = FixturePdf.WallKey, Reason = "first try",
+        Change = new SetParameter("Fire Rating", ParamScope.Type, "1 HR"), OldValue = "2 HR", NewValue = "1 HR",
+    });
+
+    [Fact]
+    public async Task Propose_with_replaces_marks_the_old_proposal_revised()
+    {
+        var old = StageWallProposal();
+        var r = Assert.Single(await Exchange(Call(15, "propose_change", new
+        {
+            markup_id = "m1", replaces = old.Id, handle = FixturePdf.WallKey, reason = "Reviewer: make it 3 HR instead.",
+            change = new { set_parameter = new { name = "Fire Rating", scope = "type", value = "3 HR" } },
+        })));
+        Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
+        var fresh = _session.Proposals.Single(p => p.Id != old.Id);
+        Assert.Equal((ProposalStatus.Revised, fresh.Id), (old.Status, old.RevisedBy));
+        Assert.Equal((ProposalStatus.Pending, old.Id, "3 HR"), (fresh.Status, fresh.Replaces, fresh.NewValue));
+    }
+
+    [Fact]
+    public async Task Replacing_a_decided_or_unknown_proposal_is_rejected()
+    {
+        var old = StageWallProposal();
+        old.Status = ProposalStatus.Approved;
+        foreach (var id in new[] { old.Id, "proposal-99" })
+        {
+            var r = Assert.Single(await Exchange(Call(16, "propose_change", new
+            {
+                markup_id = "m1", replaces = id, handle = FixturePdf.WallKey, reason = "x",
+                change = new { set_parameter = new { name = "Fire Rating", scope = "type", value = "3 HR" } },
+            })));
+            Assert.True((bool?)r["result"]!["isError"]);
+        }
+        Assert.Single(_session.Proposals);
+    }
+
     [Fact]
     public async Task Unknown_related_markup_is_rejected()
     {

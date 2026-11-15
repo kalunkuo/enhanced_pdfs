@@ -40,6 +40,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private string? _rejecting;
     private bool _confirmingEnd;
     private bool _confirmingSave;
+    private string? _revisingInput;   // proposal whose "Approve, but…" box is open
+    private string _reviseText = "";
     private readonly ContentControl _endHost = new();
     private string _rejectText = ""; // survives the list rebuilding when new proposals arrive mid-review
     private string? _lastError;
@@ -111,7 +113,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
 
         var proposals = session.Proposals;
         var notes = session.Notes;
-        int done = proposals.Count(p => p.Status is ProposalStatus.Approved or ProposalStatus.Rejected);
+        int done = proposals.Count(p => p.Status is ProposalStatus.Approved or ProposalStatus.Rejected or ProposalStatus.Revised);
         _progress.Text = $"{done} / {proposals.Count} decided · {notes.Count} note{(notes.Count == 1 ? "" : "s")}" +
             (session.Summary is { } s ? $"\n{s}" : "");
 
@@ -170,7 +172,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     {
         Filter.Pending => p.Status == ProposalStatus.Pending,
         Filter.Notes => p.Status == ProposalStatus.Blocked,
-        Filter.Done => p.Status is ProposalStatus.Approved or ProposalStatus.Rejected,
+        Filter.Done => p.Status is ProposalStatus.Approved or ProposalStatus.Rejected or ProposalStatus.Revised,
         _ => true,
     };
 
@@ -222,6 +224,10 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
                 Child = new TextBlock { Text = $"Claude: {p.Reason}", TextWrapping = TextWrapping.Wrap } });
             if (p.BlockReason is not null)
                 body.Children.Add(new TextBlock { Text = $"Blocked: {p.BlockReason}", Foreground = Red, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
+            if (p.Status == ProposalStatus.Revised)
+                body.Children.Add(new TextBlock { Text = $"{p.DecisionReason} → revised as {p.RevisedBy}.", Foreground = Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
+            if (p.Replaces is not null)
+                body.Children.Add(new TextBlock { Text = $"Revises {p.Replaces}.", Foreground = Muted, Margin = new Thickness(0, 6, 0, 0) });
             if (p.DecisionReason is not null && p.Status == ProposalStatus.Rejected)
                 body.Children.Add(new TextBlock { Text = $"Rejected: {p.DecisionReason}", Foreground = Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
             if (_lastError is not null)
@@ -262,7 +268,36 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             back.Click += (_, _) => { _rejecting = null; Refresh(); };
             return new StackPanel { Children = { new TextBlock { Text = "Reason (optional):", Margin = new Thickness(0, 8, 0, 0) }, reason, new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, back } } } };
         }
+        if (_revisingInput == p.Id)
+        {
+            var instruction = new TextBox { Margin = new Thickness(0, 6, 0, 4), MinHeight = 44, Text = _reviseText, TextWrapping = TextWrapping.Wrap, AcceptsReturn = true };
+            instruction.TextChanged += (_, _) => _reviseText = instruction.Text;
+            instruction.Loaded += (_, _) => { instruction.Focus(); instruction.CaretIndex = instruction.Text.Length; };
+            var send = new Button { Content = "Send to Claude", Background = Accent, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+            send.Click += (_, _) =>
+            {
+                string? error = _controller.Revise(p, instruction.Text);
+                if (error is null) { _revisingInput = null; _reviseText = ""; }
+                _lastError = error;
+                Refresh();
+            };
+            var back = SmallButton("Back");
+            back.Click += (_, _) => { _revisingInput = null; Refresh(); };
+            return new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = "Approve, but… tell Claude what to change (e.g. \"only this wall, not the whole type\", \"use 2 HR\", \"flip the hand instead\"):", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) },
+                    instruction,
+                    new StackPanel { Orientation = Orientation.Horizontal, Children = { send, back } },
+                },
+            };
+        }
+        if (_controller.Revising?.Id == p.Id)
+            return new TextBlock { Text = "Claude is revising this proposal…", Foreground = Accent, Margin = new Thickness(0, 8, 0, 0) };
+
         var approve = new Button { Content = "Approve", Background = Green, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderThickness = new Thickness(0) };
+        var approveBut = new Button { Content = "Approve, but…", Background = Brushes.White, Foreground = Green, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Green, ToolTip = "Agree with the intent and tell Claude what to change; it comes back with a revised proposal." };
         var reject = new Button { Content = "Reject…", Background = Brushes.White, Foreground = Red, FontWeight = FontWeights.SemiBold, Padding = new Thickness(0, 5, 0, 5), BorderBrush = Hex("#E0A3A3") };
         approve.Click += async (_, _) =>
         {
@@ -270,13 +305,20 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             _lastError = await _controller.ApproveAsync(p);
             Refresh();
         };
-        reject.Click += (_, _) => { _rejecting = p.Id; _rejectText = ""; Refresh(); };
+        approveBut.Click += (_, _) => { _revisingInput = p.Id; _reviseText = ""; _rejecting = null; Refresh(); };
+        reject.Click += (_, _) => { _rejecting = p.Id; _rejectText = ""; _revisingInput = null; Refresh(); };
+        approveBut.IsEnabled = !_controller.IsRunning; // one Claude run at a time
+        if (_controller.IsRunning) approveBut.ToolTip = "Available once Claude has finished the current run.";
         var grid = new WpfGrid { Margin = new Thickness(0, 8, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        WpfGrid.SetColumn(reject, 2);
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+        }
+        WpfGrid.SetColumn(approveBut, 2);
+        WpfGrid.SetColumn(reject, 4);
         grid.Children.Add(approve);
+        grid.Children.Add(approveBut);
         grid.Children.Add(reject);
         return grid;
     }
@@ -442,6 +484,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             ProposalStatus.Approved => ("approved", "#D3F9D8", "#2B8A3E"),
             ProposalStatus.Rejected => ("rejected", "#FFE3E3", "#C92A2A"),
             ProposalStatus.Blocked => ("blocked", "#E9ECEF", "#495057"),
+            ProposalStatus.Revised => ("revised", "#EDF2FF", "#3B5BDB"),
             ProposalStatus.Pending => ("pending", "#FFF3BF", "#8A6D00"),
             _ => ("note", "#E7F5FF", "#1864AB"),
         };
