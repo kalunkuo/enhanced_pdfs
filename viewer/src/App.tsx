@@ -724,7 +724,7 @@ export function App() {
                         disabled={!doc}
                     />
                 </div>
-                <aside className="side">
+                <aside className="side" data-doc={doc ? 'open' : 'none'}>
                     <SegmentedControl label="Inspector" value={tab} onChange={setTab} options={TABS.map((t) => ({
                         value: t,
                         label: t === 'agent' ? 'Agent' : t === 'notes' ? `Notes (${annotations.length})` : t === 'elements' ? 'Elements' :'Properties',

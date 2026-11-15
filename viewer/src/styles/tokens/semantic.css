@@ -9,6 +9,7 @@
   --color-border: #474c50;
   --color-control-border: var(--primitive-color-ink-500);
   --color-primary: var(--primitive-color-blue-500);
+  --color-primary-secondary: var(--primitive-color-blue-600);
   --color-secondary: var(--primitive-color-red-500);
   --color-tertiary-pink: var(--primitive-color-pink-300);
   --color-tertiary-green: var(--primitive-color-green-500);

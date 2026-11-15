@@ -35,7 +35,7 @@ describe('avatar helpers', () => {
     });
     it('gives the same color to the same name', () => {
         expect(avatarColor('Yam')).toBe(avatarColor('Yam'));
-        expect(avatarColor('Yam')).toMatch(/^hsl\(\d+ 65% 45%\)$/);
+        expect(avatarColor('Yam')).toMatch(/^var\(--primitive-color-(green|red|pink|blue|yellow)-\d+\)$/);
     });
 });
 

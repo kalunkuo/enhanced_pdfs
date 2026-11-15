@@ -1,3 +1,4 @@
+import { categoryColor } from '../../lib/categoryColor';
 import { useEffect, useRef } from 'react';
 import { formatTimeAgo } from '../../lib/comments';
 import { elementLabel } from '../../lib/elementLabel';
@@ -103,7 +104,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     : links.length > 1
                     ? <span className="chip tied">linked to {links.length} objects</span>
                     : a.elementKey
-                    ? <span className="chip tied">tied to {e ? elementLabel(e) : a.elementKey}</span>
+                    ? <span className="chip tied" style={e ? { color: categoryColor(e.category) } : undefined}>↳ {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
                 return (
                     <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined}>
