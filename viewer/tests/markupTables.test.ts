@@ -1,10 +1,11 @@
 import { parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
-import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRawStream, PDFString, decodePDFRawStream, degrees } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist';
 import { describe, expect, it } from 'vitest';
 import { MARKUP_LINKS_FILE, MARKUP_REPLIES_FILE, MARKUPS_FILE, buildMarkupTables } from '../src/lib/markupTables';
 import { boundsOf, buildAnnotatedPdf } from '../src/lib/save';
-import type { Annotation, AppearanceInfo, DrawingInfo, ElementInfo } from '../src/lib/types';
+import type { Annotation, AppearanceInfo, DrawingInfo, ElementInfo, Point } from '../src/lib/types';
 
 const WALL = 'model-1/host/aaaa-0001';
 const DOOR = 'model-1/link-7/bbbb-0002';
@@ -65,6 +66,48 @@ describe('buildMarkupTables', () => {
     it('honors a cropped, offset page', () => {
         const { markups } = buildMarkupTables([highlight], new Map([[1, { cropX: 20, cropY: -30, cropH: 500 }]]), boundsOf);
         expect(markups[0]).toMatchObject({ MinX: 20, MinY: 460, MaxX: 70, MaxY: 470, DrawingId: null });
+    });
+
+    it.each([0, 90, 180, 270].flatMap((rotation) => [1, 2].map((userUnit) => ({ rotation, userUnit }))))(
+        'exports imported review pins using the actual PDF.js viewport at $rotation degrees and UserUnit $userUnit',
+        async ({ rotation, userUnit }) => {
+            const document = await PDFDocument.create();
+            const page = document.addPage([620, 840]);
+            page.setMediaBox(-120, -200, 620, 840);
+            page.setCropBox(-80, -150, 400, 500);
+            page.setRotation(degrees(rotation));
+            page.node.set(PDFName.of('UserUnit'), PDFNumber.of(userUnit));
+            const loading = getDocument({ data: (await document.save()).slice(), disableWorkerRendering: true });
+            const pdf = await loading.promise;
+            try {
+                const viewport = (await pdf.getPage(1)).getViewport({ scale: 1 });
+                const native: Point = [-41.25, 13.75];
+                const position = viewport.convertToViewportPoint(...native);
+                const anchor: Point = [position[0]!, position[1]!];
+                const imported: Annotation = { id: 'source-square', page: 1, kind: 'comment', from: anchor, to: anchor, text: 'Existing square review',
+                    source: { ref: '50R', subtype: 'Square', bounds: [0, 0, 100, 100], anchor, shape: 'area', linkState: 'linked' }, elementKey: WALL };
+                const original = structuredClone(imported);
+                const frame = { cropX: -80, cropY: -150, cropW: 400, cropH: 500, rotation, userUnit };
+                const { markups, links } = buildMarkupTables([imported], new Map([[1, frame]]), boundsOf, source);
+                const row = markups[0]!;
+                expect(row).toMatchObject({ Kind: 'comment', RevitKind: 'TextNote', AnchorX: native[0], AnchorY: native[1] });
+                expect(JSON.parse(row.Points)).toEqual([native]);
+                const bounds = boundsOf(imported);
+                const corners = [[bounds.x0, bounds.y0], [bounds.x1, bounds.y0], [bounds.x1, bounds.y1], [bounds.x0, bounds.y1]]
+                    .map(([x, y]) => viewport.convertToPdfPoint(x!, y!));
+                const rounded = (n: number) => Math.round(n * 1000) / 1000;
+                expect([row.MinX, row.MinY, row.MaxX, row.MaxY]).toEqual([
+                    rounded(Math.min(...corners.map((p) => p[0]!))), rounded(Math.min(...corners.map((p) => p[1]!))),
+                    rounded(Math.max(...corners.map((p) => p[0]!))), rounded(Math.max(...corners.map((p) => p[1]!))),
+                ]);
+                expect(links[0]).toMatchObject({ ElementKey: WALL, Relation: 'Linked' });
+                expect(imported).toEqual(original);
+            } finally { await loading.destroy(); }
+        },
+    );
+
+    it('rejects an incomplete rotated page frame rather than exporting misplaced coordinates', () => {
+        expect(() => buildMarkupTables([comment], new Map([[1, { cropX: 20, cropY: -30, cropH: 500, rotation: 90 }]]), boundsOf)).toThrow('Invalid page frame');
     });
 
     it('resolves each link to its Revit identity and the viewport on that page', () => {

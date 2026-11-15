@@ -31,6 +31,10 @@ import { useProfile } from './lib/profile';
 import type { Annotation, ElementInfo, EnhancedPdf, PageData, Point, Reply } from './lib/types';
 import type { AgentContext, AgentHighlight, DrawingComment } from './lib/drawingAgent';
 import { readPdfComments, viewerComments } from './lib/drawingComments';
+import { upgradePageAnnotations } from './lib/upgradeAnnotations';
+import { recoverReviewAnnotations } from './lib/reviewRecovery';
+import { upgradeDocumentAnnotations } from './lib/upgradeDocumentAnnotations';
+import './styles/imported-annotations.css';
 
 type Tab = 'agent' | 'properties' | 'elements' | 'notes';
 const TABS: readonly Tab[] = ['agent', 'properties', 'elements', 'notes'];
@@ -40,6 +44,7 @@ const LOAD_STEPS: Record<LoadStage | 'page', string> = {
     parsing: 'Parsing PDF',
     attachments: 'Extracting model data',
     tables: 'Reading model tables',
+    annotations: 'Importing existing PDF markups',
     page: 'Preparing first page',
 };
 // The loader covers most of the bar; the first page render finishes it.
@@ -78,6 +83,10 @@ export function App() {
     const [pdfComments, setPdfComments] = useState<DrawingComment[]>([]);
     const [commentsStatus, setCommentsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
     const [selectedPdfComment, setSelectedPdfComment] = useState<DrawingComment | null>(null);
+    const [upgradeAttempt, setUpgradeAttempt] = useState(0);
+    const [upgradeProgress, setUpgradeProgress] = useState<{ completed: number; total: number } | null>(null);
+    const [upgradeWarning, setUpgradeWarning] = useState<string | null>(null);
+    const upgradeController = useRef<AbortController | null>(null);
     const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
     // Picked elements: one clicked element, or several (Select similar, a note linked to several objects).
     const [pickedKeys, setPickedKeys] = useState<readonly string[]>([]);
@@ -113,6 +122,62 @@ export function App() {
         if (!geometry) return (pageData?.shapes ?? []).filter((shape) => matchesDrawingScope(shape.drawingId, drawingScope)).map((shape) => ({ elementKey: shape.elementKey, bounds: shape.bbox }));
         return geometry.parts.filter((part) => matchesDrawingScope(part.drawingId, drawingScope)).map((part) => ({ elementKey: part.elementKey, bounds: part.bounds }));
     }, [geometry, pageData, drawingScope]);
+    // Imported marks are matched against their actual page location, independently of sidebar filters.
+    const upgradeBounds = useMemo(() => geometry
+        ? geometry.parts.map((part) => ({ elementKey: part.elementKey, drawingId: part.drawingId, bounds: part.bounds }))
+        : (pageData?.shapes ?? []).map((shape) => ({ elementKey: shape.elementKey, drawingId: shape.drawingId, bounds: shape.bbox })), [geometry, pageData]);
+    const upgradePicker = useMemo(() => geometry?.pick ?? createShapePicker(pageData?.shapes ?? []), [geometry, pageData]);
+    useEffect(() => {
+        if (!doc || !pageData || (pageData.geometrySource === 'native' && !geometry)) return;
+        const pageElementKeys = new Set([...(pageData.elementKeys ?? []), ...(nativeSource?.resolvedElementKeys ?? []), ...pageData.shapes.map((shape) => shape.elementKey)]);
+        setAnnotations((current) => {
+            if (!current.some((annotation) => annotation.page === pageData.number && annotation.source?.linkState === 'pending')) return current;
+            return upgradePageAnnotations(current, { pageNumber: pageData.number, elements: doc.elements, picker: upgradePicker, bounds: upgradeBounds, geometryReady: true, pageElementKeys }).annotations;
+        });
+    }, [doc, pageData, geometry, nativeSource, upgradeBounds, upgradePicker]);
+
+    const hiddenAnnotationKey = useMemo(() => {
+        const active = new Set(annotations.filter((annotation) => annotation.source).map((annotation) => annotation.id));
+        const ids = new Set(doc?.viewerOwnedAnnotationRefs ?? []);
+        for (const annotation of doc?.savedAnnotations ?? []) {
+            if (!annotation.source || active.has(annotation.id)) continue;
+            ids.add(annotation.source.renderId ?? annotation.source.ref);
+            for (const reply of annotation.replies ?? []) if (reply.source) ids.add(reply.source.renderId ?? reply.source.ref);
+        }
+        return [...ids].sort().join('\n');
+    }, [doc, annotations]);
+    const hiddenAnnotationIds = useMemo(() => new Set(hiddenAnnotationKey ? hiddenAnnotationKey.split('\n') : []), [hiddenAnnotationKey]);
+    useEffect(() => {
+        if (!doc) return;
+        const controller = new AbortController();
+        upgradeController.current = controller;
+        setUpgradeWarning(null);
+        setUpgradeProgress(null);
+        // Capture this review once per file/retry. Results are merged only into notes still awaiting a match.
+        void upgradeDocumentAnnotations(doc, annotations, {
+            signal: controller.signal,
+            onProgress: (completed, total) => { if (!controller.signal.aborted) setUpgradeProgress({ completed, total }); },
+            onPage: (result) => {
+                if (controller.signal.aborted) return;
+                const imported = new Map(result.annotations.filter((annotation) => annotation.source).map((annotation) => [annotation.id, annotation]));
+                setAnnotations((current) => {
+                    let changed = false;
+                    const next = current.map((annotation) => {
+                        const matched = imported.get(annotation.id);
+                        if (annotation.source?.linkState !== 'pending' || !matched || matched.source?.linkState === 'pending') return annotation;
+                        changed = true;
+                        return { ...annotation, elementKey: matched.elementKey, elementKeys: matched.elementKeys, source: matched.source };
+                    });
+                    return changed ? next : current;
+                });
+            },
+        }).catch((cause) => {
+            if (!controller.signal.aborted) setUpgradeWarning(`Some markup links could not be matched: ${errorText(cause)}. The original PDF markups are preserved.`);
+        }).finally(() => {
+            if (!controller.signal.aborted) setUpgradeProgress(null);
+        });
+        return () => { controller.abort(); if (upgradeController.current === controller) upgradeController.current = null; };
+    }, [doc, upgradeAttempt]);
     const onRenderError = useCallback((error: unknown) => setError(`Could not render the page: ${errorText(error)}`), []);
     const fileInput = useRef<HTMLInputElement>(null);
     const nextId = useRef(1);
@@ -139,7 +204,7 @@ export function App() {
             }
             // State recorded for a different file revision is never applied.
             const state = restore && restore.fingerprint === fingerprint ? restore : null;
-            const annotations = (state?.annotations ?? next.savedAnnotations).filter((a) => a.page <= next.pageCount);
+            const annotations = recoverReviewAnnotations(next.savedAnnotations, state?.annotations, state?.importedAnnotationIds).filter((a) => a.page <= next.pageCount);
             awaitingFirstPage.current = next;
             setLoading({ fileName: file.name, fraction: LOADER_SHARE, ceiling: 0.99, step: LOAD_STEPS.page });
             nextId.current = nextAnnotationNumber(annotations);
@@ -198,7 +263,8 @@ export function App() {
 
     const sessionState = useMemo<SessionState | null>(() => sessionId ? {
         version: SESSION_VERSION, fingerprint: sessionId, page, annotations, selectedKeys: [...pickedKeys], filterSelected, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor,
-    } : null, [sessionId, page, annotations, pickedKeys, filterSelected, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor]);
+        importedAnnotationIds: doc?.savedAnnotations.filter((annotation) => annotation.source).map((annotation) => annotation.id),
+    } : null, [sessionId, page, annotations, pickedKeys, filterSelected, selectedAnnotationId, filters, zoomMode, tab, drawKind, highlightColor, doc]);
     const pendingState = useRef<SessionState | null>(null);
     const persistWarned = useRef(false);
     const flushState = useCallback(() => {
@@ -252,7 +318,7 @@ export function App() {
         let cancelled = false;
         setPdfComments([]);
         setCommentsStatus('loading');
-        if (doc) void readPdfComments(doc.pdf, page, doc.bytes).then(
+        if (doc) void readPdfComments(doc.pdf, page, doc.bytes, doc.savedAnnotations).then(
             (comments) => { if (!cancelled) { setPdfComments(comments); setCommentsStatus('ready'); } },
             () => { if (!cancelled) setCommentsStatus('error'); },
         );
@@ -377,7 +443,7 @@ export function App() {
     // A note linked to several objects keeps its links: they came from a selection, not from where it sits.
     const moveAnnotation = (id: string, patch: { from: Point; to: Point }) => {
         const moved = annotations.find((a) => a.id === id);
-        if (!moved) return;
+        if (!moved || moved.source) return;
         const next = { ...moved, ...patch };
         const retied = linkedKeys(moved).length > 1 ? next : next.kind === 'cloud' ? tieCloud(next, regionSources) : tieWithPicker(next, pickElement, 4 / zoom);
         setAnnotations((list) => list.map((a) => (a.id === id ? retied : a)));
@@ -394,10 +460,10 @@ export function App() {
     }, [profile.photo]);
 
     const editComment = useCallback((id: string, text: string) => {
-        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, text, modifiedAt: new Date().toISOString() } : a)));
+        setAnnotations((list) => list.map((a) => (a.id === id && !a.source ? { ...a, text, modifiedAt: new Date().toISOString() } : a)));
     }, []);
     const editReply = useCallback((id: string, replyId: string, text: string) => {
-        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: (a.replies ?? []).map((r) => (r.id === replyId ? { ...r, text } : r)) } : a)));
+        setAnnotations((list) => list.map((a) => (a.id === id ? { ...a, replies: (a.replies ?? []).map((r) => (r.id === replyId && !r.source ? { ...r, text } : r)) } : a)));
     }, []);
 
     const deleteById = useCallback((id: string) => {
@@ -407,9 +473,19 @@ export function App() {
     }, []);
 
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
-        setAnnotations((list) => list.map((a) => (a.id === id ? withLinks(a, elementKey ? [elementKey] : []) : a)));
+        setAnnotations((list) => list.map((a) => (a.id === id ? withLinks({ ...a,
+            ...(a.source ? { source: { ...a.source, linkState: elementKey ? 'linked' as const : 'unlinked' as const, linkMethod: 'manual' as const, candidateKeys: undefined } } : {}),
+        }, elementKey ? [elementKey] : []) : a)));
         setSelectedKey(elementKey);
     }, [setSelectedKey]);
+
+    const linkImported = (id: string, keys: readonly string[]) => {
+        const valid = keys.filter((key) => doc?.elements.has(key));
+        setAnnotations((current) => current.map((annotation) => annotation.id === id && annotation.source
+            ? withLinks({ ...annotation, source: { ...annotation.source, linkState: valid.length ? 'linked' as const : 'unlinked' as const, linkMethod: 'manual' as const, candidateKeys: undefined } }, valid)
+            : annotation));
+        setSelectedKeys(valid);
+    };
 
     const deleteSelected = useCallback(() => {
         setAnnotations((list) => list.filter((a) => a.id !== selectedAnnotationId));
@@ -426,7 +502,7 @@ export function App() {
         setSaving(true);
         setError(null);
         try {
-            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances });
+            const bytes = await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations, elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances });
             const name = annotatedName(doc.fileName);
             downloadPdf(bytes, name);
         } catch (e) {
@@ -439,7 +515,7 @@ export function App() {
     const print = useCallback(async () => {
         if (!doc) return;
         try {
-            printPdf(annotations.length ? await buildAnnotatedPdf(doc.bytes, annotations, describeTie) : doc.bytes);
+            printPdf(annotations.length || doc.importedAnnotationCount ? await buildAnnotatedPdf(doc.bytes, annotations, describeTie, { originalAnnotations: doc.savedAnnotations, elements: doc.elements, drawings: doc.drawings, appearances: doc.appearances }) : doc.bytes);
         } catch (e) {
             setError(`Could not print: ${errorText(e)}`);
         }
@@ -522,6 +598,10 @@ export function App() {
     const selectedElements = useMemo(() => pickedKeys.length ? pickedKeys.map((key) => doc?.elements.get(key)).filter((e): e is ElementInfo => !!e) : filterSelected && filtersActive ? matchedElements : [], [doc, pickedKeys, filterSelected, filtersActive, matchedElements]);
     const hoverElement = hover && doc?.elements.get(hover.key);
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
+    const importedAnnotations = useMemo(() => annotations.filter((annotation) => annotation.source), [annotations]);
+    const importedLinkedCount = importedAnnotations.filter((annotation) => annotation.source?.linkState === 'linked').length;
+    const importedPendingCount = importedAnnotations.filter((annotation) => annotation.source?.linkState === 'pending').length;
+    const importedReviewCount = importedAnnotations.length - importedLinkedCount - importedPendingCount;
 
     // Elements on this page within the drawing/view filter: what the agent sees and what Select similar picks from.
     const pageElements = useMemo(() => {
@@ -612,8 +692,19 @@ export function App() {
     const selectComment = (comment: DrawingComment) => {
         goToPage(comment.page);
         setSelectedPdfComment(comment.source === 'pdf' ? comment : null);
-        setSelectedAnnotationId(comment.source === 'viewer' ? comment.annotationId ?? comment.id : null);
-        setSelectedKey(comment.elementKey ?? null);
+        const annotationId = comment.source === 'viewer' ? comment.annotationId ?? comment.id : null;
+        const annotation = annotations.find((note) => note.id === annotationId);
+        setSelectedAnnotationId(annotationId);
+        setSelectedKeys(annotation ? linkedKeys(annotation) : comment.elementKey ? [comment.elementKey] : []);
+        setTab('notes');
+    };
+    const reviewImported = () => {
+        const annotation = importedAnnotations.find((note) => note.source?.linkState !== 'linked') ?? importedAnnotations[0];
+        if (!annotation) return;
+        goToPage(annotation.page);
+        setSelectedAnnotationId(annotation.id);
+        setSelectedKeys(linkedKeys(annotation));
+        setSelectedPdfComment(null);
         setTab('notes');
     };
 
@@ -645,6 +736,13 @@ export function App() {
                 {error && <StatusMessage tone="error" variant="banner" title={error} />}
                 {persistWarning && <StatusMessage tone="warning" variant="banner" title={persistWarning} />}
                 {doc?.warnings.map((w) => <StatusMessage tone="warning" variant="banner" title={w} key={w} />)}
+                {importedAnnotations.length > 0 && <section className="imported-review-summary" aria-label="Existing PDF markup upgrade">
+                    <span role="status"><strong>{importedAnnotations.length} existing PDF markup{importedAnnotations.length === 1 ? '' : 's'} imported</strong> · {importedLinkedCount} linked · {importedReviewCount} {importedReviewCount === 1 ? 'needs' : 'need'} review{importedPendingCount ? ` · ${importedPendingCount} awaiting geometry` : ''}</span>
+                    <button type="button" className="btn" onClick={reviewImported}>Review imported notes</button>
+                    {upgradeProgress ? <><span className="muted">Matching page {Math.min(upgradeProgress.completed + 1, upgradeProgress.total)} of {upgradeProgress.total}</span><button type="button" className="btn" onClick={() => { upgradeController.current?.abort(); setUpgradeProgress(null); setUpgradeWarning('Matching paused. Original markups are preserved.'); }}>Cancel matching</button></>
+                        : importedPendingCount > 0 && <button type="button" className="btn" onClick={() => setUpgradeAttempt((attempt) => attempt + 1)}>Match remaining notes</button>}
+                </section>}
+                {upgradeWarning && <StatusMessage tone="warning" variant="banner" title={upgradeWarning} />}
             </div>
             <main className="main">
                 <div className="stage-wrap">
@@ -654,7 +752,7 @@ export function App() {
                             pdf={doc.pdf}
                             page={pageData}
                             zoomMode={zoomMode}
-                            hideEmbeddedAnnotations={doc.savedAnnotations.length > 0}
+                            hiddenAnnotationIds={hiddenAnnotationIds}
                             tool={tool}
                             hoverKey={hover?.key ?? null}
                             previewKeys={previewKeys}
@@ -778,6 +876,7 @@ export function App() {
                                 onPreview={setPreviewKeys}
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
+                                onLinkImported={linkImported}
                                 onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKeys(linkedKeys(a)); }}
                             />
                             </>

@@ -19,7 +19,7 @@ interface Props {
     pdf: PDFDocumentProxy;
     page: PageData;
     zoomMode: ZoomMode;
-    hideEmbeddedAnnotations: boolean;
+    hiddenAnnotationIds?: ReadonlySet<string>;
     tool: Tool;
     hoverKey: string | null;
     /** More objects drawn in the hover state, e.g. a category hovered in Properties. */
@@ -211,6 +211,7 @@ export function PdfStage(props: Props) {
     // Every annotation tool shares one cursor, which shows whether an object is under it (see review.css).
     const toolClass = tool === 'pan' ? (panning ? 'tool-panning' : 'tool-pan') : tool === 'select' ? 'tool-select' : ['line', 'rect', 'ellipse', 'highlight', 'pen', 'cloud'].includes(tool) ? 'tool-draw' : 'tool-review';
     const hoverClass = !props.hoverKey || tool === 'pan' ? '' : tool === 'select' ? 'hovering' : 'over-object';
+    const selectedSource = props.annotations.find((annotation) => annotation.id === props.selectedAnnotationId)?.source;
 
     return (
         <div className="stage" ref={wrapRef} onWheel={() => props.onCancelFocus?.()}>
@@ -224,7 +225,7 @@ export function PdfStage(props: Props) {
                 onPointerCancel={finishPan}
             >
                 <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} pageWidth={page.width} pageHeight={page.height} scrollContainer={wrapRef}
-                    hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
+                    hiddenAnnotationIds={props.hiddenAnnotationIds}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
                     hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
@@ -261,6 +262,7 @@ export function PdfStage(props: Props) {
                     coverOf={props.coverOf}
                 >
                     <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    {selectedSource && <rect x={selectedSource.bounds[0]} y={selectedSource.bounds[1]} width={selectedSource.bounds[2] - selectedSource.bounds[0]} height={selectedSource.bounds[3] - selectedSource.bounds[1]} fill="none" stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="5 3" vectorEffect="non-scaling-stroke" pointerEvents="none" />}
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {showSelectionActions && selectionBounds && (

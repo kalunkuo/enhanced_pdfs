@@ -2,13 +2,15 @@ import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { createNativeTagIndexer } from './nativeTags';
 import { ANNOTATIONS_FILE, parseAnnotations } from './save';
+import { importPdfAnnotations } from './importPdfAnnotations';
+import { getViewerOwnedAnnotationRefs } from './pdfAnnotationOwnership';
 import { buildAppearances, buildDrawings, buildElements, buildParameters, buildShapes, drawingPages, geometryForPage, readTables, type Attachments } from './tables';
 import type { EnhancedPdf, PageData } from './types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 /** Loading stages, in order. `fraction` is overall progress from 0 to 1 across all stages. */
-export type LoadStage = 'reading' | 'parsing' | 'attachments' | 'tables';
+export type LoadStage = 'reading' | 'parsing' | 'attachments' | 'tables' | 'annotations';
 export type LoadProgress = { stage: LoadStage; fraction: number };
 
 // Share of overall progress each stage covers; reading the file is usually the longest.
@@ -16,7 +18,8 @@ export const LOAD_STAGE_SPAN: Record<LoadStage, readonly [number, number]> = {
     reading: [0, 0.4],
     parsing: [0.4, 0.55],
     attachments: [0.55, 0.75],
-    tables: [0.75, 1],
+    tables: [0.75, 0.9],
+    annotations: [0.9, 1],
 };
 
 function readFile(file: File, onFraction: (f: number) => void): Promise<Uint8Array> {
@@ -80,6 +83,17 @@ export async function loadEnhancedPdf(file: File, onProgress?: (progress: LoadPr
         };
 
         const saved = attachments.get(ANNOTATIONS_FILE);
+        const existing = saved ? parseAnnotations(saved).filter((a) => a.page <= pdf.numPages) : [];
+        report('annotations', 0);
+        const [importResult, ownership] = await Promise.allSettled([
+            importPdfAnnotations(pdf, bytes, existing, tables, elements),
+            getViewerOwnedAnnotationRefs(bytes),
+        ]);
+        const imported = importResult.status === 'fulfilled' ? importResult.value : null;
+        if (imported) warnings.push(...imported.warnings);
+        else warnings.push('Existing PDF markups could not be imported for review. Their original graphics remain in the PDF.');
+        if (ownership.status === 'rejected') warnings.push('Saved viewer annotation copies could not be identified; original PDF annotations remain visible.');
+        report('annotations', 1);
         return {
             fileName: file.name,
             bytes,
@@ -89,7 +103,9 @@ export async function loadEnhancedPdf(file: File, onProgress?: (progress: LoadPr
             parameters,
             drawings,
             appearances,
-            savedAnnotations: saved ? parseAnnotations(saved).filter((a) => a.page <= pdf.numPages) : [],
+            savedAnnotations: imported?.annotations ?? existing,
+            importedAnnotationCount: imported?.importedCount ?? 0,
+            viewerOwnedAnnotationRefs: ownership.status === 'fulfilled' ? ownership.value : new Set(),
             warnings,
             dispose: () => loadingTask.destroy(),
             page: (n) => {

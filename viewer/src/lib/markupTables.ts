@@ -1,6 +1,7 @@
 import { parquetWriteBuffer, type ColumnSource } from 'hyparquet-writer';
 import { cloudRect } from './cloud';
 import { linkedKeys } from './links';
+import { inverseMatrix, transformPoint, type Matrix } from './presentation';
 import type { Annotation, AppearanceInfo, DrawingInfo, ElementInfo, Point } from './types';
 
 /**
@@ -29,8 +30,8 @@ const REVIT_KIND: Record<Annotation['kind'], string> = {
     highlight: 'FilledRegion', text: 'TextNote', comment: 'TextNote', signature: 'TextNote', cloud: 'RevisionCloud',
 };
 
-/** Where a page sits in PDF user space: its crop box origin and height. */
-export interface PageFrame { cropX: number; cropY: number; cropH: number }
+/** Effective PDF.js page box in PDF user space, intrinsic rotation, and PDF UserUnit. */
+export interface PageFrame { cropX: number; cropY: number; cropH: number; cropW?: number; rotation?: number; userUnit?: number }
 
 export interface MarkupSource {
     elements?: ReadonlyMap<string, ElementInfo>;
@@ -62,6 +63,28 @@ export interface MarkupTables { markups: MarkupRow[]; links: MarkupLinkRow[]; re
 const big = (text: string | undefined): bigint | null => (text && /^-?\d+$/.test(text) ? BigInt(text) : null);
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
+/** One inverse affine transform for every scale-1 viewport point, including rotated bounds. */
+function pdfCoordinates(frame: PageFrame): (point: Point) => Point {
+    const unit = frame.userUnit ?? 1;
+    const rotation = ((frame.rotation ?? 0) % 360 + 360) % 360;
+    const { cropX: x, cropY: y, cropH: height, cropW: width } = frame;
+    if (![x, y, height, unit].every(Number.isFinite) || height <= 0 || unit <= 0 ||
+        (rotation !== 0 && (!Number.isFinite(width) || width! <= 0))) throw new Error('Invalid page frame for markup export.');
+    let pdfToPage: Matrix;
+    switch (rotation) {
+        case 0: pdfToPage = [unit, 0, 0, -unit, -x * unit, (y + height) * unit]; break;
+        case 90: pdfToPage = [0, unit, unit, 0, -y * unit, -x * unit]; break;
+        case 180: pdfToPage = [-unit, 0, 0, unit, (x + width!) * unit, -y * unit]; break;
+        case 270: pdfToPage = [0, -unit, -unit, 0, (y + height) * unit, (x + width!) * unit]; break;
+        default: throw new Error('Markup export requires a page rotation in multiples of 90 degrees.');
+    }
+    const pageToPdf = inverseMatrix(pdfToPage);
+    return (point) => {
+        const converted = transformPoint(pageToPdf, point);
+        return [round(converted[0]), round(converted[1])];
+    };
+}
+
 /** The geometry that defines a markup, in page space (top-left origin), before the PDF transform. */
 function shapePoints(a: Annotation, b: Bounds): Point[] {
     const corners = (x0: number, y0: number, x1: number, y1: number): Point[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
@@ -83,8 +106,8 @@ function uniqueIdOf(key: string): string | null {
 }
 
 /**
- * Build the rows. `frames` gives each page's crop box; `bounds` is the save module's drawn extent of a markup
- * (page space), so the Parquet extent matches the visible PDF annotation.
+ * Build the rows. `frames` gives each effective page box; `bounds` gives the markup's viewport extent.
+ * Imported source marks export as linked review pins, not a reconstruction of their native PDF graphic.
  */
 export function buildMarkupTables(
     annotations: readonly Annotation[], frames: ReadonlyMap<number, PageFrame>, bounds: (a: Annotation) => Bounds, source: MarkupSource = {},
@@ -103,12 +126,15 @@ export function buildMarkupTables(
     };
 
     const out: MarkupTables = { markups: [], links: [], replies: [] };
-    for (const a of annotations) {
+    for (const annotation of annotations) {
+        const a: Annotation = annotation.source ? { ...annotation, kind: 'comment', from: annotation.source.anchor, to: annotation.source.anchor } : annotation;
         const frame = frames.get(a.page);
         if (!frame) continue;
-        const X = (x: number) => round(frame.cropX + x);
-        const Y = (y: number) => round(frame.cropY + frame.cropH - y);
+        const toPdf = pdfCoordinates(frame);
         const b = bounds(a);
+        const pageCorners: Point[] = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]];
+        const corners = pageCorners.map(toPdf);
+        const anchor = toPdf(a.from);
         const root = rootByPage.get(a.page);
         const keys = linkedKeys(a);
         const contained = a.kind === 'cloud' ? a.contained ?? [] : [];
@@ -117,8 +143,9 @@ export function buildMarkupTables(
             MarkupId: a.id, Page: a.page, DrawingId: root?.id ?? null, ViewId: big(root?.viewId), ViewUniqueId: root?.viewUniqueId ?? null,
             Kind: a.kind, RevitKind: REVIT_KIND[a.kind], Text: a.text?.trim() ? a.text : null, Author: a.author?.name ?? null,
             CreatedUtc: a.createdAt ?? null, ModifiedUtc: a.modifiedAt ?? null, Color: a.kind === 'highlight' ? a.color ?? null : null,
-            MinX: X(b.x0), MinY: Y(b.y1), MaxX: X(b.x1), MaxY: Y(b.y0), AnchorX: X(a.from[0]), AnchorY: Y(a.from[1]),
-            Points: JSON.stringify(shapePoints(a, b).map((p) => [X(p[0]), Y(p[1])])),
+            MinX: Math.min(...corners.map((point) => point[0])), MinY: Math.min(...corners.map((point) => point[1])),
+            MaxX: Math.max(...corners.map((point) => point[0])), MaxY: Math.max(...corners.map((point) => point[1])), AnchorX: anchor[0], AnchorY: anchor[1],
+            Points: JSON.stringify(shapePoints(a, b).map(toPdf)),
             ElementKey: keys[0] ?? null, LinkCount: keys.length + contained.length, ReplyCount: a.replies?.length ?? 0,
             HasImage: a.image !== undefined, SchemaVersion: MARKUP_SCHEMA_VERSION,
         });

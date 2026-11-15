@@ -11,6 +11,7 @@ import { Byline } from '../ui/Byline';
 import { ChevronDownIcon, TrashIcon } from '../ui/icons';
 import { CommentThread } from './CommentThread';
 import { TieTag } from './TieTag';
+import { ImportedAnnotationInfo } from './ImportedAnnotationInfo';
 
 const NAMES = { line: 'Line', rect: 'Rectangle', ellipse: 'Circle', pen: 'Drawing', highlight: 'Highlight', text: 'Text box', comment: 'Comment', signature: 'Signature', cloud: 'Revision cloud' } as const;
 
@@ -31,6 +32,7 @@ interface Props {
     onDelete: (annotationId: string) => void;
     /** Show an object's properties, from the tie chip. */
     onOpenElement: (elementKey: string) => void;
+    onLinkImported: (annotationId: string, keys: readonly string[]) => void;
 }
 
 /** The objects a revision cloud covers, each opening that object's properties. */
@@ -91,7 +93,7 @@ function LinkedObjects({ keys, elements, onOpen }: { keys: readonly string[]; el
     );
 }
 
-export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onEdit, onEditReply, onPreview, onDelete, onOpenElement }: Props) {
+export function NotesList({ annotations, elements, selectedId, profile, onProfile, onSelect, onTie, onReply, onEdit, onEditReply, onPreview, onDelete, onOpenElement, onLinkImported }: Props) {
     const now = useNow();
     const selectedRef = useRef<HTMLLIElement>(null);
     // Selecting a markup on the page brings its open note to the top of the panel (scroll-margin-top leaves a little room).
@@ -125,6 +127,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined} {...previewHandlers(a)}>
                         {selected && a.kind === 'comment' ? (
                             <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onEdit={onEdit} onEditReply={onEditReply} onDelete={onDelete}>
+                                <ImportedAnnotationInfo annotation={a} elements={elements} onLink={onLinkImported} onOpen={onOpenElement} />
                                 <TieTag annotation={a} elements={elements} onTie={onTie} onOpenElement={onOpenElement} />
                                 {linkList}
                             </CommentThread>
@@ -148,7 +151,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                         ) : (
                             <>
                                 <button aria-current={selected} onClick={() => onSelect(a)}>
-                                    <strong>{NAMES[a.kind]}</strong> <span className="muted">p. {a.page}</span>
+                                    <strong>{a.source ? `Imported ${a.source.subtype}` : NAMES[a.kind]}</strong> <span className="muted">p. {a.page}{a.source && a.source.linkState !== 'linked' ? ' · needs review' : ''}</span>
                                     {a.kind === 'comment' && (
                                         <span className="note-author"><Avatar name={a.author?.name ?? 'Unknown'} photo={a.author?.photo} size={18} /> {a.author?.name ?? 'Unknown'} <time className="muted" dateTime={a.createdAt} title={formatTimeAgo(a.createdAt, now)}>{formatExactDate(a.createdAt)}</time></span>
                                     )}

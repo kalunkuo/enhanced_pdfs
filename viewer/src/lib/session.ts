@@ -2,6 +2,7 @@ import type { FilterState } from './filters';
 import { clampZoom, type ZoomMode } from './presentation';
 import { safeImage } from './comments';
 import { cleanLinks } from './links';
+import { cleanImportedSource } from './annotationSource';
 import { ANNOTATION_KINDS, cleanAuthor, cleanContained, cleanReplies } from './save';
 import type { Annotation, AnnotationKind, Point } from './types';
 
@@ -23,6 +24,8 @@ export interface SessionState {
     fingerprint: string;
     page: number;
     annotations: Annotation[];
+    /** Imported inventory distinguishes intentional deletions from pre-upgrade recovery records. */
+    importedAnnotationIds?: string[];
     /** Picked elements: one clicked element, or a multi-selection such as Select similar. */
     selectedKeys: string[];
     /** The selection is every element matching the filters (until something is picked). */
@@ -126,6 +129,8 @@ function parseAnnotation(value: unknown): Annotation | null {
     if (Array.isArray(v.points) && v.points.every(isPoint)) a.points = v.points.map((p) => [p[0], p[1]] as const);
     if (typeof v.color === 'string') a.color = v.color;
     if (typeof v.text === 'string') a.text = v.text;
+    const source = cleanImportedSource(v.source);
+    if (source) a.source = source;
     // Comment threads and clouds: the same checks the viewer applies to annotations read back from a saved PDF.
     const author = cleanAuthor(v.author);
     if (author) a.author = author;
@@ -172,6 +177,7 @@ export function parseSessionState(value: unknown): SessionState | null {
         fingerprint: v.fingerprint,
         page: isNum(v.page) && v.page >= 1 ? Math.floor(v.page) : 1,
         annotations,
+        ...(Array.isArray(v.importedAnnotationIds) ? { importedAnnotationIds: [...new Set(v.importedAnnotationIds.slice(0, 100_000).filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 2000))] } : {}),
         // Records written before multi-selection kept one `selectedKey`.
         selectedKeys: Array.isArray(v.selectedKeys) ? [...new Set(v.selectedKeys.filter((k): k is string => typeof k === 'string'))] : str(v.selectedKey) ? [v.selectedKey as string] : [],
         filterSelected: v.filterSelected === true,
