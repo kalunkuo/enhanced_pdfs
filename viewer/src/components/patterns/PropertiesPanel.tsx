@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
+import { categoryColor } from '../../lib/categoryColor';
+import { elementLabel, singularCategory } from '../../lib/elementLabel';
 import { groupParameters } from '../../lib/groups';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
 import { categoryCounts, combineParameters, identityParameters, type CombinedParameter } from '../../lib/selection';
@@ -30,7 +32,18 @@ export interface PropertiesPanelProps {
     onFitSelection?: () => void;
 }
 
-export function PropertiesPanel({ doc, elements, hasShapes, locations, onLocate, onFitSelection }: PropertiesPanelProps) {
+export function PropertiesPanel({ doc, elements: selected, hasShapes, locations, onLocate, onFitSelection }: PropertiesPanelProps) {
+    // A big selection is explored by category: a pill narrows the panel to that category, and its list narrows it to one object.
+    // The narrowing resets whenever the selection itself changes.
+    const signature = useMemo(() => `${selected.length}:${selected.map((e) => e.key).join('|')}`, [selected]);
+    const [narrow, setNarrow] = useState<{ signature: string; category: string | null; key: string | null }>({ signature, category: null, key: null });
+    const scope = narrow.signature === signature ? narrow : { signature, category: null, key: null };
+    const pills = useMemo(() => categoryCounts(selected), [selected]);
+    const elements = useMemo(
+        () => scope.key ? selected.filter((e) => e.key === scope.key) : scope.category ? selected.filter((e) => e.category === scope.category) : selected,
+        [selected, scope.key, scope.category],
+    );
+    const inCategory = scope.category ? selected.filter((e) => e.category === scope.category) : [];
     const groups = useMemo<[string, CombinedParameter[]][]>(() => {
         if (!elements.length) return [];
         const identity = combineParameters(elements.map(identityParameters));
@@ -71,8 +84,28 @@ export function PropertiesPanel({ doc, elements, hasShapes, locations, onLocate,
                     <div className="prop-sub">{subtitle}</div>
                 </div>
             </div>
+            {selected.length > 1 && (
+                <section className="multi-select">
+                    <div className="multi-items" role="tablist" aria-label="Selected categories">
+                        <button role="tab" className="multi-item multi-all" aria-selected={!scope.category} onClick={() => setNarrow({ signature, category: null, key: null })}>All ({selected.length})</button>
+                        {pills.map(([category, count]) => (
+                            <button key={category} role="tab" className="multi-item" aria-selected={scope.category === category} style={{ '--tag': categoryColor(category) } as CSSProperties}
+                                onClick={() => setNarrow({ signature, category, key: null })}>{singularCategory(category)} ({count})</button>
+                        ))}
+                    </div>
+                    {scope.category && (
+                        <ul className="multi-list" aria-label={`${singularCategory(scope.category)} objects`}>
+                            {inCategory.map((e) => (
+                                <li key={e.key}>
+                                    <button aria-current={scope.key === e.key} onClick={() => setNarrow({ signature, category: scope.category, key: scope.key === e.key ? null : e.key })}>{elementLabel(e)}</button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </section>
+            )}
             <div className="prop-count">
-                <span>{counts.map(([category, count]) => `${category} (${count})`).join(', ')}</span>
+                <span>{single ? element.category : `${elements.length} selected`}</span>
                 {single
                     ? onLocate && <Button disabled={!locatable} onClick={() => onLocate(element.key)}>Locate on drawing</Button>
                     : onFitSelection && <Button disabled={!locatable} onClick={onFitSelection}>Fit selection</Button>}
