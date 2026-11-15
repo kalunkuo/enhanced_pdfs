@@ -88,3 +88,37 @@ export async function planAgentRequest(
     catch { throw new AgentProviderError('The model API returned an unreadable response. Try again.', 502); }
     return parsePlan(value);
 }
+
+const MODELS_URL = 'https://api.openai.com/v1/models';
+const KEY_CHECK_TTL_MS = 10 * 60_000;
+const keyChecks = new Map<string, { at: number; accepted: boolean }>();
+
+/** Test hook: forget cached key checks. */
+export function clearOpenAiKeyChecks(): void { keyChecks.clear(); }
+
+/**
+ * Whether OpenAI accepts the configured key: true, false, or null when that could not be determined
+ * (network trouble, timeout, an unexpected status). Verdicts are cached per key for ten minutes, so
+ * the status endpoint can report "configured" honestly without a round trip on every call. A stale
+ * or placeholder key then leaves the viewer in Local demo instead of failing its first request.
+ */
+export async function openAiKeyAccepted(config: { apiKey: string }, options: { fetch?: typeof fetch; signal?: AbortSignal; now?: () => number } = {}): Promise<boolean | null> {
+    const key = config.apiKey.trim();
+    if (!key) return false;
+    const now = options.now?.() ?? Date.now();
+    const cached = keyChecks.get(key);
+    if (cached && now - cached.at < KEY_CHECK_TTL_MS) return cached.accepted;
+    let response: Response;
+    try {
+        response = await (options.fetch ?? fetch)(MODELS_URL, { headers: { Authorization: `Bearer ${key}` }, signal: options.signal });
+    } catch {
+        return null;
+    }
+    if (response.status === 401 || response.status === 403) {
+        keyChecks.set(key, { at: now, accepted: false });
+        return false;
+    }
+    if (!response.ok) return null;
+    keyChecks.set(key, { at: now, accepted: true });
+    return true;
+}

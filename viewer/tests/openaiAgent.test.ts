@@ -1,3 +1,4 @@
+import { clearOpenAiKeyChecks, openAiKeyAccepted } from '../server/openaiAgent';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentProviderError, planAgentRequest } from '../server/openaiAgent';
 import { AGENT_ACTION_NAMES, type AgentApiRequest } from '../src/lib/agentApi';
@@ -143,5 +144,39 @@ describe('server-only OpenAI action planner', () => {
         const error = await planAgentRequest(request, config, { fetch }).catch((error: unknown) => error);
         expect(error).toMatchObject({ status: 502 });
         expect(String(error)).not.toContain(config.apiKey);
+    });
+});
+
+describe('openAiKeyAccepted', () => {
+    const probe = (status: number) => vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status }));
+    const cfg = (apiKey: string) => ({ apiKey, model: 'test-model' });
+
+    it('tells an accepted key from a rejected one and caches the verdict', async () => {
+        clearOpenAiKeyChecks();
+        const ok = probe(200);
+        expect(await openAiKeyAccepted(cfg('key-ok'), { fetch: ok })).toBe(true);
+        expect(await openAiKeyAccepted(cfg('key-ok'), { fetch: ok })).toBe(true);
+        expect(ok).toHaveBeenCalledTimes(1);
+        expect(String(ok.mock.calls[0]![0])).toBe('https://api.openai.com/v1/models');
+        const bad = probe(401);
+        expect(await openAiKeyAccepted(cfg('key-bad'), { fetch: bad })).toBe(false);
+        expect(await openAiKeyAccepted(cfg('key-bad'), { fetch: bad })).toBe(false);
+        expect(bad).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers null when the check is inconclusive and false for an empty key', async () => {
+        clearOpenAiKeyChecks();
+        expect(await openAiKeyAccepted(cfg('key-net'), { fetch: vi.fn<typeof fetch>().mockRejectedValue(new Error('offline')) })).toBe(null);
+        expect(await openAiKeyAccepted(cfg('key-500'), { fetch: probe(500) })).toBe(null);
+        expect(await openAiKeyAccepted(cfg('  '), { fetch: probe(200) })).toBe(false);
+    });
+
+    it('checks again once the cached verdict is ten minutes old', async () => {
+        clearOpenAiKeyChecks();
+        const first = probe(401);
+        expect(await openAiKeyAccepted(cfg('key-stale'), { fetch: first, now: () => 0 })).toBe(false);
+        const later = probe(200);
+        expect(await openAiKeyAccepted(cfg('key-stale'), { fetch: later, now: () => 11 * 60_000 })).toBe(true);
+        expect(later).toHaveBeenCalledTimes(1);
     });
 });

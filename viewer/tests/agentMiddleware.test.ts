@@ -17,7 +17,8 @@ afterEach(async () => {
 });
 
 async function serve(serverConfig = config, plan: typeof planAgentRequest = vi.fn(async () => ({ message: 'What width should I use?', actions: [] })), timeoutMs?: number) {
-    const middleware = createAgentMiddleware(serverConfig, { plan, timeoutMs });
+    // Unit tests never reach OpenAI: the key check is inconclusive here, so a set key counts as configured.
+    const middleware = createAgentMiddleware(serverConfig, { plan, timeoutMs, verifyKey: async () => null });
     const server = createServer((request, response) => middleware(request, response, () => { response.writeHead(404); response.end(); }));
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -164,5 +165,27 @@ describe('local agent HTTP API', () => {
         expect(response.status).toBe(504);
         expect(cancelled).toBe(true);
         expect(await response.text()).not.toContain(config.apiKey);
+    });
+});
+
+describe('status reflects whether the credential works', () => {
+    async function serveWith(verifyKey: () => Promise<boolean | null>) {
+        const middleware = createAgentMiddleware(config, { plan: vi.fn(async () => ({ message: 'ok', actions: [] })), verifyKey });
+        const server = createServer((request, response) => middleware(request, response, () => { response.writeHead(404); response.end(); }));
+        servers.push(server);
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const address = server.address();
+        if (!address || typeof address === 'string') throw new Error('Missing test server address');
+        return `http://127.0.0.1:${address.port}`;
+    }
+
+    it('reports a rejected key as not configured so the viewer starts in Local demo', async () => {
+        const base = await serveWith(async () => false);
+        expect(await (await fetch(`${base}/api/agent/status`)).json()).toEqual({ configured: false, provider: 'openai', model: 'test-model' });
+    });
+
+    it('keeps a key whose check is inconclusive or accepted', async () => {
+        expect(await (await fetch(`${await serveWith(async () => null)}/api/agent/status`)).json()).toMatchObject({ configured: true });
+        expect(await (await fetch(`${await serveWith(async () => true)}/api/agent/status`)).json()).toMatchObject({ configured: true });
     });
 });

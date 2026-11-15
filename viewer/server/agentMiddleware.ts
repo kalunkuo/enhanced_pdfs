@@ -3,6 +3,7 @@ import type { Plugin } from 'vite';
 import { validateAgentObservations, type AgentApiRequest, type AgentChatTurn, type AgentModelContext } from '../src/lib/agentApi.ts';
 import { AgentProviderError } from './agentProviderError.ts';
 import { planAgentRequest } from './agentProvider.ts';
+import { openAiKeyAccepted } from './openaiAgent.ts';
 import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig.ts';
 export type { AgentServerConfig } from './agentConfig.ts';
 
@@ -107,13 +108,19 @@ export interface AgentMiddlewareOptions {
     allowRequest?: (request: IncomingMessage) => boolean;
     /** Supplies the parsed JSON body. The default reads the request stream; hosts that parse bodies before the handler runs pass theirs. */
     readBody?: (request: IncomingMessage) => Promise<unknown>;
+    /** Whether the provider accepts the configured credential (null = unknown). The default checks OpenAI keys; Bedrock tokens are not pre-checked. */
+    verifyKey?: (config: AgentServerConfig, signal: AbortSignal) => Promise<boolean | null>;
 }
+
+const defaultVerifyKey = (config: AgentServerConfig, signal: AbortSignal): Promise<boolean | null> =>
+    agentProvider(config) === 'openai' ? openAiKeyAccepted(config, { signal }) : Promise.resolve(true);
 
 /** The agent API shared by Vite dev and preview (loopback only) and, through hostedAgent.ts, the deployed site. */
 export function createAgentMiddleware(config: AgentServerConfig, options: AgentMiddlewareOptions = {}) {
     const plan = options.plan ?? planAgentRequest;
     const allowRequest = options.allowRequest ?? sameLocalOrigin;
     const readBody = options.readBody ?? readJson;
+    const verifyKey = options.verifyKey ?? defaultVerifyKey;
     let inFlight = 0;
     return (request: IncomingMessage, response: ServerResponse, next: Next) => {
         const path = request.url?.split('?')[0];
@@ -124,7 +131,22 @@ export function createAgentMiddleware(config: AgentServerConfig, options: AgentM
             response.setHeader('Allow', method);
             return json(response, 405, { error: `Use ${method} for this endpoint.` });
         }
-        if (path === '/api/agent/status') return json(response, 200, { configured: agentConfigured(config), provider: agentProvider(config), model: config.model });
+        if (path === '/api/agent/status') {
+            // "configured" means a credential that works, not merely one that is set: a rejected key would
+            // put the viewer into an API mode whose every request fails. Unknown verdicts keep the key.
+            void (async () => {
+                let configured = agentConfigured(config);
+                if (configured) {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 5_000);
+                    try { configured = (await verifyKey(config, controller.signal)) !== false; }
+                    catch { /* inconclusive: leave the configuration as it is */ }
+                    finally { clearTimeout(timer); }
+                }
+                json(response, 200, { configured, provider: agentProvider(config), model: config.model });
+            })();
+            return;
+        }
         if (!agentConfigured(config)) return json(response, 503, { error: agentProvider(config) === 'bedrock'
             ? 'Configure AWS_BEARER_TOKEN_BEDROCK, AWS_REGION, and BEDROCK_MODEL_ID on the server, or use Local demo.'
             : 'Configure OPENAI_API_KEY and OPENAI_MODEL on the server, or use Local demo.' });
