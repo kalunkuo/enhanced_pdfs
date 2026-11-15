@@ -26,7 +26,7 @@ internal sealed class GhostPreview : IDirectContext3DServer
     private bool _dirty;
     private VertexBuffer? _vertices;
     private IndexBuffer? _indices;
-    private int _lineCount;
+
 
     /// <summary>Registers with Revit's DirectContext3D service (once, at startup).</summary>
     public static void Register()
@@ -185,48 +185,83 @@ internal sealed class GhostPreview : IDirectContext3DServer
         {
             lock (_gate)
             {
-                if (_dirty) Rebuild();
-                if (_vertices is null || _indices is null || _lineCount == 0) return;
+                // Ribbons are sized and oriented for the view: rebuild when the view or its scale changes.
+                var key = (view.Id, view.Scale, view.ViewDirection);
+                if (_dirty || !key.Equals(_builtFor)) Rebuild(view);
+                if (_vertices is null || _indices is null || _ribbonCount == 0) return;
                 var format = new VertexFormat(VertexFormatBits.PositionColored);
                 var effect = new EffectInstance(VertexFormatBits.PositionColored);
-                DrawContext.FlushBuffer(_vertices, _lineCount * 2, _indices, _lineCount * 2, format, effect, PrimitiveType.LineList, 0, _lineCount);
+                DrawContext.FlushBuffer(_vertices, _ribbonCount * 4, _indices, _ribbonCount * 12, format, effect, PrimitiveType.TriangleList, 0, _ribbonCount * 4);
             }
         }
         catch (Exception e)
         {
             // Never let a drawing problem reach Revit's render loop; the panel still works without the ghost.
             ReviewController.Instance.LogException("ghost render", e);
-            lock (_gate) { _segments = []; _lineCount = 0; }
+            lock (_gate) { _segments = []; _ribbonCount = 0; }
         }
     }
 
+    // DirectContext3D lines are always 1 px, so edges are drawn as flat ribbons (two triangles) with a paper width.
+    private const double AfterPaperMm = 0.6, BeforePaperMm = 0.3;
+    private const int MaxRibbons = 16_000; // 4 vertices each must stay under the 16-bit index limit
+    private (ElementId, int, XYZ)? _builtFor;
+    private int _ribbonCount;
+
     /// <summary>Must run inside RenderScene (needs Revit's graphics context).</summary>
-    private void Rebuild()
+    private void Rebuild(View view)
     {
         _dirty = false;
+        _builtFor = (view.Id, view.Scale, view.ViewDirection);
         _vertices?.Dispose();
         _indices?.Dispose();
         _vertices = null;
         _indices = null;
-        _lineCount = _segments.Count;
-        if (_lineCount == 0) return;
 
-        int vertexFloats = VertexPositionColored.GetSizeInFloats() * _lineCount * 2;
+        var toViewer = view.ViewDirection.Normalize();
+        double feetPerPaperMm = Math.Max(view.Scale, 1) / 304.8;
+        var lift = toViewer.Multiply(2 * feetPerPaperMm); // in front of the model's own lines, not hidden under them
+        var ribbons = new List<(XYZ, XYZ, XYZ, XYZ, ColorWithTransparency)>();
+        foreach (var (a, b, color) in _segments)
+        {
+            if (ribbons.Count >= MaxRibbons) break;
+            var along = b - a;
+            if (along.GetLength() < 1e-9) continue;
+            var side = along.CrossProduct(toViewer);
+            if (side.GetLength() < 1e-9) continue; // edge points straight at the viewer: nothing to see
+            double halfWidth = (color.GetGreen() > color.GetRed() ? AfterPaperMm : BeforePaperMm) * feetPerPaperMm / 2;
+            var offset = side.Normalize().Multiply(halfWidth);
+            ribbons.Add((a + offset + lift, a - offset + lift, b + offset + lift, b - offset + lift, color));
+        }
+        _ribbonCount = ribbons.Count;
+        if (_ribbonCount == 0) return;
+
+        int vertexFloats = VertexPositionColored.GetSizeInFloats() * _ribbonCount * 4;
         _vertices = new VertexBuffer(vertexFloats);
         _vertices.Map(vertexFloats);
         var vertexStream = _vertices.GetVertexStreamPositionColored();
-        foreach (var (a, b, color) in _segments)
+        foreach (var (p0, p1, p2, p3, color) in ribbons)
         {
-            vertexStream.AddVertex(new VertexPositionColored(a, color));
-            vertexStream.AddVertex(new VertexPositionColored(b, color));
+            vertexStream.AddVertex(new VertexPositionColored(p0, color));
+            vertexStream.AddVertex(new VertexPositionColored(p1, color));
+            vertexStream.AddVertex(new VertexPositionColored(p2, color));
+            vertexStream.AddVertex(new VertexPositionColored(p3, color));
         }
         _vertices.Unmap();
 
-        int indexShorts = IndexLine.GetSizeInShortInts() * _lineCount;
+        // Both windings: whichever way an edge runs, its ribbon faces the viewer (no back-face culling surprises).
+        int indexShorts = IndexTriangle.GetSizeInShortInts() * _ribbonCount * 4;
         _indices = new IndexBuffer(indexShorts);
         _indices.Map(indexShorts);
-        var indexStream = _indices.GetIndexStreamLine();
-        for (int i = 0; i < _lineCount; i++) indexStream.AddLine(new IndexLine(i * 2, i * 2 + 1));
+        var indexStream = _indices.GetIndexStreamTriangle();
+        for (int i = 0; i < _ribbonCount; i++)
+        {
+            int v = i * 4;
+            indexStream.AddTriangle(new IndexTriangle(v, v + 1, v + 2));
+            indexStream.AddTriangle(new IndexTriangle(v + 1, v + 3, v + 2));
+            indexStream.AddTriangle(new IndexTriangle(v, v + 2, v + 1));
+            indexStream.AddTriangle(new IndexTriangle(v + 1, v + 2, v + 3));
+        }
         _indices.Unmap();
     }
 }
