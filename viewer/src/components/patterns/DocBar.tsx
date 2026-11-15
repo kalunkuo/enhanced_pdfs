@@ -49,7 +49,7 @@ export function DocBar(p: Props) {
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
             <span className="docbar-spacer" />
             {p.info && <div className="docbar-info">{p.info}</div>}
-            <Button variant="primary" onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
+            <Button variant="primary" className={p.disabled ? 'upload-btn' : 'upload-btn upload-secondary'} onClick={p.onUpload}><UploadIcon /> Upload enhanced PDF</Button>
             {p.account}
         </div>
     );

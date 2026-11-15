@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { categoryColor } from '../../lib/categoryColor';
 import { elementLabel } from '../../lib/elementLabel';
 import { searchObjects } from '../../lib/objectSearch';
 import type { Annotation, ElementInfo } from '../../lib/types';
@@ -46,7 +47,7 @@ export function TieTag({ annotation, elements, onTie, onOpenElement }: Props) {
 
     return (
         <div className="tie-tag" ref={root}>
-            <button className={`chip ${tied ? 'tied' : 'untied'} tie-button`} aria-haspopup="listbox" aria-expanded={open} title="Change what this note is tied to" onClick={() => setOpen(!open)}>
+            <button className={`chip ${tied ? 'tied' : 'untied'} tie-button`} aria-haspopup="listbox" aria-expanded={open} title="Change what this note is tied to" style={tied && current ? { color: categoryColor(current.category) } : undefined} onClick={() => setOpen(!open)}>
                 {tied ? `↳ ${current ? elementLabel(current) : annotation.elementKey}` : 'untied'}
                 <ChevronDownIcon />
             </button>
