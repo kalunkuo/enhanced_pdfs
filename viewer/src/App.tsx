@@ -11,7 +11,8 @@ import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
 import { SegmentedControl } from './components/ui/SegmentedControl';
 import { Dialog } from './components/ui/Dialog';
-import { Button } from './components/ui/Button';
+import { ActionButton } from './components/ui/ActionButton';
+import { UploadIcon } from './components/ui/icons';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
@@ -825,7 +826,7 @@ export function App() {
                                     {doc || restoring ? <p><strong>{doc ? 'Loading page…' : 'Restoring previous session…'}</strong></p> : <>
                                         <h1 className="type-h1 splash-title">Explore your drawing with AI.</h1>
                                         <p className="splash-description">Open an enhanced PDF to ask the drawing agent, inspect element properties, and review markups.</p>
-                                        <Button variant="primary" onClick={() => fileInput.current?.click()}>Open enhanced PDF</Button>
+                                        <ActionButton className="upload-btn empty-upload" onClick={() => fileInput.current?.click()}><UploadIcon />Open enhanced PDF</ActionButton>
                                     </>}
                                 </div>
                             </div>

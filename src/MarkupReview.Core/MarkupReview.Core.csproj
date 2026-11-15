@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="MarkupReview.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Parquet.Net" Version="6.1.0" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+  </ItemGroup>
+</Project>
