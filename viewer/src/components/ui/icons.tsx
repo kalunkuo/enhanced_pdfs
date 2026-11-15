@@ -26,6 +26,8 @@ export const MinusIcon = icon(<path d="M5 12h14" />);
 export const FitIcon = icon(<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />);
 // The classic download glyph: the upload arrow turned down into the same tray.
 export const DownloadIcon = icon(<path d="M12 4v12M7 11l5 5 5-5M4 20h16" />);
+// An arrow leaving a box: the file goes out of the viewer.
+export const ExportIcon = icon(<><path d="M14 4h6v6M20 4l-9 9" /><path d="M18 14v6H4V6h6" /></>);
 export const PrintIcon = icon(<><path d="M7 9V3h10v6" /><rect x="3" y="9" width="18" height="8" rx="1.5" /><path d="M7 14h10v7H7z" /></>);
 export const PrevPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 17V8M8 11.5l4-4 4 4" /></>);
 export const NextPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 7v9M8 12.5l4 4 4-4" /></>);

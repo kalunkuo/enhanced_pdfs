@@ -11,6 +11,8 @@ import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
 import { SegmentedControl } from './components/ui/SegmentedControl';
 import { Dialog } from './components/ui/Dialog';
+import { ActionButton } from './components/ui/ActionButton';
+import { UploadIcon } from './components/ui/icons';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
@@ -718,10 +720,14 @@ export function App() {
                     ) : (
                         <div className="stage">
                             <div className="empty">
-                                <div>
-                                    <p><strong>{doc ? 'Loading page…' : restoring ? 'Restoring previous session…' : 'Upload an enhanced PDF to begin.'}</strong></p>
-                                    {!doc && !restoring && <p>Hover an element for a quick summary, click it for every parameter, and annotate the drawing.</p>}
-                                </div>
+                                {doc || restoring ? (
+                                    <p><strong>{doc ? 'Loading page…' : 'Restoring previous session…'}</strong></p>
+                                ) : (
+                                    <ActionButton className="upload-btn empty-upload" onClick={() => fileInput.current?.click()}>
+                                        <UploadIcon />
+                                        Upload enhanced PDF
+                                    </ActionButton>
+                                )}
                             </div>
                         </div>
                     )}
