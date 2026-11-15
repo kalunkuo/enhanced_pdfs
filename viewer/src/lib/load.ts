@@ -1,3 +1,4 @@
+import { readProvenance } from './provenance';
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { createNativeTagIndexer } from './nativeTags';
@@ -59,6 +60,8 @@ export async function loadEnhancedPdf(file: File, onProgress?: (progress: LoadPr
         );
         report('tables', 0);
         const { tables, warnings } = await readTables(attachments, (done, total) => report('tables', done / total));
+        const { provenance, warnings: provenanceWarnings } = await readProvenance(attachments);
+        warnings.push(...provenanceWarnings);
 
         const elements = buildElements(tables.get('elements') ?? []);
         const parameters = buildParameters(tables.get('parameters') ?? []);
@@ -103,6 +106,7 @@ export async function loadEnhancedPdf(file: File, onProgress?: (progress: LoadPr
             parameters,
             drawings,
             appearances,
+            provenance,
             savedAnnotations: imported?.annotations ?? existing,
             importedAnnotationCount: imported?.importedCount ?? 0,
             viewerOwnedAnnotationRefs: ownership.status === 'fulfilled' ? ownership.value : new Set(),

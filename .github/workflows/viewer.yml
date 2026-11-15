@@ -1,0 +1,30 @@
+name: Viewer
+
+# Typecheck, tests and build for the browser viewer on every pull request and on main.
+# Bun is the team's runtime (viewer/CLAUDE.md); the suite also passes under Node 24 via tests/setup.ts.
+on:
+  pull_request:
+    paths: ['viewer/**', '.github/workflows/viewer.yml']
+  push:
+    branches: [main]
+    paths: ['viewer/**', '.github/workflows/viewer.yml']
+
+concurrency:
+  group: viewer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  viewer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build

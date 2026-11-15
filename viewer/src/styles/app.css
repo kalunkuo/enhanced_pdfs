@@ -340,3 +340,11 @@ button, input { font: inherit; color: inherit; }
     .panel-grabber::before { content: ''; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border); }
     .panel-grabber:active { cursor: grabbing; }
 }
+
+/* Provenance in the file chip: model and export time from manifest.json, with a tick when every table's hash matches. */
+.file-chip { display: inline-flex; align-items: center; gap: var(--primitive-space-2); }
+.file-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip-prov { flex: none; padding-left: var(--primitive-space-2); border-left: var(--primitive-border-1) solid var(--color-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42ch; }
+.file-chip-prov.is-verified { color: var(--color-primary); }
+.file-chip-prov.is-unverified { color: var(--color-secondary); font-weight: var(--primitive-font-weight-medium); }
+@media (max-width: 860px) { .file-chip-prov { max-width: 22ch; } }

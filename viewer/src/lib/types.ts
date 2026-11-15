@@ -1,3 +1,4 @@
+import type { Provenance } from './provenance';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { NativeTagIndex } from './nativeTypes.ts';
 
@@ -90,6 +91,8 @@ export interface EnhancedPdf {
     parameters: Map<string, ParameterInfo[]>;
     drawings?: DrawingInfo[];
     appearances?: AppearanceInfo[];
+    /** From the exporter's manifest.json: model, export time and whether the tables are unchanged. Null for files without one. */
+    provenance?: Provenance | null;
     /** Annotations this viewer saved into the file earlier. */
     savedAnnotations: Annotation[];
     /** Source PDF annotations imported without changing their original appearance. */
