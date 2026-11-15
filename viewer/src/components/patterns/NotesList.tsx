@@ -96,7 +96,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
     };
 
     return (
-        <ul className="list">
+        <ul className="list notes-list">
             {annotations.map((a) => {
                 const e = a.elementKey ? elements.get(a.elementKey) : undefined;
                 const selected = a.id === selectedId;
@@ -107,7 +107,7 @@ export function NotesList({ annotations, elements, selectedId, profile, onProfil
                     ? <span className="chip tied">tied to {e ? elementLabel(e) : a.elementKey}</span>
                     : <span className="chip untied">untied</span>;
                 return (
-                    <li key={a.id} ref={selected ? selectedRef : undefined}>
+                    <li key={a.id} ref={selected ? selectedRef : undefined} className={selected ? 'note-open' : undefined}>
                         {selected && a.kind === 'comment' ? (
                             <CommentThread comment={a} profile={profile} onProfile={onProfile} now={now} onReply={onReply} onDelete={onDelete}>
                                 <div className="tchips">{tieChip(a)}</div>

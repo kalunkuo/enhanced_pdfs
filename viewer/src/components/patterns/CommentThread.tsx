@@ -11,17 +11,16 @@ function Message({ author, createdAt, text, image, now, action }: { author: Pers
     const name = author?.name ?? 'Unknown';
     return (
         <div className="tmsg">
-            <Avatar name={name} photo={author?.photo} size={32} />
-            <div className="tbody">
-                <div className="thead">
+            <div className="thead">
+                <Avatar name={name} photo={author?.photo} size={32} />
+                <div className="twho">
                     <strong>{name}</strong>
                     <span className="muted" title={createdAt}>{formatTimeAgo(createdAt, now)}</span>
-                    <span className="spacer" />
-                    {action}
                 </div>
-                <p className="ttext">{text}</p>
-                {image && <img className="timg" src={image} alt="Attached to the message" />}
+                {action}
             </div>
+            <p className="ttext">{text}</p>
+            {image && <img className="timg" src={image} alt="Attached to the message" />}
         </div>
     );
 }

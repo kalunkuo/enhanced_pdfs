@@ -100,21 +100,24 @@
 .docbar-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .docbar-info .file-name { max-width: 28ch; }
 /* Thread in the Notes panel */
-.thread { padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: grid; gap: 10px; }
-.tmsg { display: flex; gap: 10px; }
-.tbody { flex: 1; min-width: 0; }
-.thead { display: flex; align-items: baseline; gap: 8px; }
-.thead strong { font-weight: 600; }
-.thead .muted { font-size: 12px; }
-.tdel { width: 28px; height: 28px; align-self: center; color: var(--muted-foreground); }
-.ttext { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.timg { display: block; margin-top: 6px; max-width: 100%; max-height: 200px; border-radius: calc(var(--radius) - 2px); }
-.tchips { margin-left: 42px; }
-.thread .tie-row { padding: 0 0 0 42px; border: 0; background: none; }
-.treplies { list-style: none; margin: 0; padding: 0 0 0 42px; display: grid; gap: 12px; }
+/* An open note fills the panel: the message, tie and reply box use the full width, and the card stretches to the
+   panel's height with the reply box at the bottom. */
+.panel > .notes-list { min-height: 100%; display: flex; flex-direction: column; }
+.notes-list > li.note-open { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.thread { flex: 1 1 auto; padding: 16px; border-bottom: 1px solid var(--border); background: var(--accent); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tmsg { display: grid; gap: 8px; min-width: 0; }
+.thead { display: flex; align-items: center; gap: 10px; }
+.twho { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
+.twho strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.twho .muted { font-size: 12px; }
+.tdel { width: 28px; height: 28px; flex: none; color: var(--muted-foreground); }
+.ttext { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timg { display: block; max-width: 100%; max-height: 240px; border-radius: calc(var(--radius) - 2px); }
+.thread .tie-row { padding: 0; border: 0; background: none; }
+.treplies { list-style: none; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--border); display: grid; gap: 14px; }
 .treplies .avatar { width: 26px !important; height: 26px !important; font-size: 11px !important; }
-.treply { margin-left: 42px; display: grid; gap: 8px; }
-.treply textarea { width: 100%; resize: vertical; min-height: 56px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input);
+.treply { margin-top: auto; display: grid; gap: 8px; }
+.treply textarea { width: 100%; resize: vertical; min-height: 72px; padding: 8px 10px; border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input);
     background: var(--background); color: var(--foreground); font: inherit; }
 .treply .tname { width: 100%; margin: 0; }
 .tsend { justify-self: end; height: 32px; }
@@ -126,12 +129,12 @@
 .byline-text strong { font-weight: 600; }
 .byline-text .muted { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .adetails-head { display: flex; align-items: center; gap: 8px; }
-.akind { margin-left: 42px; }
-.adetails .ttext { margin: 0 0 0 42px; }
-.adetails .tchips { margin-left: 42px; }
+.akind { margin: 0; }
+.adetails .ttext { margin: 0; }
+.adetails .tchips { margin: 0; }
 
 /* Objects a revision cloud covers, in its Notes card */
-.cloud-contents { margin-left: 42px; display: grid; gap: 6px; }
+.cloud-contents { display: grid; gap: 6px; }
 .cloud-contents h4 { margin: 0; font-size: 13px; font-weight: 600; }
 .cloud-contents p { margin: 0; }
 .cloud-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
@@ -140,3 +143,13 @@
 .cloud-item:hover { background: var(--accent); }
 .cloud-item .chip { margin-top: 0; margin-left: auto; }
 .cloud-summary { font-size: 12px; }
+
+/* Flat icon buttons, like the design system's: no border, no raised default look, a soft hover.
+   These are plain buttons in the comment card, composer and profile menu, so they need the reset themselves. */
+.icon-btn { display: inline-grid; place-items: center; flex: none; padding: 0; border: 0; border-radius: var(--radius); background: transparent; color: inherit;
+    font: inherit; line-height: 1; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
+.icon-btn:hover:not(:disabled) { background: var(--accent); }
+.icon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon-btn svg { width: 18px; height: 18px; }
+.profile-btn { border-radius: 50%; }
