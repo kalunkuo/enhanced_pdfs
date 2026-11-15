@@ -225,7 +225,7 @@ public sealed class McpServerTests : IDisposable
         })));
         Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
         var p = Assert.Single(_session.Proposals);
-        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")"), p.Change);
+        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")", "Basic Wall: Exterior - Brick"), p.Change);
         Assert.Equal("1' - 9\"", p.NewValue);
     }
 

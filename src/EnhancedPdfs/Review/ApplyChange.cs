@@ -8,24 +8,18 @@ namespace EnhancedPdfs.Review;
 internal static class ApplyChange
 {
     /// <returns>Null on success, otherwise the reason it was not applied (the transaction is rolled back).</returns>
-    public static string? Apply(Document document, ExportedElement exported, Proposal proposal)
+    public static string? Apply(Document document, ExportedElement exported, Proposal proposal, Proposal? revertOf = null)
     {
         var element = document.GetElement(exported.UniqueId);
         if (element is null) return "Element no longer in model.";
 
-        using var transaction = new Transaction(document, TransactionName(element, proposal));
+        using var transaction = new Transaction(document, revertOf is null ? TransactionName(element, proposal) : "Revert " + TransactionName(element, revertOf));
         transaction.Start();
         try
         {
-            string? error = proposal.Change switch
-            {
-                SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
-                MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
-                FlipInstance flip => Flip(element, flip.Side),
-                NewWallType wall => NewWallTypeAtWidth(document, element, wall),
-                _ => "Unsupported change.",
-            };
+            string? error = ApplyIn(document, element, proposal);
             if (error is not null) { transaction.RollBack(); return error; }
+            if (revertOf?.Change is NewWallType created) DeleteWallTypeIfUnused(document, created.TypeName);
             if (transaction.Commit() != TransactionStatus.Committed) return "Revit did not commit the change.";
             return null;
         }
@@ -36,6 +30,16 @@ internal static class ApplyChange
         }
     }
 
+    /// <summary>Makes the change inside the caller's open transaction (Apply's, or the preview's what-if one).</summary>
+    internal static string? ApplyIn(Document document, Element element, Proposal proposal) => proposal.Change switch
+    {
+        SetParameter set => SetValue(document, element, set, proposal.NewValue ?? set.Value),
+        MarkupReview.Core.ChangeType swap => Swap(document, element, proposal.NewValue ?? swap.TypeName),
+        FlipInstance flip => Flip(element, flip.Side),
+        NewWallType wall => NewWallTypeAtWidth(document, element, wall),
+        _ => "Unsupported change.",
+    };
+
     /// <summary>What a change does, for transaction names and card titles.</summary>
     public static string Describe(Change change) => change switch
     {
@@ -45,6 +49,16 @@ internal static class ApplyChange
         NewWallType n => $"New type \"{n.TypeName}\"",
         _ => "Type",
     };
+
+    /// <summary>Reverting a "new wall type" leaves the duplicated type behind; remove it when no wall uses it any more.</summary>
+    private static void DeleteWallTypeIfUnused(Document document, string? typeName)
+    {
+        var type = new FilteredElementCollector(document).OfClass(typeof(WallType)).Cast<WallType>()
+            .FirstOrDefault(t => string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase));
+        if (type is null) return;
+        bool used = new FilteredElementCollector(document).OfClass(typeof(Wall)).Any(w => w.GetTypeId() == type.Id);
+        if (!used) document.Delete(type.Id);
+    }
 
     private const double MinLayerFeet = 1.0 / 256; // ~1.2 mm: anything thinner is not a real layer
 

@@ -34,7 +34,11 @@ public static class ProposalValidator
                 return new(true, null, null, null, 0, "Element no longer in model");
         }
 
-        bool changedSinceExport = current!.VersionGuid != exported.VersionGuid;
+        // The card is labelled from the PDF (category, id) but Approve acts on what the UniqueId resolves to: they must agree.
+        if (!Same(exported.Category, current!.Category) || (current.ElementId is { } liveId && liveId != exported.ElementId))
+            return new(true, null, null, null, 0,
+                $"The PDF's data for this element does not match the model (PDF: {exported.Category} {exported.ElementId}; model: {current.Category} {current.ElementId})");
+        bool changedSinceExport = current.VersionGuid != exported.VersionGuid;
         return proposal.Change switch
         {
             SetParameter set => await ValidateParameter(set, exported, current, model, tables, changedSinceExport),
@@ -130,7 +134,7 @@ public static class ProposalValidator
         return new(true, null, oldWidth, parsed.Display, 1)
         {
             SizeChanges = [new SizeChange("Width", oldWidth, parsed.Display)],
-            NormalisedChange = new NewWallType(parsed.Display!, name),
+            NormalisedChange = new NewWallType(parsed.Display!, name, currentName),
         };
     }
 
