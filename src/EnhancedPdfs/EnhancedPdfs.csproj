@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <RevitPath Condition="'$(RevitPath)' == ''">$(ProgramW6432)\Autodesk\Revit 2025</RevitPath>
+    <!-- Revit 2025.0–2025.4 runs on .NET 8; later updates of the same install run on .NET 10. Build with -f to match the
+         installed Revit (scripts/Install-RevitAddin.ps1 reads RevitAPI.runtimeconfig.json). The Windows 10 SDK target
+         provides Windows.Data.Pdf for markup crops. -->
+    <TargetFrameworks>net8.0-windows10.0.19041.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
@@ -8,7 +12,6 @@
     <Nullable>enable</Nullable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <RevitPath Condition="'$(RevitPath)' == ''">$(ProgramW6432)\Autodesk\Revit 2025</RevitPath>
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
