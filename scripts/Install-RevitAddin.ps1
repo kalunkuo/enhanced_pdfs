@@ -16,9 +16,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $RevitPath 'Revit.exe'))) {
 
 if (-not $BuildDirectory) {
     $project = Join-Path $PSScriptRoot '..\src\EnhancedPdfs\EnhancedPdfs.csproj'
-    & dotnet build $project -c Release "-p:RevitPath=$RevitPath" -p:RestoreLockedMode=true
+    # Revit 2025 updates moved from .NET 8 to .NET 10; build for the runtime this installation uses.
+    $runtimeConfig = Join-Path $RevitPath 'RevitAPI.runtimeconfig.json'
+    $dotnet = if ((Test-Path -LiteralPath $runtimeConfig) -and ((Get-Content -Raw -LiteralPath $runtimeConfig) -match '"net10\.0"')) { 'net10.0' } else { 'net8.0' }
+    $framework = "$dotnet-windows10.0.19041.0"
+    & dotnet build $project -c Release -f $framework "-p:RevitPath=$RevitPath" -p:RestoreLockedMode=true
     if ($LASTEXITCODE -ne 0) { throw 'The add-in build failed.' }
-    $BuildDirectory = Join-Path $PSScriptRoot '..\src\EnhancedPdfs\bin\Release\net8.0-windows'
+    $BuildDirectory = Join-Path $PSScriptRoot "..\src\EnhancedPdfs\bin\Release\$framework"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $BuildDirectory 'EnhancedPdfs.dll'))) {
     throw "EnhancedPdfs.dll was not found in '$BuildDirectory'."
@@ -34,7 +38,7 @@ $stagedManifest = "$manifest.$([guid]::NewGuid().ToString('N')).tmp"
 $backupManifest = "$stagedManifest.bak"
 try {
     Get-ChildItem -LiteralPath $BuildDirectory | Where-Object {
-        $_.PSIsContainer -or $_.Extension -in '.dll','.json','.pdb'
+        $_.PSIsContainer -or $_.Extension -in '.dll','.json','.pdb','.exe'
     } | Copy-Item -Destination $payload -Recurse
     $assembly = [System.Security.SecurityElement]::Escape((Join-Path $payload 'EnhancedPdfs.dll'))
     [IO.File]::WriteAllText($stagedManifest, @"

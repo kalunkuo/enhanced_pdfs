@@ -25,6 +25,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MarkupReview.Core\MarkupReview.Core.csproj" />
+    <!-- The stdio MCP bridge Claude Code launches; its exe lands next to the add-in. -->
+    <ProjectReference Include="..\MarkupReview.Bridge\MarkupReview.Bridge.csproj" />
   </ItemGroup>
   <Target Name="CheckRevitReferences" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="!Exists('$(RevitPath)/RevitAPI.dll') Or !Exists('$(RevitPath)/RevitAPIUI.dll')"

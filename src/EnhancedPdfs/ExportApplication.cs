@@ -20,6 +20,14 @@ public sealed class ExportApplication : IExternalApplication
             "EnhancedPdfs.ExportSet", "Export Sheet Set", Assembly.GetExecutingAssembly().Location,
             typeof(ExportSetCommand).FullName));
         setButton.ToolTip = "Choose project sheets or a saved Revit view/sheet set to export into one enhanced PDF.";
+
+        var importButton = (PushButton)panel.AddItem(new PushButtonData(
+            "EnhancedPdfs.ImportMarkups", "Import marked-up PDF", Assembly.GetExecutingAssembly().Location,
+            typeof(Review.ImportCommand).FullName));
+        importButton.ToolTip = "Have Claude turn a returned PDF's markups into proposed model changes, then approve or reject each one.";
+        var review = Review.ReviewController.Instance;
+        review.Initialize();
+        application.RegisterDockablePane(Review.ReviewController.PaneId, "Markup review", new Review.ReviewPane(review));
         return Result.Succeeded;
     }
 
