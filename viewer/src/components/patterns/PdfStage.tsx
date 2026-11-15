@@ -22,6 +22,8 @@ interface Props {
     hideEmbeddedAnnotations: boolean;
     tool: Tool;
     hoverKey: string | null;
+    /** More objects drawn in the hover state, e.g. a category hovered in Properties. */
+    previewKeys?: ReadonlySet<string> | null;
     /** Elements drawn as selected: a clicked element, or every filter match. */
     selectedKeys: ReadonlySet<string> | null;
     onSelectElements?: (keys: readonly string[], mode: 'replace' | 'add' | 'toggle') => void;
@@ -223,7 +225,7 @@ export function PdfStage(props: Props) {
                     hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
-                    hoverKey={props.hoverKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 <MarkupLayer page={page} zoom={zoom} tool={tool} annotations={props.annotations}
                     selectedAnnotationId={props.selectedAnnotationId} highlightColor={props.highlightColor} labelFor={props.labelFor}
                     onSelectAnnotation={props.onSelectAnnotation} onSelectElement={props.onSelectElement} onAddAnnotation={props.onAddAnnotation}
@@ -256,7 +258,7 @@ export function PdfStage(props: Props) {
                     onMoveAnnotation={props.onMoveAnnotation}
                     coverOf={props.coverOf}
                 >
-                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
+                    <ElementOverlay shapes={page.shapes} hoverKey={props.hoverKey} previewKeys={props.previewKeys ?? null} selectedKeys={props.selectedKeys} matchedKeys={props.matchedKeys} elementColors={props.elementColors} drawingIds={props.drawingIds} />
                 </MarkupLayer>
                 <CommentLayer page={page} zoom={zoom} comments={props.annotations.filter((a) => a.kind === 'comment')} pick={(point) => pickElement(point, 4 / zoom)[0]?.elementKey ?? null} {...props.commentLayer} />
                 {showSelectionActions && selectionBounds && (
