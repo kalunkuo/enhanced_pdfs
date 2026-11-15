@@ -67,7 +67,7 @@ describe('hosted agent HTTP API', () => {
         const response = await fetch(`${base}/api/agent/status`);
         expect(response.status).toBe(200);
         const body = await response.text();
-        expect(JSON.parse(body)).toEqual({ configured: true, provider: 'bedrock', model: 'us.anthropic.claude-opus-5-5' });
+        expect(JSON.parse(body)).toEqual({ configured: true, provider: 'bedrock', model: 'us.anthropic.claude-opus-5-5', missing: [] });
         expect(body).not.toContain('server-only-test-token');
         const unset = await serve({});
         expect(await (await fetch(`${unset.base}/api/agent/status`)).json()).toMatchObject({ configured: false });

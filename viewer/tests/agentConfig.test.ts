@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentConfigured, resolveAgentConfig } from '../server/agentConfig';
+import { agentConfigured, resolveAgentConfig, missingAgentSettings } from '../server/agentConfig';
 
 describe('server agent provider selection', () => {
     it('preserves existing OpenAI configuration and its default model', () => {
@@ -27,5 +27,16 @@ describe('server agent provider selection', () => {
 
     it('reports an unsupported provider without echoing environment values', () => {
         expect(() => resolveAgentConfig({ AGENT_PROVIDER: 'bad-private-provider' })).toThrow('AGENT_PROVIDER must be openai or bedrock.');
+    });
+});
+
+describe('missing agent settings', () => {
+    it('names the environment variables a provider still needs, never their values', () => {
+        expect(missingAgentSettings({ provider: 'bedrock', apiKey: '', region: 'eu', model: '' })).toEqual(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION', 'BEDROCK_MODEL_ID']);
+        expect(missingAgentSettings({ provider: 'bedrock', apiKey: 'private-token', region: 'us-east-1', model: '' })).toEqual(['BEDROCK_MODEL_ID']);
+        expect(missingAgentSettings({ provider: 'bedrock', apiKey: 'private-token', region: 'us-east-1', model: 'us.anthropic.claude-opus-5-5' })).toEqual([]);
+        expect(missingAgentSettings({ apiKey: '', model: 'gpt' })).toEqual(['OPENAI_API_KEY']);
+        expect(missingAgentSettings({ provider: 'openai', apiKey: 'sk-private', model: ' ' })).toEqual(['OPENAI_MODEL']);
+        expect(JSON.stringify(missingAgentSettings({ provider: 'bedrock', apiKey: 'private-token', region: '', model: '' }))).not.toContain('private');
     });
 });
