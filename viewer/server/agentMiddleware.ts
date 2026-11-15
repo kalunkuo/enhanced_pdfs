@@ -11,7 +11,7 @@ type Planner = typeof planAgentRequest;
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_HISTORY = 12;
 
-class RequestError extends Error {
+export class RequestError extends Error {
     constructor(readonly status: number, message: string) { super(message); }
 }
 
@@ -77,7 +77,7 @@ function sameLocalOrigin(request: IncomingMessage) {
     } catch { return false; }
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+export async function readJson(request: IncomingMessage): Promise<unknown> {
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) {
         throw new RequestError(415, 'Send agent requests as JSON.');
     }
@@ -95,14 +95,25 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
     catch { throw new RequestError(400, 'The agent request is not valid JSON.'); }
 }
 
-/** A loopback-only API for this local hackathon app, shared by Vite dev and preview. */
-export function createAgentMiddleware(config: AgentServerConfig, options: { plan?: Planner; timeoutMs?: number } = {}) {
+export interface AgentMiddlewareOptions {
+    plan?: Planner;
+    timeoutMs?: number;
+    /** Decides whether a request may use the API. The default admits only the loopback viewer; the hosted function admits the site itself. */
+    allowRequest?: (request: IncomingMessage) => boolean;
+    /** Supplies the parsed JSON body. The default reads the request stream; hosts that parse bodies before the handler runs pass theirs. */
+    readBody?: (request: IncomingMessage) => Promise<unknown>;
+}
+
+/** The agent API shared by Vite dev and preview (loopback only) and, through hostedAgent.ts, the deployed site. */
+export function createAgentMiddleware(config: AgentServerConfig, options: AgentMiddlewareOptions = {}) {
     const plan = options.plan ?? planAgentRequest;
+    const allowRequest = options.allowRequest ?? sameLocalOrigin;
+    const readBody = options.readBody ?? readJson;
     let inFlight = 0;
     return (request: IncomingMessage, response: ServerResponse, next: Next) => {
         const path = request.url?.split('?')[0];
         if (path !== '/api/agent' && path !== '/api/agent/status') return next();
-        if (!sameLocalOrigin(request)) return json(response, 403, { error: 'The drawing agent API is available only from this local viewer.' });
+        if (!allowRequest(request)) return json(response, 403, { error: 'The drawing agent API is available only from this viewer.' });
         const method = path === '/api/agent/status' ? 'GET' : 'POST';
         if (request.method !== method) {
             response.setHeader('Allow', method);
@@ -120,7 +131,7 @@ export function createAgentMiddleware(config: AgentServerConfig, options: { plan
         response.on('close', onClose);
         void (async () => {
             try {
-                const input = parseAgentRequest(await readJson(request));
+                const input = parseAgentRequest(await readBody(request));
                 if (controller.signal.aborted) throw new RequestError(504, 'The drawing agent timed out. Try again.');
                 const result = await plan(input, config, { signal: controller.signal });
                 json(response, 200, result);
