@@ -32,7 +32,7 @@ public static class ProposalValidator
         return proposal.Change switch
         {
             SetParameter set => await ValidateParameter(set, exported, current, model, tables, changedSinceExport),
-            ChangeType swap => await ValidateType(swap, current, model),
+            ChangeType swap => await ValidateType(swap, exported, current, model, changedSinceExport),
             _ => ValidationResult.Reject("Unsupported change kind."),
         };
     }
@@ -58,14 +58,16 @@ public static class ProposalValidator
         if (changedSinceExport)
         {
             string owner = set.Scope == ParamScope.Type ? exported.TypeKey ?? "" : exported.ElementKey;
-            string? exportedValue = tables.ParametersByOwner[owner].FirstOrDefault(p => Same(p.Name, parameter.Name))?.DisplayValue;
-            if (exportedValue is not null && !Same(exportedValue, parameter.DisplayValue))
+            // The exporter writes populated parameters only: no row means the value was empty at export.
+            string exportedValue = tables.ParametersByOwner[owner].FirstOrDefault(p => Same(p.Name, parameter.Name))?.DisplayValue ?? "";
+            if (!Same(exportedValue, parameter.DisplayValue))
                 block = $"'{parameter.Name}' changed since export (was '{exportedValue}', now '{parameter.DisplayValue}')";
         }
         return new(true, null, parameter.DisplayValue, value, affects, block);
     }
 
-    private static async Task<ValidationResult> ValidateType(ChangeType swap, ModelElement current, IModelGateway model)
+    private static async Task<ValidationResult> ValidateType(ChangeType swap, ExportedElement exported, ModelElement current,
+        IModelGateway model, bool changedSinceExport)
     {
         var types = await model.ListTypesAsync(current.UniqueId);
         var target = types.FirstOrDefault(t => Same(t.Name, swap.TypeName) || Same(t.FullName, swap.TypeName));
@@ -73,7 +75,10 @@ public static class ProposalValidator
             return ValidationResult.Reject($"No type '{swap.TypeName}' is available for this element. Available: {List(types.Select(t => t.Name))}.");
         if (Same(target.Name, current.Type))
             return ValidationResult.Reject($"The element already is type '{current.Type}'; no change needed.");
-        return new(true, null, current.Type, target.Name, 1);
+        string? block = changedSinceExport && !Same(exported.Type, current.Type)
+            ? $"Type changed since export (was '{exported.Type}', now '{current.Type}')"
+            : null;
+        return new(true, null, current.Type, target.Name, 1, block);
     }
 
     /// <summary>Returns the value to apply, or null with an error. Never passes a non-numeric string to a numeric parameter.</summary>

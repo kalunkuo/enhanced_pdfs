@@ -121,6 +121,36 @@ public sealed class ValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task Changed_element_with_value_unset_at_export_but_set_now_is_blocked()
+    {
+        // The exporter only writes populated parameters, so "no exported row" means "was empty".
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { VersionGuid = "v-wall-2" };
+        _model.SetValue("wall-uid", "Mark", "W-9");
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-1"));
+        Assert.True(r.Ok);
+        Assert.Contains("changed since export", r.BlockReason);
+    }
+
+    [Fact]
+    public async Task Changed_element_with_value_still_unset_is_not_blocked()
+    {
+        _model.Elements["wall-uid"] = _model.Elements["wall-uid"] with { VersionGuid = "v-wall-2" };
+        var r = await Validate(FixturePdf.WallKey, new SetParameter("Mark", ParamScope.Instance, "W-1"));
+        Assert.True(r.Ok, r.Error);
+        Assert.Null(r.BlockReason);
+    }
+
+    [Fact]
+    public async Task Type_swap_on_element_whose_type_changed_since_export_is_blocked()
+    {
+        _model.Elements["door-uid"] = _model.Elements["door-uid"] with { VersionGuid = "v-door-2", Type = "34\" x 84\"" };
+        _model.Types["door-uid"].Add(new ModelType("Single-Flush", "34\" x 84\""));
+        var r = await Validate(FixturePdf.DoorKey, new ChangeType("36\" x 84\""));
+        Assert.True(r.Ok, r.Error);
+        Assert.Contains("changed since export", r.BlockReason);
+    }
+
+    [Fact]
     public async Task Revalidate_after_value_changed_reports_new_old_value()
     {
         _model.SetValue("wall-uid", "Mark", "W-1");
