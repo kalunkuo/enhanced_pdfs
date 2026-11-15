@@ -38,6 +38,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     private Filter _filter = Filter.All;
     private string? _selected;
     private string? _rejecting;
+    private bool _confirmingEnd;
+    private readonly ContentControl _endHost = new();
     private string _rejectText = ""; // survives the list rebuilding when new proposals arrive mid-review
     private string? _lastError;
     private bool _refreshQueued;
@@ -52,9 +54,9 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
 
         _cancel.Click += (_, _) => _controller.Cancel();
         _save.Click += async (_, _) => await SaveAsync();
-        _end.Click += async (_, _) => await EndReviewAsync();
+        _end.Click += (_, _) => { _confirmingEnd = true; Refresh(); };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Children = { _cancel, _save, _end } };
-        var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _filters } };
+        var header = new StackPanel { Margin = new Thickness(10, 8, 10, 4), Children = { _title, _progress, _warning, _status, _busy, _activity, _thought, buttons, _endHost, _filters } };
         _clock.Tick += (_, _) => UpdateActivity();
 
         var root = new DockPanel { LastChildFill = true };
@@ -97,7 +99,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _warning.Text = _controller.Warning ?? "";
         _warning.Visibility = _controller.Warning is null ? Visibility.Collapsed : Visibility.Visible;
         _cancel.Visibility = _controller.IsRunning ? Visibility.Visible : Visibility.Collapsed;
-        _end.Visibility = session is null ? Visibility.Collapsed : Visibility.Visible;
+        _end.Visibility = session is null || _confirmingEnd ? Visibility.Collapsed : Visibility.Visible;
+        _endHost.Content = session is not null && _confirmingEnd ? EndConfirmation(session) : null;
         _save.IsEnabled = session is not null && !_controller.IsRunning;
         UpdateActivity();
 
@@ -323,20 +326,42 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         catch (Exception e) { _status.Text = $"Could not save the review: {e.Message}"; }
     }
 
-    private async Task EndReviewAsync()
+    /// <summary>
+    /// In-panel confirmation. (A WPF MessageBox needs an owner window; a Revit dockable pane has none, and
+    /// Window.GetWindow(this) returned null — that threw, and before the safety net it ended Revit.)
+    /// </summary>
+    private UIElement EndConfirmation(ReviewSession session)
     {
-        var session = _controller.Session;
-        if (session is null) return;
         int approved = session.Proposals.Count(p => p.Status == ProposalStatus.Approved);
         int pending = session.Proposals.Count(p => p.Status == ProposalStatus.Pending);
         string message = (approved > 0
-            ? $"{approved} approved change{(approved == 1 ? " stays" : "s stay")} in the model (Ctrl+Z reverts {(approved == 1 ? "it" : "them")}).\n"
-            : "Nothing has been applied to the model.\n")
-            + (pending > 0 ? $"{pending} pending proposal{(pending == 1 ? " is" : "s are")} discarded.\n" : "")
-            + (_controller.IsRunning ? "Claude will be stopped.\n" : "")
-            + "\nEnd this review?";
-        if (MessageBox.Show(Window.GetWindow(this), message, "End review", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
-            return;
+            ? $"{approved} approved change{(approved == 1 ? " stays" : "s stay")} in the model (Ctrl+Z reverts {(approved == 1 ? "it" : "them")})."
+            : "Nothing has been applied to the model.")
+            + (pending > 0 ? $" {pending} pending proposal{(pending == 1 ? " is" : "s are")} discarded." : "")
+            + (_controller.IsRunning ? " Claude will be stopped." : "");
+        var confirm = new Button { Content = "End review", Background = Red, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, Padding = new Thickness(10, 3, 10, 3), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 6, 0) };
+        var keep = SmallButton("Keep reviewing");
+        confirm.Click += async (_, _) => await EndReviewAsync();
+        keep.Click += (_, _) => { _confirmingEnd = false; Refresh(); };
+        return new Border
+        {
+            Background = Hex("#FFF5F5"), BorderBrush = Hex("#E0A3A3"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(8), Margin = new Thickness(0, 8, 0, 0),
+            Child = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) },
+                    new StackPanel { Orientation = Orientation.Horizontal, Children = { confirm, keep } },
+                },
+            },
+        };
+    }
+
+    private async Task EndReviewAsync()
+    {
+        if (_controller.Session is null) return;
+        _confirmingEnd = false;
         _selected = null;
         _rejecting = null;
         _lastError = null;
