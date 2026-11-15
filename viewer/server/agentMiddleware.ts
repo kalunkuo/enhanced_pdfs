@@ -1,9 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import type { AgentApiRequest, AgentChatTurn, AgentModelContext } from '../src/lib/agentApi';
-import { AgentProviderError, planAgentRequest } from './openaiAgent';
+import { AgentProviderError } from './agentProviderError';
+import { planAgentRequest } from './agentProvider';
+import { agentConfigured, agentProvider, type AgentServerConfig } from './agentConfig';
+export type { AgentServerConfig } from './agentConfig';
 
-export interface AgentServerConfig { apiKey: string; model: string }
 type Next = (error?: unknown) => void;
 type Planner = typeof planAgentRequest;
 const MAX_BODY_BYTES = 128 * 1024;
@@ -101,12 +103,14 @@ export function createAgentMiddleware(config: AgentServerConfig, options: { plan
             response.setHeader('Allow', method);
             return json(response, 405, { error: `Use ${method} for this endpoint.` });
         }
-        if (path === '/api/agent/status') return json(response, 200, { configured: !!config.apiKey.trim(), provider: 'openai', model: config.model });
-        if (!config.apiKey.trim()) return json(response, 503, { error: 'Add OPENAI_API_KEY to viewer/.env.local and restart the viewer, or use Local demo.' });
+        if (path === '/api/agent/status') return json(response, 200, { configured: agentConfigured(config), provider: agentProvider(config), model: config.model });
+        if (!agentConfigured(config)) return json(response, 503, { error: agentProvider(config) === 'bedrock'
+            ? 'Configure AWS_BEARER_TOKEN_BEDROCK, AWS_REGION, and BEDROCK_MODEL_ID on the server, or use Local demo.'
+            : 'Configure OPENAI_API_KEY and OPENAI_MODEL on the server, or use Local demo.' });
         if (inFlight >= 2) return json(response, 429, { error: 'The drawing agent is busy. Wait for the current request to finish.' });
         inFlight++;
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
+        const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? (agentProvider(config) === 'bedrock' ? 60_000 : 30_000));
         const onClose = () => { if (!response.writableEnded) controller.abort(); };
         response.on('close', onClose);
         void (async () => {

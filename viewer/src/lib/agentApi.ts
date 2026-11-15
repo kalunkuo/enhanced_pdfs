@@ -17,10 +17,10 @@ export interface AgentModelContext {
 }
 export interface AgentApiRequest { prompt: string; history: AgentChatTurn[]; context: AgentModelContext }
 export interface AgentApiResponse { message: string; actions: AgentAction[] }
-export interface AgentApiStatus { configured: boolean; provider: 'openai'; model: string }
+export interface AgentApiStatus { configured: boolean; provider: 'openai' | 'bedrock'; model: string }
 
 const INVALID_RESPONSE = 'The agent returned an unsupported response. No drawing action was applied. Try again or switch to Local demo.';
-const UNAVAILABLE = 'The agent API is unavailable. Start the viewer with bun run dev, or use Local demo.';
+const UNAVAILABLE = 'The agent API is unavailable. Try again shortly, or use Local demo.';
 const invalid = () => new Error(INVALID_RESPONSE);
 function record(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
@@ -85,9 +85,9 @@ export function executeAgentAction(action: AgentAction, context: AgentContext): 
 }
 
 function statusError(status: number): Error {
-    if (status === 401 || status === 403) return new Error('The agent API key was rejected. Check the server configuration, or use Local demo.');
+    if (status === 401 || status === 403) return new Error('Agent access was rejected. Check the provider credentials, region, and model access, or use Local demo.');
     if (status === 404) return new Error(UNAVAILABLE);
-    if (status === 409 || status === 503) return new Error('The agent API is not configured or is unavailable. Add OPENAI_API_KEY to .env.local and restart the viewer, or use Local demo.');
+    if (status === 409 || status === 503) return new Error('The agent API is not configured or is unavailable. Try again shortly, or use Local demo.');
     if (status === 429) return new Error('The agent API is busy or has reached its usage limit. Try again later, or use Local demo.');
     if (status === 408 || status === 504) return new Error('The agent API request timed out. Try again, or use Local demo.');
     if (status === 400 || status === 413 || status === 422) return new Error('The agent request could not be accepted. Try a shorter request, or use Local demo.');
@@ -113,8 +113,10 @@ async function fetchJson(path: string, init: RequestInit): Promise<unknown> {
 
 export async function getAgentApiStatus(signal?: AbortSignal): Promise<AgentApiStatus> {
     const value = record(await fetchJson('/api/agent/status', { signal, cache: 'no-store' }));
-    if (!exactKeys(value, ['configured', 'provider', 'model']) || typeof value.configured !== 'boolean' || value.provider !== 'openai' || typeof value.model !== 'string' || !value.model.trim() || value.model.length > 100) throw invalid();
-    return { configured: value.configured, provider: 'openai', model: value.model };
+    if (!exactKeys(value, ['configured', 'provider', 'model']) || typeof value.configured !== 'boolean' ||
+        !['openai', 'bedrock'].includes(String(value.provider)) || typeof value.model !== 'string' ||
+        (value.configured && !value.model.trim()) || value.model.length > (value.provider === 'bedrock' ? 2048 : 100)) throw invalid();
+    return { configured: value.configured, provider: value.provider as AgentApiStatus['provider'], model: value.model.trim() };
 }
 
 export async function requestAgent(prompt: string, history: AgentChatTurn[], context: AgentContext, signal?: AbortSignal, getCurrentContext?: () => AgentContext): Promise<AgentResult> {

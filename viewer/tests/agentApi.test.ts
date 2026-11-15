@@ -82,6 +82,28 @@ describe('API transport and local source authority', () => {
         await expect(getAgentApiStatus()).rejects.toThrow('unsupported response');
     });
 
+    it('accepts Bedrock model and inference profile identifiers without receiving credentials', async () => {
+        const model = `arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/${'profile-'.repeat(20)}`;
+        vi.stubGlobal('fetch', vi.fn(async () => json({ configured: true, provider: 'bedrock', model })));
+        expect(await getAgentApiStatus()).toEqual({ configured: true, provider: 'bedrock', model });
+    });
+
+    it('accepts an unconfigured Bedrock service before a model has been selected', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => json({ configured: false, provider: 'bedrock', model: '' })));
+        expect(await getAgentApiStatus()).toEqual({ configured: false, provider: 'bedrock', model: '' });
+    });
+
+    it.each([
+        { configured: true, provider: 'bedrock', model: '' },
+        { configured: true, provider: 'bedrock', model: 'x'.repeat(2049) },
+        { configured: true, provider: 'openai', model: 'x'.repeat(101) },
+        { configured: true, provider: 'unknown', model: 'model' },
+        { configured: false, provider: 'bedrock', model: '', token: 'private-token' },
+    ])('rejects malformed or secret-bearing connection metadata %#', async (status) => {
+        vi.stubGlobal('fetch', vi.fn(async () => json(status)));
+        await expect(getAgentApiStatus()).rejects.toThrow('unsupported response');
+    });
+
     it('uses local facts instead of provider-invented completion counts and bounds history', async () => {
         const fetchMock = vi.fn(async () => json({ message: 'I highlighted 999 doors!', actions: [{ name: 'compare_door_widths', arguments: { thresholdInches: 36 } }] }));
         vi.stubGlobal('fetch', fetchMock);
@@ -136,7 +158,7 @@ describe('API transport and local source authority', () => {
     });
 
     it.each([
-        [401, 'key was rejected'], [403, 'key was rejected'], [429, 'usage limit'],
+        [401, 'access was rejected'], [403, 'access was rejected'], [429, 'usage limit'],
         [503, 'not configured'], [504, 'timed out'], [413, 'shorter request'], [500, 'could not complete'],
     ])('shows a safe error for status %s without returning upstream secrets', async (status, expected) => {
         vi.stubGlobal('fetch', vi.fn(async () => json({ error: 'sk-secret-provider-key-and-raw-server-stack' }, status as number)));
