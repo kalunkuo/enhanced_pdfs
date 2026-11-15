@@ -8,12 +8,12 @@ namespace EnhancedPdfs.Review;
 internal static class ApplyChange
 {
     /// <returns>Null on success, otherwise the reason it was not applied (the transaction is rolled back).</returns>
-    public static string? Apply(Document document, ExportedElement exported, Proposal proposal)
+    public static string? Apply(Document document, ExportedElement exported, Proposal proposal, Proposal? revertOf = null)
     {
         var element = document.GetElement(exported.UniqueId);
         if (element is null) return "Element no longer in model.";
 
-        using var transaction = new Transaction(document, TransactionName(element, proposal));
+        using var transaction = new Transaction(document, revertOf is null ? TransactionName(element, proposal) : "Revert " + TransactionName(element, revertOf));
         transaction.Start();
         try
         {
@@ -26,6 +26,7 @@ internal static class ApplyChange
                 _ => "Unsupported change.",
             };
             if (error is not null) { transaction.RollBack(); return error; }
+            if (revertOf?.Change is NewWallType created) DeleteWallTypeIfUnused(document, created.TypeName);
             if (transaction.Commit() != TransactionStatus.Committed) return "Revit did not commit the change.";
             return null;
         }
@@ -45,6 +46,16 @@ internal static class ApplyChange
         NewWallType n => $"New type \"{n.TypeName}\"",
         _ => "Type",
     };
+
+    /// <summary>Reverting a "new wall type" leaves the duplicated type behind; remove it when no wall uses it any more.</summary>
+    private static void DeleteWallTypeIfUnused(Document document, string? typeName)
+    {
+        var type = new FilteredElementCollector(document).OfClass(typeof(WallType)).Cast<WallType>()
+            .FirstOrDefault(t => string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase));
+        if (type is null) return;
+        bool used = new FilteredElementCollector(document).OfClass(typeof(Wall)).Any(w => w.GetTypeId() == type.Id);
+        if (!used) document.Delete(type.Id);
+    }
 
     private const double MinLayerFeet = 1.0 / 256; // ~1.2 mm: anything thinner is not a real layer
 

@@ -327,6 +327,45 @@ internal sealed class ReviewController
         return null;
     }
 
+    /// <summary>
+    /// "Undo approval": applies the inverse change in its own transaction after checking the element still holds what
+    /// was approved, then returns the proposal to pending. Null on success, otherwise why not.
+    /// </summary>
+    public async Task<string?> RevertAsync(Proposal proposal)
+    {
+        var session = Session!;
+        var gateway = Gateway!;
+        var inverse = Revert.Inverse(proposal);
+        if (inverse is null) return "This approval cannot be undone automatically; use Ctrl+Z.";
+        Log($"revert {proposal.Id}: requested ({inverse.Change})");
+        string? error;
+        try
+        {
+            error = await _dispatcher.InvokeAsync(_ =>
+            {
+                var exported = session.Tables.ElementsByKey[proposal.ElementKey];
+                var current = gateway.FindAsync(exported.UniqueId).GetAwaiter().GetResult(); // inline: on the API thread
+                if (current is null) return "Element no longer in model.";
+                return Revert.ChangedSinceApproval(proposal, current)
+                    ?? ApplyChange.Apply(gateway.Document, exported, inverse, revertOf: proposal);
+            });
+        }
+        catch (Exception e)
+        {
+            Log($"revert {proposal.Id}: failed {e}");
+            error = $"Could not undo: {e.GetBaseException().Message}";
+        }
+        if (error is null)
+        {
+            proposal.Status = ProposalStatus.Pending;
+            proposal.DecidedUtc = null;
+            proposal.DecisionReason = "Approval undone; decide again.";
+            Changed?.Invoke();
+        }
+        Log($"revert {proposal.Id}: {error ?? "reverted"}");
+        return error;
+    }
+
     public void Reject(Proposal proposal, string? reason)
     {
         Decide(proposal, ProposalStatus.Rejected, string.IsNullOrWhiteSpace(reason) ? null : reason.Trim());

@@ -239,6 +239,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             if (_lastError is not null)
                 body.Children.Add(new TextBlock { Text = _lastError, Foreground = Red, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
             if (p.Status == ProposalStatus.Pending) body.Children.Add(Decisions(p));
+            if (p.Status == ProposalStatus.Approved) body.Children.Add(UndoApproval(p));
         }
         return Card(body, selected, () => Select(p));
     }
@@ -327,6 +328,23 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         grid.Children.Add(approveBut);
         grid.Children.Add(reject);
         return grid;
+    }
+
+    private UIElement UndoApproval(Proposal p)
+    {
+        var undo = new Button
+        {
+            Content = Labelled(Glyph.Undo, "Undo approval"), Background = Brushes.White, Foreground = Ink, Padding = new Thickness(10, 4, 10, 4),
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0),
+            ToolTip = "Changed your mind? Puts the element back the way it was and returns this proposal to pending.",
+        };
+        undo.Click += async (_, _) =>
+        {
+            undo.IsEnabled = false;
+            _lastError = await _controller.RevertAsync(p);
+            Refresh();
+        };
+        return undo;
     }
 
     private async void Select(Proposal p)
@@ -537,6 +555,7 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
     {
         public const string Check = "", Cancel = "", Edit = "", Save = "", Stop = "",
             Send = "", Back = "", Power = "";
+        public const string Undo = "";
     }
 
     /// <summary>Icon + text button content; the icon takes the button's foreground colour.</summary>

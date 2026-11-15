@@ -130,7 +130,7 @@ public static class ProposalValidator
         return new(true, null, oldWidth, parsed.Display, 1)
         {
             SizeChanges = [new SizeChange("Width", oldWidth, parsed.Display)],
-            NormalisedChange = new NewWallType(parsed.Display!, name),
+            NormalisedChange = new NewWallType(parsed.Display!, name, currentName),
         };
     }
 

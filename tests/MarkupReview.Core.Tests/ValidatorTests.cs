@@ -189,7 +189,7 @@ public sealed class ValidatorTests : IDisposable
         Assert.True(r.Ok, r.Error);
         Assert.Equal(("1' - 2\"", "1' - 9\""), (r.OldValue, r.NormalisedValue));
         Assert.Equal([new SizeChange("Width", "1' - 2\"", "1' - 9\"")], r.SizeChanges);
-        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")"), r.NormalisedChange);
+        Assert.Equal(new NewWallType("1' - 9\"", "Exterior - Brick (1' - 9\")", "Basic Wall: Exterior - Brick"), r.NormalisedChange);
         Assert.Equal(1, r.AffectsCount); // a new type for this wall only: other walls of the old type are untouched
     }
 
