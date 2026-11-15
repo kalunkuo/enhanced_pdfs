@@ -89,7 +89,7 @@
   --comment-error-accent: var(--color-error);
 
   /* Toolbars: 24px compact controls, 8px gaps, 4px container padding. */
-  /* "ePDF." wordmark: blue "e", red square period. */
+  /* "BIMprint." wordmark: blue "BIM", white "print", red square period. */
   --logo-font-size: var(--primitive-font-size-lg);
   --logo-font-weight: var(--primitive-font-weight-bold);
   --logo-text: var(--color-text);
