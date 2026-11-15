@@ -28,4 +28,4 @@ Resting options use muted text; hover uses full text color; the selected option 
 
 **Implementation:** `src/components/ui/SegmentedControl.tsx` (exported from `src/components/ui/index.ts`). Supply `options` (`value`, `label`), `value`, `onChange`, and an accessible `label`. It measures the selected `.tab` and sets `--indicator-x` / `--indicator-w` on the track; the indicator is the track's `::before`, styled by `.tabs` / `.tab` in `src/styles/app.css`.
 
-**Inspector sizing:** the right panel is at least `--viewer-side-min-width` (360px) and otherwise exactly as wide as the segmented control's minimum plus its 16px side margins. Panel content uses `contain: inline-size`, so long values wrap rather than widening the inspector.
+**Inspector sizing:** the right panel is exactly as wide as the segmented control's minimum plus its 16px side margins. Panel content uses `contain: inline-size`, so long values wrap rather than widening the inspector.

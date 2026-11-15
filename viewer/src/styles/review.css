@@ -121,7 +121,6 @@
 .treply .tname { width: 100%; margin: 0; }
 .tsend { justify-self: end; height: 32px; }
 .tsend:disabled { opacity: 0.5; cursor: default; }
-.logo { flex: none; display: block; margin: 0 2px 0 -2px; border-radius: 8px; user-select: none; }
 /* Details card for a selected markup (same card as a comment thread) */
 .byline { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .byline-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }

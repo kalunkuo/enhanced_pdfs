@@ -53,7 +53,7 @@ Native capture supports bounded Path2D fills/strokes and explicit clips on the b
 Codex owns the shared refactor and integration on `viewer-v2` (cut from `main` after `viewer-v1` merged in PR #6). Feature branches, including Yam's annotation/review tools, start from `viewer-v2` and open PRs against it. See `../TASKS.md` for file ownership, task acceptance criteria, and the integration sequence.
 
 - `PdfStage` composes the page, handles pan/zoom, and routes non-markup selection.
-- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook.
+- `PdfCanvas` owns PDF rendering, cancellation, presentation, and the render-capture hook. It renders a full-page base raster capped at ~4 MP (this is the capture render, so its scale stops changing once zoom passes the cap), plus a full-resolution detail tile covering only the visible area and 10% margin, re-rendered after scroll/zoom settles. Do not go back to rasterizing the whole page at zoom × DPR.
 - `NativeElementOverlay` draws filter matches, hover, and selection from captured native paths. `ElementOverlay` remains the optional legacy geometry-table adapter; the semantic module owns picking.
 - Drawing/view filters use stable `DrawingId` membership. Apply the same scope to picking, highlights, coverage, appearance counts, and focus bounds; never borrow an element's plan ink to locate its schedule membership.
 - `navigation.ts` fits existing page-space bounds. `PdfStage` applies a focus request after zoom layout, at most once per request. Preserve padding/centering, exclude DPR from scroll math, and cancel stale requests when the user changes context or navigates manually.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { executeDrawingAgent, type AgentContext, type AgentHighlight, type DrawingComment } from '../../lib/drawingAgent';
 import { getAgentApiStatus, requestAgent, type AgentApiStatus } from '../../lib/agentApi';
+import { ActionButton } from '../ui/ActionButton';
 import { Button, IconButton } from '../ui/Button';
 import '../../styles/agent.css';
 
@@ -30,7 +31,6 @@ interface Message {
 
 export interface AgentPanelProps {
     context: AgentContext | null;
-    fileName?: string;
     sessionKey: string;
     active?: boolean;
     activeHighlight: AgentHighlight | null;
@@ -67,7 +67,7 @@ function commentDate(comment: DrawingComment): string {
 }
 
 /** Conversation state survives inspector tab changes; API credentials stay on the server. */
-export function AgentPanel({ context, fileName, sessionKey, active = true, activeHighlight, onHighlight, onSelectComment, onFitHighlights }: AgentPanelProps) {
+export function AgentPanel({ context, sessionKey, active = true, activeHighlight, onHighlight, onSelectComment, onFitHighlights }: AgentPanelProps) {
     const [draft, setDraft] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [listening, setListening] = useState(false);
@@ -292,7 +292,7 @@ export function AgentPanel({ context, fileName, sessionKey, active = true, activ
     return (
         <section className="drawing-agent" aria-label="Drawing agent">
             <header className="agent-heading">
-                <div className="agent-heading-name"><AgentGlyph small /><strong>Drawing agent</strong><span className="agent-mode">{checkingConnection ? 'Connecting' : mode === 'api' ? 'API' : 'Local demo'}</span></div>
+                <div className="agent-heading-name"><strong>Drawing agent</strong><span className="agent-mode">{checkingConnection ? 'Connecting' : mode === 'api' ? 'API' : 'Local demo'}</span></div>
                 <IconButton label="Clear conversation" disabled={!messages.length && !draft && !pending} onClick={clearConversation}><Glyph><path d="M20 7v5h-5M19 12a7 7 0 1 0-2 5" /></Glyph></IconButton>
             </header>
             <div className="agent-connection">
@@ -300,26 +300,18 @@ export function AgentPanel({ context, fileName, sessionKey, active = true, activ
                     : <span role="status">{connectionLabel}</span>}
                 <button className="agent-text-button" type="button" disabled={pending || checkingConnection} onClick={() => setConnectionAttempt((attempt) => attempt + 1)}>Check connection</button>
             </div>
-            <div className="agent-document" title={fileName}>
-                <Glyph><path d="M6 3h8l4 4v14H6V3Z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></Glyph>
-                <span>{fileName ?? 'No drawing open'}</span>
-                {context && <span className="agent-page">Page {context.pageNumber}</span>}
-            </div>
             <div className="agent-scroll">
                 {!messages.length ? (
                     <div className="agent-welcome">
-                        <div className="agent-welcome-mark"><AgentGlyph /></div>
-                        <h2>Your drawing,<br />in conversation.</h2>
-                        <p>Find patterns, compare properties, and catch up on the conversation around your drawing.</p>
-                        {!context && <p className="agent-load-hint">Open an enhanced PDF or the demo drawing to start.</p>}
+                        {!context && <p className="agent-load-hint">Open an enhanced PDF to start.</p>}
+                        <h2 className="agent-welcome-title">Ask me about your drawings.</h2>
                         <div className="agent-starters">
-                            {STARTERS.map((starter) => <button className="agent-starter" type="button" key={starter.icon} disabled={!context || pending || checkingConnection} onClick={() => void send(starter.prompt)}>
+                            {STARTERS.map((starter) => <ActionButton variant="secondary" className="agent-starter" key={starter.icon} disabled={!context || pending || checkingConnection} onClick={() => void send(starter.prompt)}>
                                 <span className="agent-starter-icon"><StarterGlyph kind={starter.icon} /></span>
                                 <span><strong>{starter.title}</strong><span>{starter.detail}</span></span>
                                 <span className="agent-starter-arrow" aria-hidden="true">↗</span>
-                            </button>)}
+                            </ActionButton>)}
                         </div>
-                        <p className="agent-data-note">Answers use the loaded drawing’s embedded properties and comments.</p>
                     </div>
                 ) : (
                     <div className="agent-conversation" role="log" aria-label="Drawing conversation" aria-live="polite" aria-relevant="additions">

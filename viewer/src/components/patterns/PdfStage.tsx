@@ -199,7 +199,8 @@ export function PdfStage(props: Props) {
                 onPointerUp={finishPan}
                 onPointerCancel={finishPan}
             >
-                <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
+                <PdfCanvas pdf={pdf} pageNumber={page.number} zoom={zoom} pageWidth={page.width} pageHeight={page.height} scrollContainer={wrapRef}
+                    hideEmbeddedAnnotations={props.hideEmbeddedAnnotations}
                     createCapture={props.createCapture} onPresentation={props.onPresentation} onError={props.onRenderError} />
                 <NativeElementOverlay geometry={props.geometry ?? null} pageNumber={page.number} zoom={zoom} width={page.width} height={page.height}
                     hoverKey={props.hoverKey} selectedKey={props.selectedKey} matchedKeys={props.matchedKeys ?? null} elementColors={props.elementColors} drawingIds={props.drawingIds} />
