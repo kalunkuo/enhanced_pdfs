@@ -1,4 +1,5 @@
-import type { ImportedAnnotationSource, Point } from './types';
+import { linkedKeys, withLinks } from './links';
+import type { Annotation, ImportedAnnotationSource, Point } from './types';
 
 const point = (value: unknown): value is Point => Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
 const text = (value: unknown, max = 300): string | undefined => typeof value === 'string' && value.length > 0 && value.length <= max ? value : undefined;
@@ -25,16 +26,29 @@ export function cleanImportedSource(value: unknown): ImportedAnnotationSource | 
     if (!text(raw.subtype, 80) || !point(raw.anchor) || !Array.isArray(raw.bounds) || raw.bounds.length !== 4 ||
         !raw.bounds.every((n) => typeof n === 'number' && Number.isFinite(n)) ||
         !['area', 'point', 'arrow'].includes(String(raw.shape)) ||
-        !['pending', 'linked', 'unlinked', 'ambiguous', 'metadata-only'].includes(String(raw.linkState))) return undefined;
+        !['pending', 'suggested', 'linked', 'unlinked', 'ambiguous', 'metadata-only'].includes(String(raw.linkState))) return undefined;
     const [x0, y0, x1, y1] = raw.bounds as number[];
     if (x0! > x1! || y0! > y1!) return undefined;
     const drawingId = text(raw.drawingId);
     const renderId = text(raw.renderId);
     const linkMethod = ['plugin', 'geometry', 'manual'].includes(String(raw.linkMethod)) ? raw.linkMethod as ImportedAnnotationSource['linkMethod'] : undefined;
-    const candidateKeys = keys(raw.candidateKeys), referencedElementKeys = keys(raw.referencedElementKeys);
+    const suggestedElementKeys = keys(raw.suggestedElementKeys), candidateKeys = keys(raw.candidateKeys), referencedElementKeys = keys(raw.referencedElementKeys);
     return { ...identity, subtype: raw.subtype as string, bounds: [x0!, y0!, x1!, y1!], anchor: [raw.anchor[0], raw.anchor[1]],
         shape: raw.shape as ImportedAnnotationSource['shape'], linkState: raw.linkState as ImportedAnnotationSource['linkState'],
         ...(drawingId ? { drawingId } : {}), ...(linkMethod ? { linkMethod } : {}),
         ...(renderId ? { renderId } : {}),
+        ...(suggestedElementKeys ? { suggestedElementKeys } : {}),
         ...(candidateKeys ? { candidateKeys } : {}), ...(referencedElementKeys ? { referencedElementKeys } : {}) };
+}
+
+/** Earlier geometric auto-links must be reviewed before becoming active smart links. */
+export function normalizeImportedSuggestion<T extends Annotation>(annotation: T): T {
+    const source = annotation.source;
+    if (!source || (source.linkState !== 'suggested' && !(source.linkState === 'linked' && source.linkMethod === 'geometry'))) return annotation;
+    const suggested = keys([...(source.suggestedElementKeys ?? []), ...linkedKeys(annotation)]) ?? [];
+    if (source.linkState === 'suggested' && !annotation.elementKey && !annotation.elementKeys && suggested.length > 0 &&
+        suggested.length === source.suggestedElementKeys?.length && suggested.every((key, index) => key === source.suggestedElementKeys![index])) return annotation;
+    const { suggestedElementKeys: _oldSuggested, ...rest } = source;
+    return withLinks({ ...annotation, source: { ...rest, linkState: suggested.length ? 'suggested' : 'unlinked',
+        ...(suggested.length ? { suggestedElementKeys: suggested } : {}) } }, []) as T;
 }

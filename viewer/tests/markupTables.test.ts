@@ -54,6 +54,22 @@ async function pdf(): Promise<Uint8Array> {
 describe('buildMarkupTables', () => {
     const frames = new Map([[1, { cropX: 0, cropY: 0, cropH: 792 }]]);
 
+    it('keeps suggested object identities out of smart-link exports until the upgrade is accepted', () => {
+        const suggested: Annotation = { id: 'suggested-source', page: 1, kind: 'comment', from: [40, 60], to: [40, 60], text: 'Existing review',
+            source: { ref: '50R', subtype: 'Square', bounds: [20, 40, 60, 80], anchor: [40, 60], shape: 'area',
+                linkState: 'suggested', suggestedElementKeys: [WALL, DOOR] } };
+        const original = structuredClone(suggested);
+        const unaccepted = buildMarkupTables([suggested], frames, boundsOf, source);
+        expect(unaccepted.markups[0]).toMatchObject({ ElementKey: null, LinkCount: 0 });
+        expect(unaccepted.links).toEqual([]);
+        const accepted: Annotation = { ...suggested, elementKey: WALL, elementKeys: [WALL, DOOR],
+            source: { ...suggested.source!, linkState: 'linked', linkMethod: 'manual', suggestedElementKeys: [] } };
+        const approved = buildMarkupTables([accepted], frames, boundsOf, source);
+        expect(approved.markups[0]).toMatchObject({ ElementKey: WALL, LinkCount: 2 });
+        expect(approved.links.map((link) => link.ElementKey)).toEqual([WALL, DOOR]);
+        expect(suggested).toEqual(original);
+    });
+
     it('writes PDF-space geometry with a bottom-left origin and the page drawing', () => {
         const { markups } = buildMarkupTables([highlight], frames, boundsOf, source);
         expect(markups[0]).toMatchObject({

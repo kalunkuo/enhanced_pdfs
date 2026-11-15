@@ -23,8 +23,12 @@ describe('document-wide existing markup upgrade', () => {
         expect(loadPage.mock.calls.map(([number]) => number)).toEqual([2, 4]);
         expect(onPage.mock.calls.map(([, number]) => number)).toEqual([2, 4]);
         const final = onPage.mock.calls[1]![0].annotations as Annotation[];
-        expect(linkedKeys(final.find((annotation) => annotation.page === 2)!)).toEqual(['wall-2']);
-        expect(linkedKeys(final.find((annotation) => annotation.page === 4)!)).toEqual(['wall-4']);
+        for (const number of [2, 4]) {
+            const proposed = final.find((annotation) => annotation.page === number)!;
+            expect(linkedKeys(proposed)).toEqual([]);
+            expect(proposed.source).toMatchObject({ linkState: 'suggested', suggestedElementKeys: [`wall-${number}`] });
+        }
+        expect(onPage.mock.calls[1]![0]).toMatchObject({ linked: 0, suggested: 1 });
         expect(onProgress.mock.calls).toEqual([[0, 2], [1, 2], [2, 2]]);
         expect(annotations[0]!.source!.linkState).toBe('pending');
     });
@@ -86,7 +90,7 @@ describe('document-wide existing markup upgrade', () => {
         const { doc } = documentWith(async (number) => ({ ...page(number), geometrySource: 'none', shapes: [] }));
         const onPage = vi.fn();
         await upgradeDocumentAnnotations(doc, [note(2)], { signal: new AbortController().signal, onPage });
-        expect(onPage.mock.calls[0]![0]).toMatchObject({ linked: 0, unlinked: 1, pending: 0 });
+        expect(onPage.mock.calls[0]![0]).toMatchObject({ linked: 0, suggested: 0, unlinked: 1, pending: 0 });
         expect(linkedKeys(onPage.mock.calls[0]![0].annotations[0])).toEqual([]);
     });
 });

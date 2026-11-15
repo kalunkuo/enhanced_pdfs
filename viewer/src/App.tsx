@@ -11,6 +11,7 @@ import { PropertiesPanel } from './components/patterns/PropertiesPanel';
 import { HIGHLIGHT_COLORS, Toolbar, type DrawKind } from './components/patterns/Toolbar';
 import { SegmentedControl } from './components/ui/SegmentedControl';
 import { Dialog } from './components/ui/Dialog';
+import { Button } from './components/ui/Button';
 import { ProgressBar } from './components/ui/ProgressBar';
 import { StatusMessage } from './components/ui/StatusMessage';
 import { elementsInCloud, tieCloud, type BoundsSource } from './lib/cloud';
@@ -59,6 +60,8 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const DRAW_KINDS = new Set<string>(['pen', 'line', 'rect', 'ellipse']);
 // Review state is written this long after the last change, and immediately when the page hides.
 const PERSIST_DELAY_MS = 300;
+// Review suggestions can be highlighted without turning them into accepted object links.
+const reviewKeys = (annotation: Annotation) => annotation.source?.linkState === 'suggested' ? annotation.source.suggestedElementKeys ?? [] : linkedKeys(annotation);
 
 export function App() {
     const [doc, setDoc] = useState<EnhancedPdf | null>(null);
@@ -474,15 +477,16 @@ export function App() {
 
     const tieAnnotation = useCallback((id: string, elementKey: string | null) => {
         setAnnotations((list) => list.map((a) => (a.id === id ? withLinks({ ...a,
-            ...(a.source ? { source: { ...a.source, linkState: elementKey ? 'linked' as const : 'unlinked' as const, linkMethod: 'manual' as const, candidateKeys: undefined } } : {}),
+            ...(a.source ? { source: { ...a.source, linkState: elementKey ? 'linked' as const : 'unlinked' as const, linkMethod: 'manual' as const, candidateKeys: undefined, suggestedElementKeys: undefined } } : {}),
         }, elementKey ? [elementKey] : []) : a)));
         setSelectedKey(elementKey);
     }, [setSelectedKey]);
 
     const linkImported = (id: string, keys: readonly string[]) => {
         const valid = keys.filter((key) => doc?.elements.has(key));
+        if (!valid.length) return;
         setAnnotations((current) => current.map((annotation) => annotation.id === id && annotation.source
-            ? withLinks({ ...annotation, source: { ...annotation.source, linkState: valid.length ? 'linked' as const : 'unlinked' as const, linkMethod: 'manual' as const, candidateKeys: undefined } }, valid)
+            ? withLinks({ ...annotation, source: { ...annotation.source, linkState: 'linked' as const, linkMethod: 'manual' as const, candidateKeys: undefined, suggestedElementKeys: undefined } }, valid)
             : annotation));
         setSelectedKeys(valid);
     };
@@ -600,8 +604,9 @@ export function App() {
     const pageAnnotations = useMemo(() => annotations.filter((a) => a.page === pageData?.number), [annotations, pageData]);
     const importedAnnotations = useMemo(() => annotations.filter((annotation) => annotation.source), [annotations]);
     const importedLinkedCount = importedAnnotations.filter((annotation) => annotation.source?.linkState === 'linked').length;
+    const importedSuggestedCount = importedAnnotations.filter((annotation) => annotation.source?.linkState === 'suggested').length;
     const importedPendingCount = importedAnnotations.filter((annotation) => annotation.source?.linkState === 'pending').length;
-    const importedReviewCount = importedAnnotations.length - importedLinkedCount - importedPendingCount;
+    const importedReviewCount = importedAnnotations.length - importedLinkedCount - importedSuggestedCount - importedPendingCount;
 
     // Elements on this page within the drawing/view filter: what the agent sees and what Select similar picks from.
     const pageElements = useMemo(() => {
@@ -695,15 +700,15 @@ export function App() {
         const annotationId = comment.source === 'viewer' ? comment.annotationId ?? comment.id : null;
         const annotation = annotations.find((note) => note.id === annotationId);
         setSelectedAnnotationId(annotationId);
-        setSelectedKeys(annotation ? linkedKeys(annotation) : comment.elementKey ? [comment.elementKey] : []);
+        setSelectedKeys(annotation ? reviewKeys(annotation) : comment.elementKey ? [comment.elementKey] : []);
         setTab('notes');
     };
     const reviewImported = () => {
-        const annotation = importedAnnotations.find((note) => note.source?.linkState !== 'linked') ?? importedAnnotations[0];
+        const annotation = importedAnnotations.find((note) => note.source?.linkState === 'suggested') ?? importedAnnotations.find((note) => note.source?.linkState !== 'linked') ?? importedAnnotations[0];
         if (!annotation) return;
         goToPage(annotation.page);
         setSelectedAnnotationId(annotation.id);
-        setSelectedKeys(linkedKeys(annotation));
+        setSelectedKeys(reviewKeys(annotation));
         setSelectedPdfComment(null);
         setTab('notes');
     };
@@ -737,7 +742,7 @@ export function App() {
                 {persistWarning && <StatusMessage tone="warning" variant="banner" title={persistWarning} />}
                 {doc?.warnings.map((w) => <StatusMessage tone="warning" variant="banner" title={w} key={w} />)}
                 {importedAnnotations.length > 0 && <section className="imported-review-summary" aria-label="Existing PDF markup upgrade">
-                    <span role="status"><strong>{importedAnnotations.length} existing PDF markup{importedAnnotations.length === 1 ? '' : 's'} imported</strong> · {importedLinkedCount} linked · {importedReviewCount} {importedReviewCount === 1 ? 'needs' : 'need'} review{importedPendingCount ? ` · ${importedPendingCount} awaiting geometry` : ''}</span>
+                    <span role="status"><strong>{importedAnnotations.length} existing PDF markup{importedAnnotations.length === 1 ? '' : 's'} imported</strong> · {importedLinkedCount} smart{importedSuggestedCount ? ` · ${importedSuggestedCount} awaiting acceptance` : ''} · {importedReviewCount} {importedReviewCount === 1 ? 'needs' : 'need'} review{importedPendingCount ? ` · ${importedPendingCount} awaiting geometry` : ''}</span>
                     <button type="button" className="btn" onClick={reviewImported}>Review imported notes</button>
                     {upgradeProgress ? <><span className="muted">Matching page {Math.min(upgradeProgress.completed + 1, upgradeProgress.total)} of {upgradeProgress.total}</span><button type="button" className="btn" onClick={() => { upgradeController.current?.abort(); setUpgradeProgress(null); setUpgradeWarning('Matching paused. Original markups are preserved.'); }}>Cancel matching</button></>
                         : importedPendingCount > 0 && <button type="button" className="btn" onClick={() => setUpgradeAttempt((attempt) => attempt + 1)}>Match remaining notes</button>}
@@ -794,7 +799,7 @@ export function App() {
                                     setSelectedAnnotationId(id);
                                     setComposer(null);
                                     const a = id ? annotations.find((x) => x.id === id) : undefined;
-                                    setSelectedKeys(a ? linkedKeys(a) : []);
+                                    setSelectedKeys(a ? reviewKeys(a) : []);
                                     if (id) { setSelectedPdfComment(null); setTab('notes'); }
                                 },
                                 onMove: moveComment,
@@ -816,9 +821,12 @@ export function App() {
                     ) : (
                         <div className="stage">
                             <div className="empty">
-                                <div>
-                                    <p><strong>{doc ? 'Loading page…' : restoring ? 'Restoring previous session…' : 'Upload an enhanced PDF to begin.'}</strong></p>
-                                    {!doc && !restoring && <p>Hover an element for a quick summary, click it for every parameter, and annotate the drawing.</p>}
+                                <div className="splash-copy">
+                                    {doc || restoring ? <p><strong>{doc ? 'Loading page…' : 'Restoring previous session…'}</strong></p> : <>
+                                        <h1 className="type-h1 splash-title">Explore your drawing with AI.</h1>
+                                        <p className="splash-description">Open an enhanced PDF to ask the drawing agent, inspect element properties, and review markups.</p>
+                                        <Button variant="primary" onClick={() => fileInput.current?.click()}>Open enhanced PDF</Button>
+                                    </>}
                                 </div>
                             </div>
                         </div>
@@ -877,7 +885,7 @@ export function App() {
                                 onDelete={deleteById}
                                 onOpenElement={selectElement}
                                 onLinkImported={linkImported}
-                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKeys(linkedKeys(a)); }}
+                                onSelect={(a) => { goToPage(a.page); setSelectedPdfComment(null); setSelectedAnnotationId(a.id); setSelectedKeys(reviewKeys(a)); }}
                             />
                             </>
                         )}
