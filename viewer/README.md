@@ -26,7 +26,26 @@ Element actions use the current page and the active **Drawing / view** scope fro
 
 Comment context reads actual review comments on the current page and current viewer notes. Available creation/modification timestamps establish order; undated comments remain explicitly undated. Comment citations open their context in **Notes**. Comments are scoped by page rather than inferred element/view membership.
 
-The current agent runs the supported drawing actions locally and is labeled **Local demo**. No LLM API is connected; no provider credentials were available during setup. The optional microphone uses browser speech recognition where supported, places the transcript in the composer for review, and requires **Send** to run the request. Typed input is always available.
+Without an API key, the agent runs the supported drawing actions locally and is labeled **Local demo**. With a key configured, it automatically offers **OpenAI** mode. The optional microphone uses browser speech recognition where supported, places the transcript in the composer for review, and requires **Send** to run the request. Typed input is always available.
+
+### Connect an API key
+
+The local `viewer/.env.local` file is prepared with an empty key. It is ignored by Git. If setting up another checkout, copy `.env.example` to `.env.local` first. Fill in:
+
+```dotenv
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-5.6-terra
+```
+
+Restart `bun run dev` after changing that file. The Agent panel detects the server configuration and selects API mode; its mode selector lets you return to Local demo. **Check connection** refreshes configuration status without making a billable model request. A configured status means the server has a key; the first request verifies the key, model access, and quota. Failed requests show an error and preserve the draft for retry; they do not silently switch to local behavior. Requests can be canceled.
+
+The key is read only by the local Vite server. Never put it in a `VITE_*` variable, browser storage, or a source file. `GET /api/agent/status` returns configuration status and the model name. `POST /api/agent` uses the [OpenAI Responses API and strict function tools](https://developers.openai.com/api/docs/guides/function-calling) to choose among the supported wall, door, comment, and clear-highlight actions. The browser validates and executes those actions using its current drawing data. Drawing highlights, counts, and comment citations come from local code rather than model prose.
+
+API requests contain your prompt, up to 12 recent conversation turns, and bounded page/category/comment counts. PDF bytes, element records, parameter tables, and comment bodies are not uploaded by the context builder. Text you type in the conversation is sent to OpenAI in API mode. Requests use `store: false`. The API is restricted to the local viewer and has bounded inputs, a 30-second timeout, cancellation, and sanitized errors. The provider boundary is `server/openaiAgent.ts`; the browser contract and tool executor are `src/lib/agentApi.ts`.
+
+For a local production-build preview, run `bun run build` then `bun run preview`; it exposes the same local API. Serving `dist/` as static files alone runs Local demo without an API server. Hosted multi-user deployment needs a separate authenticated backend; the included proxy is for the local hackathon demo.
+
+Provider, HTTP, and client tests use mocked model responses. A real API request still needs your future key and model access. Model configuration can be changed through `OPENAI_MODEL`; the example uses the documented [GPT-5.6 Terra model](https://developers.openai.com/api/docs/models/gpt-5.6-terra).
 
 Validated against the actual `snowdon-towers-a101-enhanced.pdf`, using its native PDF paths and embedded model tables: all 170 walls and 34 doors are highlightable. At 36 inches, door groups are 1 below, 7 above, 25 equal, and 1 unknown; at 42 inches they are 26 below, 6 above, 1 equal, and 1 unknown. The unknown opening exports a zero width. Selecting a real wall opens Properties and returning to Agent preserves the conversation. The original has no review comments; a clearly labeled demo note and reply added in the viewer were sorted correctly, opened their source thread, and survived save/reopen without duplicates. All five original Parquet attachments remained byte-identical in that saved copy.
 

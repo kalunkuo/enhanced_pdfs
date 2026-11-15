@@ -399,6 +399,7 @@ export function App() {
         const elements = elementList.filter((element) => pageKeys.has(element.key) && (!scopedKeys || scopedKeys.has(element.key)));
         return {
             elements, parameters: doc.parameters, pageNumber: pageData.number,
+            scopeKey: drawingScope ? JSON.stringify([...drawingScope].sort()) : 'all-views',
             locatableKeys: new Set(elements.filter((element) => ['ready', 'partial', 'legacy'].includes(locations.get(element.key) ?? '')).map((element) => element.key)),
             comments: [...pdfComments, ...viewerComments(pageAnnotations)], commentsStatus,
         };

@@ -7,6 +7,12 @@
 .drawing-agent .agent-glyph { width: 40px; height: 40px; color: var(--color-primary); }
 .drawing-agent .agent-glyph.is-small { width: 20px; height: 20px; }
 .agent-mode { padding: 2px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-control); font-size: var(--primitive-font-size-xs); color: var(--color-text-subtle); white-space: nowrap; }
+.agent-connection { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 16px 10px; color: var(--color-text-subtle); font-size: var(--primitive-font-size-xs); }
+.agent-connection > span { min-width: 0; line-height: 1.5; }
+.agent-connection > .agent-text-button { flex: none; font-size: var(--primitive-font-size-xs); }
+.agent-mode-choice { flex: 1; min-width: 0; }
+.agent-mode-choice select { width: 100%; min-width: 0; padding: 4px 22px 4px 6px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-canvas); color: var(--color-text-muted); font: inherit; font-size: var(--primitive-font-size-xs); text-overflow: ellipsis; }
+.agent-mode-choice select:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
 .agent-document { display: flex; align-items: center; gap: 6px; padding: 0 16px 12px; border-bottom: 1px solid var(--color-border); color: var(--color-text-subtle); font-size: var(--primitive-font-size-xs); }
 .agent-document svg { width: 14px; height: 14px; }
 .agent-document > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -44,11 +50,18 @@
 .agent-comment-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-label-size); line-height: 1.6; }
 .agent-comment-open { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--color-primary); font-size: var(--primitive-font-size-xs); }
 .agent-error { margin: 12px 16px; font-size: var(--text-label-size); color: var(--color-error); }
+.agent-error > p { margin: 0 0 8px; line-height: 1.6; }
+.agent-error-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: var(--primitive-font-size-xs); }
+.agent-working { display: flex; align-items: center; gap: 8px; margin: 12px 16px; color: var(--color-text-muted); font-size: var(--text-label-size); }
+.agent-working > button { margin-left: auto; font-size: var(--primitive-font-size-xs); }
+.agent-working-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); animation: agent-working-pulse 1.5s ease-in-out infinite; }
+.agent-request-notice { margin: 12px 16px; color: var(--color-text-muted); font-size: var(--primitive-font-size-xs); line-height: 1.6; }
 .agent-legend { padding: 12px 16px; border-top: 1px solid var(--color-border); background: var(--color-canvas); max-height: 34%; overflow: auto; flex-shrink: 0; }
 .agent-legend-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--text-label-size); }
 .agent-legend-heading > strong { font-weight: 600; }
 .agent-text-button { border: 0; padding: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .agent-text-button:hover { color: var(--color-text); }
+.agent-text-button:disabled { cursor: default; opacity: .5; }
 .agent-legend ul { display: grid; gap: 6px; list-style: none; margin: 10px 0 12px; padding: 0; }
 .agent-legend li { display: flex; align-items: center; gap: 8px; font-size: var(--primitive-font-size-xs); color: var(--color-text-muted); }
 .agent-legend li > strong { margin-left: auto; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -71,3 +84,5 @@
 @media (max-height: 720px) { .agent-welcome { padding-top: 16px; } .agent-welcome-mark { margin-bottom: 12px; } .agent-welcome h2 { font-size: var(--type-h3-size); } .agent-welcome > p { margin-bottom: 12px; } .agent-starter { padding: 8px 10px; } }
 @media (max-width: 860px) { .agent-welcome { padding: 16px; } .agent-welcome-mark { display: none; } .agent-starters { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } .agent-welcome h2 br { display: none; } }
 @media (prefers-reduced-motion: reduce) { .agent-starter { transition: none; } }
+@keyframes agent-working-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .agent-working-dot { animation: none; } }

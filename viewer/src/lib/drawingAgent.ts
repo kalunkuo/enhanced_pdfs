@@ -14,6 +14,8 @@ export interface DrawingComment {
 }
 
 export interface AgentContext {
+    /** Stable view-filter identity, including views that share the same element members. */
+    scopeKey?: string;
     /** Already scoped to the current drawing/page by the viewer. */
     elements: readonly ElementInfo[];
     parameters: ReadonlyMap<string, ParameterInfo[]>;
@@ -118,12 +120,17 @@ function coverage(elements: readonly ElementInfo[], context: AgentContext): stri
 }
 
 function colorWalls(prompt: string, context: AgentContext): AgentResult {
-    let walls = context.elements.filter((element) => categoryIs(element, 'wall'));
     const requestedRating = /\b(?:only|just)\b/i.test(prompt)
         ? /\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hours?)\b/i.exec(prompt)
         : /\b(?:show|highlight)\s+(?:the\s+)?(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hours?)\b/i.exec(prompt);
-    if (requestedRating) walls = walls.filter((element) => ratingIdentity(ratingFor(element, context)) === `${Number(requestedRating[1])} HR`);
-    if (!walls.length) return { message: `No ${requestedRating ? `${requestedRating[1]} HR ` : ''}wall records were found on page ${context.pageNumber}.`, highlight: null };
+    return colorWallsByFireRating(context, requestedRating ? `${Number(requestedRating[1])} HR` : null);
+}
+
+/** Typed action used by both the local demo and API-selected tools. */
+export function colorWallsByFireRating(context: AgentContext, requestedRating: string | null = null): AgentResult {
+    let walls = context.elements.filter((element) => categoryIs(element, 'wall'));
+    if (requestedRating !== null) walls = walls.filter((element) => ratingIdentity(ratingFor(element, context)) === ratingIdentity(requestedRating));
+    if (!walls.length) return { message: `No ${requestedRating !== null ? `${requestedRating} ` : ''}wall records were found on page ${context.pageNumber}.`, highlight: null };
     const groups = new Map<string, { label: string; elements: ElementInfo[] }>();
     for (const element of walls) {
         const label = ratingFor(element, context);
@@ -159,6 +166,12 @@ function thresholdFrom(prompt: string): number | null {
 function compareDoors(prompt: string, context: AgentContext): AgentResult {
     const threshold = thresholdFrom(prompt);
     if (threshold === null) return { message: 'What door-width threshold should I use? For example, “Compare doors at 36 inches.” I’ll use green below it, red above it, and a separate group for doors exactly at the threshold.' };
+    return compareDoorWidths(context, threshold);
+}
+
+/** Compare exported model widths; the provider cannot supply counts or geometry. */
+export function compareDoorWidths(context: AgentContext, threshold: number): AgentResult {
+    if (!Number.isFinite(threshold) || threshold <= 0) throw new Error('Door-width threshold must be positive.');
     const doors = context.elements.filter((element) => categoryIs(element, 'door'));
     if (!doors.length) return { message: `No door records were found on page ${context.pageNumber}.`, highlight: null };
     const label = `${numberText(threshold)} in`;
@@ -190,7 +203,7 @@ function commentTime(comment: DrawingComment): number | null {
     return null;
 }
 
-function latestComments(context: AgentContext): AgentResult {
+export function latestComments(context: AgentContext): AgentResult {
     if (context.commentsStatus === 'loading') return { message: 'Drawing comments are still loading. Ask again when loading finishes.' };
     if (context.commentsStatus === 'error') return { message: 'The drawing comments could not be read. I cannot confirm the latest comments; reopen the drawing and try again.' };
     const comments = context.comments.filter((comment) => comment.page === context.pageNumber && comment.text.trim());
