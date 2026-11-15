@@ -69,6 +69,21 @@ stays in the tree, shelved until Acrobat Pro starts reliably.
   dimensions) differ by up to 6.6 pt because PDF-XChange measures glyph boxes (and stroke width)
   where the pdfplumber fixture measures character boxes and bare paths. Accepted: linking uses a
   50 % overlap rule, so a few points do not change results.
+- **More runtime facts (X2/X3 and acceptance):** `e.document.beforeClose` and `e.document.closed`
+  both fire (state dropped on beforeClose); edits made in `e.document.beforeSave` land in the saved
+  file; the Editor does not search `Plugins.x64` for a plug-in's imports, so `duckdb.dll` is
+  delay-loaded and preloaded from the plug-in's folder; annotation rects round-trip as float32, so
+  SheetRect is rounded to 0.01 pt to keep re-opens clean.
+- **Toolbar commands:** a button press arrives at `IUIX_CmdHandler::OnNotify` as `UIX_Notify_Click`
+  (1, after `BeforeShowPopup` 9) — never `UIX_Notify_ExecCmd` (37). Commands without an image are
+  near-invisible; the plug-in draws its own icon in `OnDrawItemIcon`.
+- **Inspect highlight:** a temporary Square annotation (`/NM smh-highlight`, ReadOnly|Locked,
+  multiply blend). The annots inserted/deleted events do **not** repaint the view; the plug-in
+  calls `InvalidatePageRects`. The rect must be re-applied after styling or the appearance stays
+  at the default size. The Editor selects annotations on mouse-up, so a handled click also
+  swallows its mouse-up. Selection changes arrive as `e.docSelection.changed`.
+- **Event names:** the SDK wiki is incomplete; `docs/pdfxchange-event-names-10.8.4.txt` is the
+  Editor's own registry (364 names, dumped with the `eventnames` self-test step).
 - **Dev install:** the one-time admin script must grant the *desktop* user (owner of
   `explorer.exe`), not the elevated identity — with a separate admin account they differ.
 
