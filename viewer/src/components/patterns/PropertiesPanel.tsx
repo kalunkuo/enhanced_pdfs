@@ -2,6 +2,7 @@ import { groupParameters } from '../../lib/groups';
 import { LOCATION_LABELS, type LocationStatus } from '../../lib/coverage';
 import type { ElementInfo, EnhancedPdf, ParameterInfo } from '../../lib/types';
 import { Button } from '../ui/Button';
+import { elementLabel, singularCategory } from '../../lib/elementLabel';
 
 const isBool = (v: string) => v === 'Yes' || v === 'No';
 
@@ -15,7 +16,7 @@ function Wall() {
     );
 }
 
-export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }: { doc: EnhancedPdf; element: ElementInfo | undefined; hasShapes: boolean; location?: LocationStatus; onLocate?: (key: string) => void }) {
+export function PropertiesPanel({ doc, element, selection = [], onPick, hasShapes, location, onLocate }: { doc: EnhancedPdf; element: ElementInfo | undefined; selection?: readonly ElementInfo[]; onPick?: (key: string) => void; hasShapes: boolean; location?: LocationStatus; onLocate?: (key: string) => void }) {
     if (!element) {
         return (
             <div className="panel-empty">
@@ -52,7 +53,7 @@ export function PropertiesPanel({ doc, element, hasShapes, location, onLocate }:
                     <div className="prop-sub">{element.type ?? element.name}</div>
                 </div>
             </div>
-            <div className="prop-count">{element.category} (1)</div>
+            {selection.length > 1 ? <MultiSummary selection={selection} current={element.key} onPick={onPick} /> : <div className="prop-count">{element.category} (1)</div>}
             <p className="parameter-scope-note">Parameters retain their instance or type source.</p>
             {groups.map(([group, params]) => (
                 <section className="group" key={group}>
@@ -74,5 +75,22 @@ function Row({ p }: { p: ParameterInfo }) {
             <div className="k">{p.name} <span className="parameter-scope">{p.scope}</span></div>
             <div>{isBool(p.value) ? <span className={`check ${p.value === 'Yes' ? 'on' : ''}`}>{p.value === 'Yes' ? '✓' : ''}</span> : p.value || <span className="muted">—</span>}</div>
         </>
+    );
+}
+
+/** "Wall (2), Floor (1)": how many of each category are selected, with the objects themselves to pick between. */
+function MultiSummary({ selection, current, onPick }: { selection: readonly ElementInfo[]; current: string; onPick?: (key: string) => void }) {
+    const counts = new Map<string, number>();
+    for (const e of selection) { const c = singularCategory(e.category); counts.set(c, (counts.get(c) ?? 0) + 1); }
+    return (
+        <section className="multi-select">
+            <div className="prop-count">{selection.length} selected · {[...counts].map(([c, n]) => `${c} (${n})`).join(', ')}</div>
+            <div className="multi-items">
+                {selection.map((e) => (
+                    <button key={e.key} className="multi-item" aria-current={e.key === current} onClick={() => onPick?.(e.key)}>{elementLabel(e)}</button>
+                ))}
+            </div>
+            <p className="parameter-scope-note">Showing parameters for the highlighted object. Shift-click adds or removes objects.</p>
+        </section>
     );
 }
