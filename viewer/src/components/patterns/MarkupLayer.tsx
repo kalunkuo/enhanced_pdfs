@@ -392,7 +392,8 @@ function AnnotationShape({ annotation: a, selected, interactive, tied: tiedProp,
         : tied ? `↳ ${label ?? 'element'}` : 'untied';
     return (
         <g
-            style={{ pointerEvents: interactive ? 'auto' : 'none', cursor: 'pointer' }}
+            className="markup-hit"
+            style={{ pointerEvents: interactive ? 'auto' : 'none' }}
             onPointerDown={(event) => { if (interactive) event.stopPropagation(); }}
             onClick={onClick}
         >
