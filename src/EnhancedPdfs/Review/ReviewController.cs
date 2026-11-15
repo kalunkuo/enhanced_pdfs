@@ -296,7 +296,9 @@ internal sealed class ReviewController
     public Task<string> SaveReviewAsync() => _dispatcher.InvokeAsync(app =>
         DecisionsWriter.Write(Session!.Pdf, Session, app.Application.Username));
 
-    public Task FocusAsync(Proposal proposal) => _dispatcher.InvokeAsync(app => Preview.Show(app, Session!, proposal));
+    /// <returns>Null when shown, otherwise why not (shown in the card).</returns>
+    public Task<string?> FocusAsync(Proposal proposal) => _dispatcher.InvokeAsync(app => Preview.Show(app, Session!, proposal));
+    public Task<string?> FocusMarkupAsync(Markup markup) => _dispatcher.InvokeAsync(app => Preview.ShowMarkup(app, Session!, markup));
     public Task ClearPreviewAsync() => _dispatcher.InvokeAsync(app => Preview.Clear(app));
 
     private void Decide(Proposal proposal, ProposalStatus status, string? reason)

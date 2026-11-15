@@ -241,7 +241,9 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
             body.Children.Add(new TextBlock { Text = Byline(markup), Foreground = Muted, Margin = new Thickness(0, 2, 0, 4) });
         }
         body.Children.Add(new TextBlock { Text = note.Text, TextWrapping = TextWrapping.Wrap, Foreground = selected ? Ink : Muted });
-        return Card(body, selected, () => { _selected = note.Id; _lastError = null; Refresh(); });
+        if (selected && _lastError is not null)
+            body.Children.Add(new TextBlock { Text = _lastError, Foreground = Red, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
+        return Card(body, selected, () => SelectNote(note, markup));
     }
 
     private UIElement Decisions(Proposal p)
@@ -283,8 +285,22 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
         _lastError = null;
         _rejecting = null;
         Refresh();
-        try { await _controller.FocusAsync(p); }
-        catch (Exception e) { _lastError = $"Could not show the element: {e.Message}"; Refresh(); }
+        try { _lastError = await _controller.FocusAsync(p); }
+        catch (Exception e) { _lastError = $"Could not show the element: {e.Message}"; }
+        if (_lastError is not null) Refresh();
+    }
+
+    /// <summary>Notes zoom too: even when Claude misread a markup, the reviewer lands on its elements.</summary>
+    private async void SelectNote(ReviewNote note, Markup? markup)
+    {
+        _selected = note.Id;
+        _lastError = null;
+        _rejecting = null;
+        Refresh();
+        if (markup is null) return;
+        try { _lastError = await _controller.FocusMarkupAsync(markup); }
+        catch (Exception e) { _lastError = $"Could not show the markup's elements: {e.Message}"; }
+        if (_lastError is not null) Refresh();
     }
 
     private UIElement CropView(ReviewSession session, Markup markup)
