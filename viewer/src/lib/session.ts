@@ -70,7 +70,11 @@ function openDb(): Promise<IDBDatabase> {
     return dbPromise;
 }
 
+/** Set once browser data is cleared, so a late autosave cannot recreate the session before the reload. */
+let cleared = false;
+
 async function run<T>(mode: IDBTransactionMode, body: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
+    if (cleared) return undefined;
     const db = await openDb();
     return new Promise<T | undefined>((resolve, reject) => {
         const tx = db.transaction(STORE, mode);
@@ -106,6 +110,26 @@ export async function loadSession(): Promise<{ file: SessionFile; state: Session
 
 export async function clearSession(): Promise<void> {
     await run('readwrite', (store) => store.clear());
+}
+
+/**
+ * Forgets everything this app keeps in the browser: the session database, the profile and any
+ * other local/session storage. The caller reloads afterwards so in-memory state goes too.
+ */
+export async function clearBrowserData(): Promise<void> {
+    cleared = true;
+    try { localStorage.clear(); } catch { /* storage unavailable */ }
+    try { sessionStorage.clear(); } catch { /* storage unavailable */ }
+    const pending = dbPromise;
+    dbPromise = null;
+    if (pending) {
+        try { (await pending).close(); } catch { /* never opened */ }
+    }
+    if (typeof indexedDB === 'undefined') return;
+    await new Promise<void>((resolve) => {
+        const request = indexedDB.deleteDatabase(DB_NAME);
+        request.onsuccess = request.onerror = request.onblocked = () => resolve();
+    });
 }
 
 function isSessionFile(value: unknown): value is SessionFile {

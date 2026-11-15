@@ -33,4 +33,5 @@ export const PrevPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 
 export const NextPageIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 7v9M8 12.5l4 4 4-4" /></>);
 export const HandIcon = icon(<path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-5.5v-1a1.5 1.5 0 0 1 3 0V11m0-4.5a1.5 1.5 0 0 1 3 0V13m0-3.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.7-2.3L4.5 15a1.6 1.6 0 0 1 2.4-2.1L8 14" />);
 export const ChevronDownIcon = icon(<path d="M6 9l6 6 6-6" />);
+export const CloseIcon = icon(<path d="M6 6l12 12M18 6L6 18" />);
 export const CheckIcon = icon(<path d="M5 12l5 5 9-10" />);

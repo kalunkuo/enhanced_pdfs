@@ -24,7 +24,7 @@ import { createNativeGeometryCapture, type NativeGeometry } from './lib/nativeGe
 import { LOAD_STAGE_SPAN, loadEnhancedPdf, type LoadStage } from './lib/load';
 import { annotatedName, downloadPdf, printPdf } from './lib/print';
 import { buildAnnotatedPdf } from './lib/save';
-import { fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
+import { clearBrowserData, fingerprintBytes, loadSession, nextAnnotationNumber, saveSessionFile, saveSessionState, SESSION_VERSION, type SessionState } from './lib/session';
 import { demoFileFromLocation } from './lib/demo';
 import type { FocusRequest } from './lib/navigation';
 import { withAuthorship } from './lib/comments';
@@ -72,6 +72,8 @@ export function App() {
     const [pageData, setPageData] = useState<PageData | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [persistWarning, setPersistWarning] = useState<string | null>(null);
+    const [confirmClear, setConfirmClear] = useState(false);
+    const [clearing, setClearing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [loading, setLoading] = useState<Loading | null>(null);
     const awaitingFirstPage = useRef<EnhancedPdf | null>(null);
@@ -842,7 +844,20 @@ export function App() {
                 onZoomIn={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom * 1.25) })}
                 onZoomOut={() => changeZoomMode({ kind: 'value', value: clampZoom(zoom / 1.25) })}
                 onUpload={() => fileInput.current?.click()}
+                onClearData={() => setConfirmClear(true)}
                 account={<ProfileMenu profile={profile} onChange={setProfile} />}
+            />
+            <Dialog
+                open={confirmClear}
+                onClose={() => { if (!clearing) setConfirmClear(false); }}
+                dismissible={!clearing}
+                title="Clear browser data?"
+                titleClassName="type-h3"
+                description="This forgets the remembered drawing, its unsaved markups and review state, and your profile in this browser. Download the PDF first to keep your markups."
+                footer={<>
+                    <ActionButton variant="secondary" disabled={clearing} onClick={() => setConfirmClear(false)}>Cancel</ActionButton>
+                    <ActionButton variant="primary" disabled={clearing} onClick={() => { setClearing(true); void clearBrowserData().finally(() => window.location.reload()); }}>{clearing ? 'Clearing…' : 'Clear data'}</ActionButton>
+                </>}
             />
             <Dialog open={loading !== null} onClose={() => undefined} dismissible={false} title="Opening drawing" titleClassName="type-h3" description={loading?.fileName} className={`load-dialog${loading?.revealing ? ' is-revealing' : ''}`}>
                 {loading && <ProgressBar label={`Opening ${loading.fileName}`} value={loading.fraction} ceiling={loading.ceiling} detail={loading.step} onComplete={revealViewer} />}

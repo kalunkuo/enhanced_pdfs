@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconButton } from '../ui/Button';
 import { Logo } from '../ui';
-import { CheckIcon, ChevronDownIcon, ExportIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SelectIcon, UploadIcon } from '../ui/icons';
+import { CheckIcon, ChevronDownIcon, CloseIcon, ExportIcon, HandIcon, MinusIcon, NextPageIcon, PlusIcon, PrevPageIcon, PrintIcon, SelectIcon, UploadIcon } from '../ui/icons';
 import type { Tool, ZoomMode } from './PdfStage';
 
 const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -22,6 +22,8 @@ interface Props {
     onZoomIn: () => void;
     onZoomOut: () => void;
     onUpload: () => void;
+    /** Asks to forget the file, review state and profile this app stored in the browser. */
+    onClearData: () => void;
     /** Your profile, shown at the far right. */
     account?: ReactNode;
 }
@@ -47,6 +49,7 @@ export function DocBar(p: Props) {
             <IconButton label="Zoom in" disabled={p.disabled} onClick={p.onZoomIn}><PlusIcon /></IconButton>
             <ZoomMenu zoom={p.zoom} mode={p.zoomMode} disabled={p.disabled} onMode={p.onZoomMode} />
             <span className="docbar-spacer" />
+            <IconButton label="Clear browser data" onClick={p.onClearData}><CloseIcon /></IconButton>
             {p.account}
         </div>
     );
