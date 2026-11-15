@@ -15,6 +15,8 @@ public sealed record Proposal
     public required string ElementKey { get; init; }
     public required Change Change { get; init; }
     public required string Reason { get; init; }
+    /// <summary>Other markups this proposal reads together with <see cref="MarkupId"/> (an arrow plus its text box).</summary>
+    public IReadOnlyList<string> RelatedMarkupIds { get; init; } = [];
     public ProposalStatus Status { get; set; } = ProposalStatus.Pending;
     public string? OldValue { get; set; }
     public string? NewValue { get; set; }

@@ -150,6 +150,31 @@ public sealed class McpServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Propose_on_element_linked_by_a_related_markup_is_accepted()
+    {
+        // A text box (m2, untied) that belongs with a comment on the door (m3): the pair together names the element.
+        var r = Assert.Single(await Exchange(Call(12, "propose_change", new
+        {
+            markup_id = "m2", related_markup_ids = new[] { "m3" }, handle = FixturePdf.DoorKey, reason = "Text box and door comment together.",
+            change = new { change_type = new { type_name = "Single-Flush: 36\" x 84\"" } },
+        })));
+        Assert.NotEqual(true, (bool?)r["result"]!["isError"]);
+        Assert.Equal(["m3"], Assert.Single(_session.Proposals).RelatedMarkupIds);
+    }
+
+    [Fact]
+    public async Task Unknown_related_markup_is_rejected()
+    {
+        var r = Assert.Single(await Exchange(Call(13, "propose_change", new
+        {
+            markup_id = "m2", related_markup_ids = new[] { "nope" }, handle = FixturePdf.DoorKey, reason = "x",
+            change = new { change_type = new { type_name = "Single-Flush: 36\" x 84\"" } },
+        })));
+        Assert.True((bool?)r["result"]!["isError"]);
+        Assert.Empty(_session.Proposals);
+    }
+
+    [Fact]
     public async Task Add_review_note_and_finish_review_update_the_session()
     {
         string? finished = null;

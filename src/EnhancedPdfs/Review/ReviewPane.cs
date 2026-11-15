@@ -211,6 +211,8 @@ internal sealed class ReviewPane : UserControl, IDockablePaneProvider
                 body.Children.Add(new TextBlock { Text = Byline(markup), Foreground = Muted, Margin = new Thickness(0, 2, 0, 4) });
             if (!string.IsNullOrWhiteSpace(markup?.Text))
                 body.Children.Add(Quote(markup!.Text!));
+            foreach (var related in p.RelatedMarkupIds.Select(session.FindMarkup).OfType<Markup>())
+                body.Children.Add(new StackPanel { Margin = new Thickness(0, 4, 0, 0), Children = { new TextBlock { Text = $"with {related.Kind}" + (related.Author is null ? "" : $" · {related.Author}"), Foreground = Muted, FontSize = 10 }, Quote(string.IsNullOrWhiteSpace(related.Text) ? "(no text)" : related.Text!) } });
             body.Children.Add(Diff(what, p.OldValue, p.NewValue));
             foreach (var size in p.SizeChanges)
                 body.Children.Add(Diff(size.Name, size.OldValue, size.NewValue));

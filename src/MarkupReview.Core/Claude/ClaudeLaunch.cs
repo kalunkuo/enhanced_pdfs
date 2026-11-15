@@ -20,6 +20,9 @@ public static class ClaudeLaunch
            - If the markup's text states or clearly implies a parameter value or a type for one of its elements, call
              propose_change with that exact value and a one-line reason that quotes the markup's words.
              A markup over several elements may need several proposals.
+           - Markups often work in pairs: an arrow pointing at an element plus a text box saying what to change, or text
+             next to a cloud. Read them together and pass the partner in related_markup_ids; the element may be linked by
+             either one. Contradicting markups (e.g. "open outwards" vs "flipped inwards") get a note, not a guess.
            - Otherwise (a question, a coordination request, an ambiguous or unsupported request, a linked-model element,
              a move or delete) call add_review_note explaining what it asks.
            - Never propose a value the markup does not support. If propose_change returns an error, correct the value from the

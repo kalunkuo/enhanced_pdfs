@@ -21,6 +21,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
         Tool("propose_change", "Stage one proposed change for the user to approve or reject. Does not change the model. The value is validated; an error explains what is allowed. `change` holds exactly one of set_parameter or change_type.",
             Props(
                 ("markup_id", Str("The markup this change comes from.")),
+                ("related_markup_ids", new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" }, ["description"] = "Optional: other markups read together with it (an arrow pointing at the element, a text box next to a cloud). The handle may be linked by any of them." }),
                 ("handle", Str("Element handle linked to or mentioned by that markup.")),
                 ("reason", Str("One line for the reviewer, citing the markup's words.")),
                 ("change", new JsonObject
@@ -141,8 +142,12 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
     {
         string markupId = Arg(args, "markup_id"), handle = Arg(args, "handle"), reason = Arg(args, "reason");
         var markup = session.FindMarkup(markupId) ?? throw new ToolError($"No markup '{markupId}'.");
-        if (markup.Links.All(l => l.ElementKey != handle))
-            throw new ToolError($"Element '{handle}' is not linked to or mentioned by markup '{markupId}'. Propose only on that markup's elements: {string.Join(", ", markup.Links.Select(l => l.ElementKey))}.");
+        var related = StrList(args, "related_markup_ids");
+        foreach (var id in related)
+            if (session.FindMarkup(id) is null) throw new ToolError($"No related markup '{id}'.");
+        var allowed = related.Select(id => session.FindMarkup(id)!).Prepend(markup).SelectMany(m => m.Links).Select(l => l.ElementKey).Distinct().ToList();
+        if (!allowed.Contains(handle))
+            throw new ToolError($"Element '{handle}' is not linked to or mentioned by markup '{markupId}'" + (related.Count > 0 ? " or its related markups" : "") + $". Propose only on: {string.Join(", ", allowed)}. If another markup (an arrow, a text box) names the element, pass it in related_markup_ids.");
 
         Change change = args["change"] switch
         {
@@ -152,7 +157,7 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
             _ => throw new ToolError("`change` must contain set_parameter or change_type."),
         };
 
-        var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, ElementKey = handle, Change = change, Reason = reason };
+        var proposal = new Proposal { Id = session.NextProposalId(), MarkupId = markupId, RelatedMarkupIds = related, ElementKey = handle, Change = change, Reason = reason };
         var result = await ProposalValidator.ValidateAsync(proposal, model, session.Tables);
         if (!result.Ok) return Fail(result.Error!);
 
@@ -211,6 +216,11 @@ public sealed class ReviewTools(ReviewSession session, IModelGateway model)
 
     private static string Arg(JsonObject args, string name) =>
         args[name] is JsonValue v && v.TryGetValue(out string? s) && !string.IsNullOrWhiteSpace(s) ? s : throw new ToolError($"Missing argument '{name}'.");
+
+    private static List<string> StrList(JsonObject args, string name) =>
+        args[name] is JsonArray items
+            ? [.. items.OfType<JsonValue>().Select(v => v.TryGetValue(out string? s) ? s : null).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!).Distinct()]
+            : [];
 
     private static JsonObject Ok(JsonNode payload) => Text(payload.ToJsonString(Json), isError: false);
     private static JsonObject Fail(string message) => Text(message, isError: true);
