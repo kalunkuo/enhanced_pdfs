@@ -201,15 +201,26 @@ internal sealed class ReviewController
     {
         var session = Session!;
         var gateway = Gateway!;
-        string? error = await _dispatcher.InvokeAsync(_ =>
+        Log($"approve {proposal.Id}: requested ({proposal.Change})");
+        string? error;
+        try
         {
-            var check = ProposalValidator.ValidateAsync(proposal, gateway, session.Tables).GetAwaiter().GetResult();
-            if (!check.Ok) return check.Error;
-            if (check.BlockReason is not null) return check.BlockReason;
-            if (!string.Equals(check.OldValue, proposal.OldValue, StringComparison.Ordinal))
-                return $"The current value changed to '{check.OldValue}' since this was proposed. Reject it, or import again.";
-            return ApplyChange.Apply(gateway.Document, session.Tables.ElementsByKey[proposal.ElementKey], proposal);
-        });
+            error = await _dispatcher.InvokeAsync(_ =>
+            {
+                Log($"approve {proposal.Id}: on Revit thread, re-validating");
+                var check = ProposalValidator.ValidateAsync(proposal, gateway, session.Tables).GetAwaiter().GetResult();
+                if (!check.Ok) return check.Error;
+                if (check.BlockReason is not null) return check.BlockReason;
+                if (!string.Equals(check.OldValue, proposal.OldValue, StringComparison.Ordinal))
+                    return $"The current value changed to '{check.OldValue}' since this was proposed. Reject it, or import again.";
+                return ApplyChange.Apply(gateway.Document, session.Tables.ElementsByKey[proposal.ElementKey], proposal);
+            });
+        }
+        catch (Exception e)
+        {
+            Log($"approve {proposal.Id}: failed {e}");
+            error = $"Could not apply: {e.GetBaseException().Message}";
+        }
         if (error is null) Decide(proposal, ProposalStatus.Approved, null);
         Log($"approve {proposal.Id}: {error ?? "applied"}");
         return error;

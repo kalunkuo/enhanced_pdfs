@@ -54,6 +54,9 @@ public static class ClaudeLaunch
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            // Claude Code writes UTF-8; Windows would otherwise decode with the OEM code page.
+            StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            StandardErrorEncoding = new System.Text.UTF8Encoding(false),
         };
         foreach (var arg in new[]
         {

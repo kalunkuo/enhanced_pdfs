@@ -44,6 +44,14 @@ public sealed class ClaudeLaunchTests : IDisposable
     }
 
     [Fact]
+    public void Reads_claude_output_as_utf8()
+    {
+        // Windows defaults to the OEM code page; Claude's stream-json is UTF-8 ("→" arrived as "â†’").
+        Assert.Equal(65001, Build().StandardOutputEncoding?.CodePage);
+        Assert.Equal(65001, Build().StandardErrorEncoding?.CodePage);
+    }
+
+    [Fact]
     public void Mcp_config_points_to_bridge_with_pipe_and_token()
     {
         var args = Build().ArgumentList.ToList();
