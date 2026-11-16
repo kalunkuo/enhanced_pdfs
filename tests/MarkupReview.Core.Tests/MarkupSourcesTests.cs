@@ -41,7 +41,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v1", page = 1, kind = "rect",
-                from = new { x = 100.0, y = 200.0 }, to = new { x = 150.0, y = 300.0 },
+                from = new[] { 100.0, 200.0 }, to = new[] { 150.0, 300.0 },
                 text = "should be 1 HR per code review", elementKey = FixturePdf.WallKey,
             }),
         };
@@ -64,6 +64,30 @@ public sealed class MarkupSourcesTests : IDisposable
     }
 
     [Fact]
+    public void Reads_viewer_pen_points_as_xy_tuples()
+    {
+        // The viewer serializes Point as a [x, y] tuple, not an {x, y} object (viewer/src/lib/types.ts).
+        var fixture = new FixturePdf
+        {
+            ViewerJson = FixturePdf.ViewerAnnotations(new
+            {
+                id = "p1", page = 1, kind = "pen",
+                from = new[] { 0.0, 0.0 }, to = new[] { 0.0, 0.0 },
+                points = new[] { new[] { 10.0, 20.0 }, new[] { 30.0, 5.0 }, new[] { 15.0, 50.0 } },
+            }),
+        };
+
+        var markup = Assert.Single(Read(fixture).Markups);
+
+        Assert.Equal("pen", markup.Kind);
+        // Viewer top-left page space → PDF user space for MediaBox [-1512.12 -1080 1512.12 1080].
+        Assert.Equal(-1512.12, markup.Rect.X0, 3);
+        Assert.Equal(-1482.12, markup.Rect.X1, 3);
+        Assert.Equal(1030, markup.Rect.Y0, 3);
+        Assert.Equal(1080, markup.Rect.Y1, 3);
+    }
+
+    [Fact]
     public void Viewer_cloud_links_every_contained_element_with_author_and_time()
     {
         var fixture = new FixturePdf
@@ -71,7 +95,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "c1", page = 1, kind = "cloud",
-                from = new { x = 0.0, y = 0.0 }, to = new { x = 50.0, y = 50.0 },
+                from = new[] { 0.0, 0.0 }, to = new[] { 50.0, 50.0 },
                 text = "upgrade these to 1 HR",
                 author = new { name = "J. Contractor" }, createdAt = "2026-11-12T10:00:00Z",
                 contained = new object[] { new { key = FixturePdf.WallKey, fully = true }, new { key = FixturePdf.DoorKey, fully = false } },
@@ -92,7 +116,7 @@ public sealed class MarkupSourcesTests : IDisposable
         {
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
-                id = "c3", page = 1, kind = "comment", from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                id = "c3", page = 1, kind = "comment", from = new[] { 1.0, 1.0 }, to = new[] { 1.0, 1.0 },
                 text = "both of these", elementKey = FixturePdf.WallKey, elementKeys = new[] { FixturePdf.WallKey, FixturePdf.DoorKey },
             }),
         };
@@ -109,7 +133,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "c2", page = 1, kind = "comment",
-                from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                from = new[] { 1.0, 1.0 }, to = new[] { 1.0, 1.0 },
                 text = "door too narrow", elementKey = FixturePdf.DoorKey, author = new { name = "A" },
                 replies = new object[] { new { id = "r1", author = new { name = "B" }, createdAt = "2026-11-13T09:00:00Z", text = "agreed, use 36in" } },
             }),
@@ -127,7 +151,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v2", page = 1, kind = "text",
-                from = new { x = 10.0, y = 10.0 }, to = new { x = 10.0, y = 10.0 },
+                from = new[] { 10.0, 10.0 }, to = new[] { 10.0, 10.0 },
                 text = "check with structural",
             }),
         };
@@ -144,7 +168,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v3", page = 1, kind = "comment",
-                from = new { x = 10.0, y = 10.0 }, to = new { x = 10.0, y = 10.0 },
+                from = new[] { 10.0, 10.0 }, to = new[] { 10.0, 10.0 },
                 text = "wall 676281 and door 700108 both; ignore 12 and 99999999999",
                 elementKey = FixturePdf.WallKey,
             }),
@@ -164,7 +188,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v6", page = 1, kind = "comment",
-                from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 },
+                from = new[] { 1.0, 1.0 }, to = new[] { 1.0, 1.0 },
                 text = "١٢٣٤٥٦ ０１２３４５ and 676281",
             }),
         };
@@ -181,7 +205,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v4", page = 1, kind = "rect",
-                from = new { x = 0.0, y = 0.0 }, to = new { x = 5.0, y = 5.0 },
+                from = new[] { 0.0, 0.0 }, to = new[] { 5.0, 5.0 },
                 text = "stale tie", elementKey = "model-key-1:999",
             }),
         };
@@ -200,7 +224,7 @@ public sealed class MarkupSourcesTests : IDisposable
             ViewerJson = FixturePdf.ViewerAnnotations(new
             {
                 id = "v5", page = 1, kind = "rect",
-                from = new { x = 0.0, y = 0.0 }, to = new { x = 5.0, y = 5.0 }, text = "viewer",
+                from = new[] { 0.0, 0.0 }, to = new[] { 5.0, 5.0 }, text = "viewer",
             }),
             AcrobatAnnotations =
             [
