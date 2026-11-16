@@ -1,22 +1,28 @@
 [CmdletBinding()]
 param(
-    [string]$RevitPath = (Join-Path $env:ProgramW6432 'Autodesk\Revit 2025'),
+    [string]$RevitVersion = '2025',
+    [string]$RevitPath,
     [string]$BuildDirectory
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if (-not $RevitPath) {
+    $RevitPath = Join-Path $env:ProgramW6432 "Autodesk\Revit $RevitVersion"
+}
+
 if (Get-Process Revit -ErrorAction SilentlyContinue) {
     throw 'Close Revit before installing so it can load the new add-in on startup.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $RevitPath 'Revit.exe'))) {
-    throw "Revit 2025 was not found in '$RevitPath'."
+    throw "Revit $RevitVersion was not found in '$RevitPath'."
 }
 
 if (-not $BuildDirectory) {
     $project = Join-Path $PSScriptRoot '..\src\EnhancedPdfs\EnhancedPdfs.csproj'
-    # Revit 2025 updates moved from .NET 8 to .NET 10; build for the runtime this installation uses.
+    # Revit 2025 updates moved from .NET 8 to .NET 10, and later major versions build on .NET 10 too;
+    # build for whichever runtime this installation actually uses.
     $runtimeConfig = Join-Path $RevitPath 'RevitAPI.runtimeconfig.json'
     $dotnet = if ((Test-Path -LiteralPath $runtimeConfig) -and ((Get-Content -Raw -LiteralPath $runtimeConfig) -match '"net10\.0"')) { 'net10.0' } else { 'net8.0' }
     $framework = "$dotnet-windows10.0.19041.0"
@@ -28,9 +34,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $BuildDirectory 'EnhancedPdfs.dll'))
     throw "EnhancedPdfs.dll was not found in '$BuildDirectory'."
 }
 
-$payloadRoot = Join-Path $env:LOCALAPPDATA 'EnhancedPdfs\Revit2025'
+$payloadRoot = Join-Path $env:LOCALAPPDATA "EnhancedPdfs\Revit$RevitVersion"
 $payload = Join-Path $payloadRoot ([guid]::NewGuid().ToString('N'))
-$manifestFolder = Join-Path $env:APPDATA 'Autodesk\Revit\Addins\2025'
+$manifestFolder = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitVersion"
 New-Item -ItemType Directory -Path $payload,$manifestFolder -Force | Out-Null
 
 $manifest = Join-Path $manifestFolder 'EnhancedPdfs.addin'
@@ -69,4 +75,4 @@ try {
 Get-ChildItem -LiteralPath $payloadRoot -Directory | Where-Object {
     $_.Name -match '^[0-9a-f]{32}$' -and $_.FullName -ne $payload
 } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Write-Output "Installed Enhanced PDFs for Revit 2025 at $manifest."
+Write-Output "Installed Enhanced PDFs for Revit $RevitVersion at $manifest."

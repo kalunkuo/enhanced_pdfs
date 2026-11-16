@@ -13,15 +13,15 @@ flowchart TD
     F --> G
 ```
 
-## Install in Revit 2025
+## Install in Revit
 
-In the Windows guest, close Revit and run the following from the repository root in PowerShell. A source build requires a local Revit 2025 installation and the .NET SDK matching its runtime: Revit 2025.0–2025.4 runs on .NET 8, later 2025 updates on .NET 10 (the installer reads `RevitAPI.runtimeconfig.json` and builds for the right one).
+In the Windows guest, close Revit and run the following from the repository root in PowerShell. A source build requires a local Revit installation and the .NET SDK matching its runtime: Revit 2025.0–2025.4 runs on .NET 8, later 2025 updates and Revit 2026+ run on .NET 10 (the installer reads `RevitAPI.runtimeconfig.json` and builds for the right one).
 
 ```powershell
 .\scripts\Install-RevitAddin.ps1
 ```
 
-Use `-RevitPath` for a non-default Revit installation. Use `-BuildDirectory` to install an existing Release build without the SDK. The installer writes a per-user Revit add-in manifest and copies the build to the guest's local disk. On launch, Revit may prompt you to load the unsigned local build. Choose **Load Once** for the current session. You can save exported PDFs directly to your Mac through a Parallels shared folder.
+This targets Revit 2025 by default. Use `-RevitVersion` to install against another installed version, for example `-RevitVersion 2027`. Use `-RevitPath` instead if the installation isn't in the default `Program Files\Autodesk\Revit <version>` location. Use `-BuildDirectory` to install an existing Release build without the SDK. The installer writes a per-user Revit add-in manifest and copies the build to the guest's local disk. On launch, Revit may prompt you to load the unsigned local build. Choose **Load Once** for the current session. You can save exported PDFs directly to your Mac through a Parallels shared folder.
 
 ## Export and inspect
 

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <RevitPath Condition="'$(RevitPath)' == ''">$(ProgramW6432)\Autodesk\Revit 2025</RevitPath>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2025</RevitVersion>
+    <RevitPath Condition="'$(RevitPath)' == ''">$(ProgramW6432)\Autodesk\Revit $(RevitVersion)</RevitPath>
     <!-- Revit 2025.0–2025.4 runs on .NET 8; later updates of the same install run on .NET 10. Build with -f to match the
          installed Revit (scripts/Install-RevitAddin.ps1 reads RevitAPI.runtimeconfig.json). The Windows 10 SDK target
          provides Windows.Data.Pdf for markup crops. -->
@@ -30,6 +31,6 @@
   </ItemGroup>
   <Target Name="CheckRevitReferences" BeforeTargets="ResolveAssemblyReferences">
     <Error Condition="!Exists('$(RevitPath)/RevitAPI.dll') Or !Exists('$(RevitPath)/RevitAPIUI.dll')"
-           Text="Set RevitPath to the Revit 2025 installation or to a directory containing its RevitAPI.dll and RevitAPIUI.dll." />
+           Text="Set RevitVersion to the installed Revit version (e.g. 2027), or set RevitPath directly to a directory containing its RevitAPI.dll and RevitAPIUI.dll." />
   </Target>
 </Project>
