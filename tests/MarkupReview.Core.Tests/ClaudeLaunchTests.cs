@@ -20,17 +20,24 @@ public sealed class ClaudeLaunchTests : IDisposable
     }
 
     [Fact]
-    public void Args_contain_strict_mcp_and_empty_tools()
+    public void Args_contain_strict_mcp_and_allowed_tools()
     {
         var args = Build().ArgumentList.ToList();
         Assert.Equal("-p", args[0]);
         Assert.Contains("--strict-mcp-config", args);
-        Assert.Equal("", args[args.IndexOf("--tools") + 1]);
         Assert.Equal("mcp__revit__*", args[args.IndexOf("--allowedTools") + 1]);
         Assert.Equal("stream-json", args[args.IndexOf("--output-format") + 1]);
         Assert.Contains("--verbose", args);
         Assert.Contains("--no-session-persistence", args);
         Assert.Equal("2", args[args.IndexOf("--max-budget-usd") + 1]);
+    }
+
+    [Fact]
+    public void Args_never_disable_tool_search()
+    {
+        // "--tools """ would also disable ToolSearch, which this Claude Code version needs to resolve any deferred
+        // tool (including MCP ones) before it can be called - --allowedTools below is what actually gates execution.
+        Assert.DoesNotContain("--tools", Build().ArgumentList);
     }
 
     [Fact]

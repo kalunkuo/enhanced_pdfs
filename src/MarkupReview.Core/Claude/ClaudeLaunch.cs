@@ -70,7 +70,10 @@ public static class ClaudeLaunch
             "-p", prompt ?? Prompt,
             "--mcp-config", configPath,
             "--strict-mcp-config",
-            "--tools", "",
+            // Not "--tools "": that also disables ToolSearch, which this Claude Code version requires to resolve any
+            // deferred tool (including MCP ones) before it can be called - with it, the model can never actually
+            // invoke mcp__revit__* despite --allowedTools permitting it. --allowedTools below is the real gate:
+            // headless runs auto-deny anything it doesn't match (no one is here to approve a permission prompt).
             "--allowedTools", "mcp__revit__*",
             "--output-format", "stream-json",
             "--verbose",
