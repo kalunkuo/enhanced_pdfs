@@ -60,7 +60,8 @@ public sealed class ClaudeLaunchTests : IDisposable
         var server = JsonNode.Parse(File.ReadAllText(configPath))!["mcpServers"]!["revit"]!;
         Assert.Equal("stdio", (string?)server["type"]);
         Assert.Equal(@"C:\addin\MarkupReview.Bridge.exe", (string?)server["command"]);
-        Assert.Equal(["--pipe", "pipe-1", "--token", "tok-1"], server["args"]!.AsArray().Select(a => (string)a!));
+        Assert.Equal(["--pipe", "pipe-1", "--token", "tok-1", "--log", Path.Combine(_dir.Path, "bridge.log")],
+            server["args"]!.AsArray().Select(a => (string)a!));
     }
 
     [Fact]

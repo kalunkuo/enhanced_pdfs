@@ -12,25 +12,29 @@ public static class PipeHost
 {
     private const int MaxTokenBytes = 256;
 
-    public static async Task RunAsync(string pipeName, string token, Func<Stream, Task> handler, CancellationToken cancel)
+    public static async Task RunAsync(string pipeName, string token, Func<Stream, Task> handler, CancellationToken cancel, Action<string>? log = null)
     {
         byte[] expected = Encoding.UTF8.GetBytes(token);
         var running = new List<Task>();
+        log?.Invoke($"pipe: listening on {pipeName}");
         while (!cancel.IsCancellationRequested)
         {
             var pipe = new NamedPipeServerStream(pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances,
                 PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             try { await pipe.WaitForConnectionAsync(cancel); }
             catch (OperationCanceledException) { await pipe.DisposeAsync(); break; }
+            log?.Invoke("pipe: client connected, verifying token");
 
             running.Add(Task.Run(async () =>
             {
                 await using (pipe)
                 {
                     byte[]? presented = await ReadLineBytes(pipe, cancel);
-                    if (presented is null || !CryptographicOperations.FixedTimeEquals(presented, expected)) return;
+                    if (presented is null) { log?.Invoke("pipe: client disconnected before sending a token"); return; }
+                    if (!CryptographicOperations.FixedTimeEquals(presented, expected)) { log?.Invoke("pipe: token mismatch, dropping connection"); return; }
+                    log?.Invoke("pipe: token accepted, handing off to the MCP handler");
                     try { await handler(pipe); }
-                    catch (Exception e) when (e is IOException or OperationCanceledException) { }
+                    catch (Exception e) when (e is IOException or OperationCanceledException) { log?.Invoke($"pipe: handler ended ({e.GetType().Name})"); }
                 }
             }, CancellationToken.None));
         }

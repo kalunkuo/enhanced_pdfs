@@ -47,7 +47,7 @@ public static class ClaudeLaunch
                 {
                     ["type"] = "stdio",
                     ["command"] = bridgePath,
-                    ["args"] = new JsonArray("--pipe", pipeName, "--token", token),
+                    ["args"] = new JsonArray("--pipe", pipeName, "--token", token, "--log", Path.Combine(workDir, "bridge.log")),
                 },
             },
         };

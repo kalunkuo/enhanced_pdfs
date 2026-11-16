@@ -158,7 +158,7 @@ internal sealed class ReviewController
         _cancel = new CancellationTokenSource();
         var cancel = _cancel.Token;
         var tools = new ReviewTools(Session!, Gateway!, Revising?.Id);
-        _ = PipeHost.RunAsync(pipe, token, stream => McpServer.RunAsync(stream, stream, tools, cancel), cancel)
+        _ = PipeHost.RunAsync(pipe, token, stream => McpServer.RunAsync(stream, stream, tools, cancel), cancel, Log)
             .ContinueWith(t => Log($"pipe host ended: {t.Exception?.GetBaseException().Message ?? "ok"}"), TaskScheduler.Default);
 
         Log($"bridge: {bridge} exists={File.Exists(bridge)} pipe={pipe}");
