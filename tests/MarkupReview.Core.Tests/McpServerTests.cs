@@ -18,9 +18,9 @@ public sealed class McpServerTests : IDisposable
         var fixture = new FixturePdf
         {
             ViewerJson = FixturePdf.ViewerAnnotations(
-                new { id = "m1", page = 1, kind = "rect", from = new { x = 1.0, y = 1.0 }, to = new { x = 9.0, y = 9.0 }, text = "should be 1 HR per code review", elementKey = FixturePdf.WallKey },
-                new { id = "m2", page = 1, kind = "text", from = new { x = 1.0, y = 1.0 }, to = new { x = 1.0, y = 1.0 }, text = "check with structural" },
-                new { id = "m3", page = 1, kind = "comment", from = new { x = 5.0, y = 5.0 }, to = new { x = 5.0, y = 5.0 }, text = "door too narrow", elementKey = FixturePdf.DoorKey }),
+                new { id = "m1", page = 1, kind = "rect", from = new[] { 1.0, 1.0 }, to = new[] { 9.0, 9.0 }, text = "should be 1 HR per code review", elementKey = FixturePdf.WallKey },
+                new { id = "m2", page = 1, kind = "text", from = new[] { 1.0, 1.0 }, to = new[] { 1.0, 1.0 }, text = "check with structural" },
+                new { id = "m3", page = 1, kind = "comment", from = new[] { 5.0, 5.0 }, to = new[] { 5.0, 5.0 }, text = "door too narrow", elementKey = FixturePdf.DoorKey }),
         };
         var pdf = ReturnedPdf.Open(fixture.Save(_dir.Path));
         var tables = ExportTables.Load(pdf);

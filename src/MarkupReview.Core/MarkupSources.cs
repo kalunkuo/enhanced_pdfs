@@ -139,7 +139,8 @@ public static partial class MarkupSources
         return lines.Count == 0 ? null : string.Join("\n", lines);
     }
 
-    private static (double X, double Y) Point(JsonElement p) => (p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble());
+    // The viewer serializes Point as a [x, y] tuple (viewer/src/lib/types.ts), not an {x, y} object.
+    private static (double X, double Y) Point(JsonElement p) => (p[0].GetDouble(), p[1].GetDouble());
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     private static DateTimeOffset? ParseTime(string? s) => DateTimeOffset.TryParse(s, out var t) ? t : null;
